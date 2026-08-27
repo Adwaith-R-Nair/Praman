@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# environment & secrets — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# database
+*.sqlite
+*.sqlite3
+prisma/dev.db*
+
+# test & coverage
+coverage/
+.nyc_output/
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor & OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# personal working notes — not part of the submission
+/private/
