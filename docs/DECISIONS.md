@@ -1,0 +1,147 @@
+# Praman — Decision Records
+
+Each entry: the decision, what it rules out, and the alternative rejected. This file exists because a panel will ask "why" about roughly ten things, and the difference between a strong candidate and a weak one is having thought about it *before* being asked.
+
+Format: **D-nn · Decision · Status**
+
+---
+
+### D-01 · The intent carries no price · Accepted
+
+The `PurchaseIntent` emitted by the agent contains `sku` and `qty` only. Amount is resolved server-side from the catalog after validation.
+
+**Rejected:** letting the agent propose an amount and validating it against the catalog. That still puts an attacker-influenced number in the money path, and validation has bugs; absence does not.
+
+**Consequence:** an entire family of injection attacks becomes structurally impossible rather than defended against. This is the single most important decision in the project.
+
+---
+
+### D-02 · No LLM in the authorisation path · Accepted
+
+`evaluate()` is a pure function. No model call, direct or indirect.
+
+**Rejected:** an "LLM judge" reviewing the agent's proposal. A non-deterministic reviewer of a non-deterministic actor gives you two things to debug and zero guarantees. You also cannot write a regression test against it.
+
+**Consequence:** decisions are reproducible, which is what makes the eval harness meaningful.
+
+---
+
+### D-03 · Spend derived from the ledger, not stored on the mandate · Accepted
+
+There is no `spent_paise` column. `deriveState()` replays ledger entries.
+
+**Rejected:** a counter column with careful transactional updates. Correct until someone with DB access edits it, at which point the budget is a lie and nothing detects it.
+
+**Trade-off accepted:** replay cost grows with history. Mitigated by checkpoints; at demo scale it's irrelevant. Say this out loud rather than pretending there's no cost.
+
+---
+
+### D-04 · Postgres, not MongoDB · Accepted
+
+**Rejected:** MongoDB, despite prior experience with it (Honora).
+
+Reasons: append-only immutability is enforceable with DB rules; `GENERATED ALWAYS AS IDENTITY` gives a sequence the application cannot supply, so gaps are evidence; the money path needs real transactions spanning several tables; `CHECK` constraints on `price_paise > 0` catch bad data at the boundary.
+
+Being able to say "I used the thing I knew less well because it was correct" is a stronger signal than familiarity.
+
+---
+
+### D-05 · Per-mandate advisory lock, not SERIALIZABLE isolation · Accepted
+
+`pg_advisory_xact_lock(hashtext(mandate_id))` at the top of the transaction.
+
+**Rejected:** `SERIALIZABLE`, which aborts one transaction on conflict and demands retry logic in the money path — the last place you want automatic retries. The advisory lock makes the second caller wait and then observe committed state, producing a deterministic `DUPLICATE_INTENT` instead of a serialisation error.
+
+**Trade-off:** per-mandate serialisation caps throughput per mandate. Acceptable — a single user's agent making concurrent purchases is not a throughput problem, it's a red flag.
+
+---
+
+### D-06 · Idempotency key derived, not supplied · Accepted
+
+`sha256(mandate_id + "|" + canonical(intent))`. The caller cannot pass one.
+
+**Rejected:** client-supplied keys (the common API convention). A compromised or confused agent could vary the key and defeat the guard. Deriving it means a replayed intent is *definitionally* the same key.
+
+---
+
+### D-07 · Sanitisation at the consumer, not the producer · Accepted
+
+The merchant MCP server does not sanitise its own output. The buyer agent wraps everything it receives in `wrapUntrusted()`.
+
+**Rejected:** sanitising server-side. The merchant is the untrusted party — asking it to sanitise itself is asking the attacker to be careful. Trust boundaries are enforced by the party that has something to lose.
+
+---
+
+### D-08 · The agent is not told the mandate's numeric limits · Accepted
+
+It learns only whether an intent was allowed.
+
+**Rejected:** giving the agent its budget so it can plan efficiently. If the model knows the exact cap, injection can steer it to an intent sitting precisely at the boundary — technically compliant, substantively an attack. Withholding forces honest proposals and lets the gate decide.
+
+**Trade-off:** slightly worse agent efficiency, occasional avoidable denials. Visible in the false-refusal rate. Worth it, and being able to point at the metric that shows the cost is the point.
+
+---
+
+### D-09 · Amounts as JSON strings over the wire · Accepted
+
+`"amount_paise": "48000"`.
+
+**Rejected:** JSON numbers. `JSON.parse` silently loses precision above 2^53. In a payments system, silent numeric corruption is unacceptable even when the current values are small.
+
+---
+
+### D-10 · Branded `Paise` type · Accepted
+
+`type Paise = bigint & { __brand: "Paise" }`.
+
+**Rejected:** plain `bigint`. A raw bigint can be assigned from a quantity, an index, or a timestamp with no complaint. Four lines of types eliminate a bug class.
+
+---
+
+### D-11 · Delimited untrusted blocks with delimiter stripping · Accepted
+
+`wrapUntrusted()` strips literal occurrences of the delimiters from the input before wrapping.
+
+**Rejected:** wrapping without stripping. A product description containing the closing tag escapes the block. This is the obvious bug and there is a test named after it.
+
+---
+
+### D-12 · Hash chain with explicit field separators · Accepted
+
+`entry_hash = sha256(prev_hash | seq | ts | actor | event_type | payload_hash)`.
+
+**Rejected:** naive concatenation. Without separators, `("ab","c")` and `("a","bc")` hash identically, which permits constructing distinct entries with matching hashes.
+
+---
+
+### D-13 · No vector database · Accepted
+
+**Rejected:** Qdrant or pgvector for catalog search.
+
+The catalog is small, structured, and queried by exact SKU and category. There is nothing to retrieve semantically. Adding a vector store would have been resume decoration, and decoration in the money path is a liability.
+
+*(Notable because the builder's previous project used Qdrant. Choosing not to reuse a familiar tool is the point.)*
+
+---
+
+### D-14 · Retry cap of one, then escalate · Accepted
+
+On execution failure the agent may retry once on an alternate method. If a retry would breach the mandate, it escalates to human approval rather than re-planning.
+
+**Rejected:** exponential backoff with several attempts. Each retry is a fresh chance to double-charge and a fresh opportunity for a loop to drain a budget. Escalation is a better failure mode than persistence when money is involved.
+
+---
+
+### D-15 · Held-out eval split committed before tuning · Accepted
+
+30% of the corpus is hash-partitioned out, and `.heldout` is committed before any failure is fixed.
+
+**Rejected:** reporting a single tuned number. The git timestamp is what makes the held-out figure credible rather than merely claimed.
+
+---
+
+### D-16 · Known failures published, not tuned away · Accepted
+
+`eval/report.md` includes `unresolved_exceptions` with case IDs and one-line reasons.
+
+**Rejected:** shipping a 100% claim. Razorpay's own brief says a cherry-picked result proves nothing and asks for an honest exception list. Four documented failures beat a perfect score a reviewer disproves in ten minutes.
