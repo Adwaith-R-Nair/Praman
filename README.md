@@ -23,4 +23,13 @@ Razorpay **test mode only**. No live keys, no real money.
 Defense only — the adversarial corpus is a fixed set of fixtures exercised
 against this project's own sandbox. Ships no attack tooling.
 
+## Built with
+Praman was designed and built with Claude as a pair-programming partner.
+Every architectural decision in [docs/DECISIONS.md](docs/DECISIONS.md) is
+mine, made deliberately and defended there. The policy engine's `evaluate()`
+is hand-written. Claude generated much of the surrounding scaffolding —
+types, serialisation, test cases — from specifications I wrote, and I
+reviewed and understand every line. The commit history shows the sequence:
+specification, then core, then plumbing, then measurement.
+
 MIT licensed.

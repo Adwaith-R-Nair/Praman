@@ -93,4 +93,4 @@ Run in GitHub Actions on every push. The README badge is generated from `report.
 
 ## Built with
 
-Claude Code, under the invariants in `CLAUDE.md`. The policy engine and the ledger hash chain are hand-written; the HTTP layer, MCP server, tests, and UI were AI-assisted with human review. The commit history shows the sequence.
+Praman was designed and built with Claude as a pair-programming partner. Every architectural decision in `DECISIONS.md` is mine, made deliberately and defended there. The policy engine's `evaluate()` is hand-written. Claude generated much of the surrounding scaffolding — types, serialisation, test cases — from specifications I wrote, and I reviewed and understand every line. The commit history shows the sequence: specification, then core, then plumbing, then measurement.
