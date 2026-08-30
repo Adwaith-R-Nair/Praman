@@ -145,3 +145,69 @@ On execution failure the agent may retry once on an alternate method. If a retry
 `eval/report.md` includes `unresolved_exceptions` with case IDs and one-line reasons.
 
 **Rejected:** shipping a 100% claim. Razorpay's own brief says a cherry-picked result proves nothing and asks for an honest exception list. Four documented failures beat a perfect score a reviewer disproves in ten minutes.
+
+---
+
+### D-17 · Auto-capture, with no second gate at capture time · Accepted
+
+Razorpay is configured to auto-capture, and uncaptured authorizations are set
+to refund automatically rather than await manual dashboard capture.
+
+**Rejected:** manual capture as a second authorization checkpoint before money
+is claimed.
+
+Praman's gate sits upstream of order creation. By the time a payment is
+authorized, `evaluate()` has already returned ALLOW, the decision is in the
+ledger, and no input has changed. A capture-time gate would re-evaluate
+identical facts against the same mandate and reach the same answer, while
+introducing an authorized-but-uncaptured state to track, reconcile and time
+out. Complexity without control.
+
+**Principle:** put the gate where the decision is. Checkpoints downstream of
+the real decision point feel safer and are not.
+
+Orphaned holds auto-refund because money held on a customer's card with no
+merchant claim behind it is a liability nobody will monitor at 3am. When a
+money flow ends ambiguous, default to returning funds.
+
+---
+
+### D-18 · TypeScript throughout; no Rust policy core · Accepted
+
+**Considered:** reimplementing `packages/policy` in Rust, exposed to the Node
+control plane via napi-rs or WASM.
+
+The motivation was real. `Paise` is a branded `bigint`, and TypeScript brands
+are erased at compile time — they give no runtime enforcement whatsoever. A
+Rust `struct Paise(u64)` is nominal and survives to runtime: it cannot be
+forged by a cast, by an untyped caller, or by a value that arrived as `any`.
+
+Costed against what it would actually buy:
+
+| Rust benefit | Applies here? |
+|---|---|
+| Memory safety | No — Node is already memory-safe; no buffers in the money path |
+| Data-race freedom | No — single-threaded; the real risk is a *database* race, solved by a per-mandate advisory lock (D-05) |
+| Exhaustive matching | Marginal — discriminated unions plus `noFallthroughCasesInSwitch` already give this |
+| Runtime-surviving newtypes | **Yes — the one genuine win** |
+| Performance | No — decision latency is dominated by Postgres and network I/O |
+
+One real advantage, against a substantial cost: a second toolchain, and an FFI
+boundary that is untyped in both directions. That last point is decisive —
+values crossing FFI need runtime revalidation, so the change would introduce a
+new unvalidated boundary in order to fix a problem caused by unvalidated
+boundaries. It does not remove the class of risk, it relocates it.
+
+**What was done instead.** Amounts enter Praman from exactly four enumerable
+boundaries — HTTP JSON bodies, Postgres rows, Razorpay API responses, and
+catalog price lookups — each with an explicit runtime check. `paiseFromJSON`
+validates with a strict pattern rather than trusting `BigInt` coercion, and CI
+greps for `as Paise` casts outside `money.ts`. A class wrapper (`class Paise {
+constructor(readonly value: bigint) {} }`) would also survive erasure without
+leaving TypeScript, and was rejected for the same cost/benefit reason: object
+allocation per amount and rehydration through every ORM and clone boundary,
+to guard four already-guarded entry points.
+
+**Deferred, not dismissed.** A Rust policy core with nominal newtypes is first
+on the post-submission roadmap. The compile-time-only nature of the brand is a
+real limitation and is stated as one rather than hidden.
