@@ -31,4 +31,11 @@ describe("Paise", () => {
   it("adds without precision loss", () => {
     expect(addPaise(paise(10n), paise(20n))).toBe(30n);
   });
+
+  it("rejects json values BigInt would silently accept", () => {
+    expect(() => paiseFromJSON("")).toThrow();
+    expect(() => paiseFromJSON("0x10")).toThrow();
+    expect(() => paiseFromJSON(" 42 ")).toThrow();
+    expect(() => paiseFromJSON("480.00")).toThrow();
+  });
 });

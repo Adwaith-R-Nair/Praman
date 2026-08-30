@@ -29,3 +29,17 @@ Running record of what broke and how it got fixed. Written daily, not reconstruc
 - Minor: Razorpay checkout rejects Indian contact numbers not starting with
   6-9. Used 9999999999. Prefill contact details in the agent flow — there is
   no human to type them.
+
+## Day 1 — 28 Aug 2026
+
+- pnpm requires pnpm-workspace.yaml to exist before it accepts workspace-scoped
+  installs (-w). Chicken-and-egg on first setup.
+- pnpm blocks postinstall scripts by default (supply-chain hardening); esbuild
+  needs an explicit `pnpm approve-builds`. Relevant posture for a payments
+  project — install-time code execution is a real vector.
+- Toolchain landed on TypeScript 7.0.2, the Go-native compiler. Semantics are
+  a faithful port so no code changes, but TS7 dropped baseUrl and changed the
+  `types` default to empty — worth knowing before pasting any older tsconfig.
+- Put money.test.ts in src/ instead of test/; vitest found no tests while
+  typecheck passed. The two tools disagreeing about the project was the
+  clue to where the problem was.
