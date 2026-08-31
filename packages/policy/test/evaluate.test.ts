@@ -23,7 +23,13 @@ function makeRng(seed: number): () => number {
   return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
 }
 
-/** Recursively freezes an object graph, including Map values. */
+/**
+ * Freezes plain objects and arrays. Note: Object.freeze does NOT prevent
+ * Map.set or Set.add — collection internals live outside the own-property
+ * slots freezing acts on. This therefore locks down the object graph, not
+ * the Map/Set instances within it (catalog.items, merchants_transacted,
+ * seen_idempotency_keys).
+ */
 function deepFreeze<T>(value: T): T {
   if (value instanceof Map) {
     for (const v of value.values()) deepFreeze(v);
@@ -978,7 +984,11 @@ describe("evaluate", () => {
       }
     });
 
-    it("does not mutate its inputs", () => {
+    it("does not mutate the plain-object/array parts of its input", () => {
+      // deepFreeze cannot lock down catalog.items (a Map), merchants_transacted
+      // or seen_idempotency_keys (Sets) — see its comment. This covers intent,
+      // mandate, and the array/object shapes within them; it is not a proof
+      // that evaluate() never calls .set() or .add() on the collections.
       const input = deepFreeze(makeInput());
       expect(() => evaluate(input)).not.toThrow();
     });

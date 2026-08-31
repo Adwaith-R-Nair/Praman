@@ -39,5 +39,6 @@ Thumbs.db
 # personal working notes — not part of the submission
 /private/
 .claude
+/social/
 
 CLAUDE.md
