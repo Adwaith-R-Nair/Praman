@@ -6,6 +6,6 @@
   "main": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "scripts": {
-  "lint:casts": "! grep -rn 'as Paise' --include='*.ts' packages apps | grep -v 'money.ts'"
-}
+    "lint:casts": "cd \"$(git rev-parse --show-toplevel)\" && ! grep -rnE \"(as Paise|\\.get\\([^)]*\\)!)\" --include='*.ts' packages apps | grep -v 'money.ts'"
+  }
 }
