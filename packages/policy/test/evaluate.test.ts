@@ -205,6 +205,28 @@ describe("evaluate", () => {
     });
   });
 
+  // ── 5b. AMOUNT_INVALID (mandate currency) ─────────────────────
+  describe("AMOUNT_INVALID — mandate currency", () => {
+    it("denies when mandate currency is not INR", () => {
+      // scope.currency is typed as the literal "INR" — the only way to
+      // construct a non-INR mandate is to bypass the type, which is exactly
+      // the untyped-hydration boundary this check defends against.
+      const mandate = makeMandate({
+        scope: {
+          merchant_ids: [MERCHANT],
+          categories: [CATEGORY],
+          currency: "USD" as VerifiedMandate["scope"]["currency"],
+        },
+      });
+      const result = evaluate({ ...makeInput(), mandate });
+      expect(result).toEqual({
+        kind: "DENY",
+        reason_code: "AMOUNT_INVALID",
+        detail: expect.stringContaining("USD"),
+      });
+    });
+  });
+
   // ── 6. MERCHANT_OUT_OF_SCOPE ──────────────────────────────────
   describe("MERCHANT_OUT_OF_SCOPE", () => {
     it("denies when merchant not in mandate scope", () => {

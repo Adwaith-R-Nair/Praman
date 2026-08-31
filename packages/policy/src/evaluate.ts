@@ -50,6 +50,21 @@ export function evaluate(input: EvaluateInput): Decision {
     };
   }
 
+  // 5b. Mandate currency — defensive. VerifiedMandate types this "INR"
+  // at compile time, but that guarantee only holds for callers that went
+  // through the type; a mandate hydrated from an untyped boundary (a raw
+  // DB row, a JSON body) could carry anything. Widened to `string` rather
+  // than compared directly, so this is a real runtime check and not a
+  // comparison the compiler proves unreachable.
+  const currency: string = mandate.scope.currency;
+  if (currency !== "INR") {
+    return {
+      kind: "DENY",
+      reason_code: "AMOUNT_INVALID",
+      detail: `Mandate currency ${currency} is not supported; only INR is.`,
+    };
+  }
+
   // 6. Merchant scope — closed allowlist, no wildcard.
   if (!mandate.scope.merchant_ids.includes(intent.merchant_id)) {
     return {
