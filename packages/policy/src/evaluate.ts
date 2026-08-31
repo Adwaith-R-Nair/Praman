@@ -80,14 +80,25 @@ export function evaluate(input: EvaluateInput): Decision {
     };
   }
 
-  // 9–11: Validate every SKU against the catalog before touching money.
+  // 9. Aggregate quantities per SKU. Duplicate line items must not each
+  //    pass the stock check independently — a cart split across two line
+  //    items for the same SKU is still one demand on that SKU's stock.
+  const quantities = new Map<string, number>();
   for (const item of intent.line_items) {
-    const catalogItem = catalog.items.get(item.sku);
+    quantities.set(item.sku, (quantities.get(item.sku) ?? 0) + item.qty);
+  }
+
+  // 10–12. Validate each distinct SKU once against the aggregated
+  // quantity, then resolve the amount from the catalog. One lookup per
+  // SKU — prices never come from the model.
+  let amount = ZERO_PAISE;
+  for (const [sku, qty] of quantities) {
+    const catalogItem = catalog.items.get(sku);
     if (catalogItem === undefined) {
       return {
         kind: "DENY",
         reason_code: "SKU_UNKNOWN",
-        detail: `SKU ${item.sku} is not in the merchant catalog.`,
+        detail: `SKU ${sku} is not in the merchant catalog.`,
       };
     }
     if (!mandate.scope.categories.includes(catalogItem.category)) {
@@ -97,20 +108,14 @@ export function evaluate(input: EvaluateInput): Decision {
         detail: `Category ${catalogItem.category} is not in the allowed category list.`,
       };
     }
-    if (item.qty > catalogItem.stock_qty) {
+    if (qty > catalogItem.stock_qty) {
       return {
         kind: "DENY",
         reason_code: "INSUFFICIENT_STOCK",
-        detail: `Requested quantity ${item.qty} for SKU ${item.sku} exceeds available stock ${catalogItem.stock_qty}.`,
+        detail: `Requested quantity ${qty} for SKU ${sku} exceeds available stock ${catalogItem.stock_qty}.`,
       };
     }
-  }
-
-  // 12. Resolve amount from catalog — prices never come from the model.
-  let amount = ZERO_PAISE;
-  for (const item of intent.line_items) {
-    const catalogItem = catalog.items.get(item.sku)!;
-    amount = addPaise(amount, mulPaise(catalogItem.price_paise, item.qty));
+    amount = addPaise(amount, mulPaise(catalogItem.price_paise, qty));
   }
 
   // 13. Amount must be positive.
