@@ -172,6 +172,17 @@ describe("evaluate", () => {
         detail: expect.any(String),
       });
     });
+
+    it("treats not_before exactly as valid", () => {
+      // Code checks `ts < not_before`, so the boundary instant itself is
+      // not yet-invalid — a deliberate choice, pinned here rather than
+      // left accidental.
+      const result = evaluate({
+        ...makeInput(),
+        now: NOT_BEFORE,
+      });
+      expect(result.kind).not.toBe("DENY");
+    });
   });
 
   // ── 4. MANDATE_EXPIRED ────────────────────────────────────────
@@ -186,6 +197,17 @@ describe("evaluate", () => {
         reason_code: "MANDATE_EXPIRED",
         detail: expect.any(String),
       });
+    });
+
+    it("treats the expiry instant itself as still valid", () => {
+      // Code checks `ts > not_after`, so the boundary instant itself has
+      // not yet expired — a deliberate choice, pinned here rather than
+      // left accidental.
+      const result = evaluate({
+        ...makeInput(),
+        now: NOT_AFTER,
+      });
+      expect(result.kind).not.toBe("DENY");
     });
   });
 
