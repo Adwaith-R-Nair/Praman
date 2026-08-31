@@ -105,9 +105,15 @@ export function evaluate(input: EvaluateInput): Decision {
 
   // 10–12. Validate each distinct SKU once against the aggregated
   // quantity, then resolve the amount from the catalog. One lookup per
-  // SKU — prices never come from the model.
+  // SKU — prices never come from the model. Sorted by SKU so the reason
+  // code for an invalid cart never depends on the order the agent happened
+  // to list its line items in — the same requirement canonical(intent)
+  // will need for idempotency keys once carts can contain multiple SKUs.
   let amount = ZERO_PAISE;
-  for (const [sku, qty] of quantities) {
+  const sortedQuantities = [...quantities].sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  for (const [sku, qty] of sortedQuantities) {
     const catalogItem = catalog.items.get(sku);
     if (catalogItem === undefined) {
       return {

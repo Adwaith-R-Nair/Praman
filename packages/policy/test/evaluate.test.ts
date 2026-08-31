@@ -737,6 +737,48 @@ describe("evaluate", () => {
         detail: expect.any(String),
       });
     });
+
+    it("returns the same reason code regardless of line-item order", () => {
+      // Two invalid SKUs, invalid for DIFFERENT reasons: one unknown to the
+      // catalog, one known but out of the mandate's category scope. Which
+      // reason code comes back must depend only on the SKUs, never on which
+      // one the agent happened to list first.
+      const catalog: CatalogSnapshot = {
+        merchant_id: MERCHANT,
+        items: new Map([
+          [
+            "SKU_ELEC_001",
+            {
+              sku: "SKU_ELEC_001",
+              category: "electronics",
+              price_paise: paise(1000n),
+              stock_qty: 10,
+            },
+          ],
+        ]),
+      };
+      const forward = evaluate({
+        ...makeInput(),
+        intent: makeIntent({
+          line_items: [
+            { sku: "SKU_ELEC_001", qty: 1 },
+            { sku: "SKU_GHOST", qty: 1 },
+          ],
+        }),
+        catalog,
+      });
+      const reversed = evaluate({
+        ...makeInput(),
+        intent: makeIntent({
+          line_items: [
+            { sku: "SKU_GHOST", qty: 1 },
+            { sku: "SKU_ELEC_001", qty: 1 },
+          ],
+        }),
+        catalog,
+      });
+      expect(forward).toEqual(reversed);
+    });
   });
 
   // ── Precedence: ordering is the security property ────────────

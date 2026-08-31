@@ -38,5 +38,6 @@ Thumbs.db
 
 # personal working notes — not part of the submission
 /private/
+.claude
 
 CLAUDE.md
