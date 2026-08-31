@@ -18,7 +18,6 @@ export interface LineItem {
 /** A mandate whose signature has ALREADY been verified upstream. */
 export interface VerifiedMandate {
   readonly mandate_id: string;
-  readonly subject_id: string;
   readonly scope: {
     readonly merchant_ids: readonly string[];
     readonly categories: readonly string[];

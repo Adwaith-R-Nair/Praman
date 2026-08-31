@@ -43,7 +43,6 @@ function deepFreeze<T>(value: T): T {
 function makeMandate(overrides: Partial<VerifiedMandate> = {}): VerifiedMandate {
   return {
     mandate_id: "mnd_01",
-    subject_id: "agt_01",
     scope: {
       merchant_ids: [MERCHANT],
       categories: [CATEGORY],
