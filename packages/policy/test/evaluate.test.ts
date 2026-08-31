@@ -90,6 +90,7 @@ function makeState(overrides: Partial<LedgerDerivedState> = {}): LedgerDerivedSt
     revoked: false,
     merchants_transacted: new Set<string>(),
     seen_idempotency_keys: new Set<string>(),
+    denied_attempts: [],
     ...overrides,
   };
 }

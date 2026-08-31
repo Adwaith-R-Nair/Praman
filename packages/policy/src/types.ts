@@ -45,6 +45,13 @@ export interface LedgerDerivedState {
   readonly revoked: boolean;
   readonly merchants_transacted: ReadonlySet<string>;
   readonly seen_idempotency_keys: ReadonlySet<string>;
+  /**
+   * DENY outcomes, this mandate. Not yet read by evaluate() — denials cost
+   * nothing today, which makes the ALLOW/DENY boundary a free oracle for a
+   * probing agent. A future denial-rate cap reads this field to close that
+   * gap. See D-20.
+   */
+  readonly denied_attempts: readonly Date[];
 }
 
 /** Trusted, server-side. Prices come from here — never from the model. */
