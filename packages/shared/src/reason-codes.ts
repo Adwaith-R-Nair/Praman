@@ -1,0 +1,24 @@
+export const REASON_CODES = [
+  "OK",
+  "STEP_UP_THRESHOLD",
+  "STEP_UP_FIRST_MERCHANT",
+  "MANDATE_SIGNATURE_INVALID",
+  "MANDATE_REVOKED",
+  "MANDATE_EXPIRED",
+  "MANDATE_NOT_YET_VALID",
+  "MANDATE_SUBJECT_MISMATCH",
+  "MANDATE_AMOUNT_EXCEEDED",
+  "MANDATE_BUDGET_EXHAUSTED",
+  "VELOCITY_EXCEEDED",
+  "MERCHANT_OUT_OF_SCOPE",
+  "CATEGORY_OUT_OF_SCOPE",
+  "SKU_UNKNOWN",
+  "INSUFFICIENT_STOCK",
+  "AMOUNT_INVALID",
+  "DUPLICATE_INTENT",
+] as const;
+
+export type ReasonCode = (typeof REASON_CODES)[number];
+
+export type StepUpCode = Extract<ReasonCode, `STEP_UP_${string}`>;
+export type DenyCode = Exclude<ReasonCode, "OK" | StepUpCode>;

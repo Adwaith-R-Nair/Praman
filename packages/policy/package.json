@@ -1,0 +1,9 @@
+{
+  "name": "@praman/policy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@praman/shared": "workspace:*" }
+}
