@@ -635,10 +635,9 @@ describe("evaluate", () => {
   // ── Boundary: multi-item cart breaches total but not per-item ─
   describe("multi-item boundary", () => {
     it("denies when total exceeds cap but no single item does", () => {
-      // max_per_txn = 80000 (₹800), max_total = 500000 (₹5000)
-      // 6 items at 70000 each = 420000 (> 80000 per-txn)
-      // But a cart of 2 items at 45000 each = 90000 exceeds per-txn
-      // Instead: 10 items at 9000 each = 90000 > 80000
+      // max_per_txn = 80000 (₹800). Two DISTINCT SKUs at 45000 each: neither
+      // item alone breaches the cap, but the summed cart (90000) does.
+      const SKU_B = "SKU_FOOD_002";
       const catalog: CatalogSnapshot = {
         merchant_id: MERCHANT,
         items: new Map([
@@ -647,15 +646,29 @@ describe("evaluate", () => {
             {
               sku: SKU,
               category: CATEGORY,
-              price_paise: paise(9000n),
-              stock_qty: 100,
+              price_paise: paise(45000n),
+              stock_qty: 10,
+            },
+          ],
+          [
+            SKU_B,
+            {
+              sku: SKU_B,
+              category: CATEGORY,
+              price_paise: paise(45000n),
+              stock_qty: 10,
             },
           ],
         ]),
       };
       const result = evaluate({
         ...makeInput(),
-        intent: makeIntent({ line_items: [{ sku: SKU, qty: 10 }] }),
+        intent: makeIntent({
+          line_items: [
+            { sku: SKU, qty: 1 },
+            { sku: SKU_B, qty: 1 },
+          ],
+        }),
         catalog,
         state: makeState({ merchants_transacted: [MERCHANT] }),
       });
