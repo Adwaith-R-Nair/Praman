@@ -211,3 +211,25 @@ to guard four already-guarded entry points.
 **Deferred, not dismissed.** A Rust policy core with nominal newtypes is first
 on the post-submission roadmap. The compile-time-only nature of the brand is a
 real limitation and is stated as one rather than hidden.
+
+---
+
+### D-19 · Two-audience decision records · Accepted
+
+`evaluate()` returns a `Decision` — the internal record, carrying `detail`
+strings and `remaining_paise`. A separate `redact(decision): AgentVisibleDecision`
+strips both, plus the `STEP_UP_THRESHOLD` / `STEP_UP_FIRST_MERCHANT`
+distinction, before anything reaches the agent.
+
+**Rejected:** a single `Decision` shape serving both audiences. The first
+implementation did this, and its human-readable `detail` strings (`"exceeds
+per-transaction limit 80000 paise"`) handed the agent its exact mandate limits
+through the refusal message itself — the precise leak D-08 exists to prevent.
+Two deliberately-oversized probe purchases would have reconstructed the whole
+mandate from the denials alone.
+
+**Consequence:** every decision now has two shapes and a mapping between them,
+more surface area than shipping one type. Worth it — the leak was a structural
+property of collapsing both audiences into one record, not a mistake at a
+single call site, so nothing short of separating the shapes closes it for
+good.
