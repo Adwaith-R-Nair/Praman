@@ -617,7 +617,7 @@ describe("evaluate", () => {
       expect(result.kind).not.toBe("DENY");
     });
 
-    it("denies when one txn is just inside the window edge", () => {
+    it("allows when only one txn is inside the window edge (count below limit)", () => {
       // 4 txns 3601s ago (outside), 1 txn 3599s ago (inside) — 1 < 5, should pass
       const outside = new Date(NOW.getTime() - 3601 * 1000);
       const inside = new Date(NOW.getTime() - 3599 * 1000);
