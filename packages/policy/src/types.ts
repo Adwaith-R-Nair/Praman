@@ -66,6 +66,12 @@ export type Decision =
   | { readonly kind: "STEP_UP"; readonly amount_paise: Paise; readonly reason_code: StepUpCode }
   | { readonly kind: "DENY"; readonly reason_code: DenyCode; readonly detail: string };
 
+/** What the agent is allowed to see. Never carries mandate limits. See D-08. */
+export type AgentVisibleDecision =
+  | { readonly kind: "ALLOW"; readonly amount_paise: Paise }
+  | { readonly kind: "STEP_UP"; readonly amount_paise: Paise }
+  | { readonly kind: "DENY"; readonly reason_code: DenyCode };
+
 export interface EvaluateInput {
   readonly intent: PurchaseIntent;
   readonly mandate: VerifiedMandate;
