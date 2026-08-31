@@ -85,3 +85,59 @@ reconstructed. Raw — the polished version is the submission write-up.
 - Behind schedule: Phase 2 (ledger) was planned for today and Phase 1 is only
   finishing now. Cut list already ordered in ROADMAP.md; dispute bundle goes
   first if Day 7 runs short.
+
+## Day 4 — 31 Aug 2026 · evaluate() review
+
+- Wrote `evaluate()` and its test suite by hand, then sent both for review
+  before moving to Phase 2. Two real bugs came back, both worth recording
+  precisely because they surfaced at review rather than in an eval run.
+- **Duplicate-SKU stock bypass.** The stock check ran per line item, not per
+  distinct SKU: `[{sku, qty:6}, {sku, qty:6}]` against `stock_qty: 10` passed
+  both checks independently and oversold by two units. Fixed by aggregating
+  quantities per SKU before validating — one pass, one catalog lookup, bug
+  structurally gone. Wrote the failing test first; it failed for the wrong
+  reason on the first attempt (the per-txn cap masked the stock bug at the
+  price I'd picked), so I lowered the price until the test isolated the
+  actual defect, then fixed it. Red commit, then green — the sequence is
+  the evidence that the bug was found, not avoided.
+- **Mandate limits leaking through the refusal itself.** `detail` strings on
+  DENY quoted the exact mandate cap (`"exceeds per-transaction limit 80000
+  paise"`), and `ALLOW.remaining_paise` gave the budget away by subtraction.
+  D-08 says the agent never learns its numeric limits; the first
+  implementation violated that invariant through its own error message. Two
+  deliberately-oversized probe purchases would have reconstructed the whole
+  mandate from the denials alone. Fixed by splitting `Decision` (internal,
+  keeps `detail`) from a new `AgentVisibleDecision` (agent-facing —
+  `redact()` strips `detail`, `remaining_paise`, and the
+  `STEP_UP_THRESHOLD` / `STEP_UP_FIRST_MERCHANT` distinction) → D-19.
+- A `catalog.items.get(item.sku)!` non-null assertion disappeared as a
+  byproduct of the aggregation fix rather than needing one of its own — the
+  single-pass loop only looks a SKU up once, so there's nothing left to
+  assert past. Extended `lint:casts` to also catch `.get(...)!`, and while
+  testing that found the script itself had been silently inert the whole
+  time: it used paths relative to the repo root, but pnpm always runs a
+  package's script from that package's own directory. Fixed alongside.
+- Smaller review fallout, each its own commit: added the precedence tests
+  the file was missing — the highest-value tests in it, since they're the
+  only ones that fail if someone reorders the checks; fixed a test named
+  "denies ..." that asserted the opposite; fixed a "multi-item" boundary
+  test that used one item; replaced a two-point "monotonicity" test with an
+  actual sweep; replaced `Math.random()` in the 1000-case property test
+  with a seeded LCG — an irreproducible failure is a bad look in a project
+  whose whole pitch is reproducible evaluation.
+- `seen_idempotency_keys` and `merchants_transacted` were arrays checked
+  with `.includes()` against lists that grow with ledger history. Switched
+  to `ReadonlySet<string>` — cheap now, and it heads off an O(n) habit
+  before there's real ledger history to make it expensive.
+- `VerifiedMandate.scope.currency` is typed as the literal `"INR"`, so a
+  direct runtime comparison against `"INR"` is dead code by the compiler's
+  own reasoning — TypeScript flags it unreachable. Added the check anyway,
+  widened through an explicit `string`-typed local rather than a cast, as a
+  guard against a mandate arriving from a boundary the type doesn't cover.
+  Reused `AMOUNT_INVALID` instead of adding a new reason code for a
+  one-line defensive check — the enum is closed for a reason, and this
+  didn't clear the bar for widening it.
+- Deleted `subject_id` from `VerifiedMandate`: a real field on the mandate's
+  wire and DB schema, but nothing in `evaluate()` ever read it. An unused
+  field on a policy input is a smell either way — check it or delete it, and
+  there was nothing here to check.
