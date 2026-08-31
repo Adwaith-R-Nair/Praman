@@ -233,3 +233,33 @@ more surface area than shipping one type. Worth it — the leak was a structural
 property of collapsing both audiences into one record, not a mistake at a
 single call site, so nothing short of separating the shapes closes it for
 good.
+
+---
+
+### D-20 · Redaction narrows the probe oracle; a denial-rate cap closes it · Accepted
+
+`redact()` (D-19) stops the agent reading its exact mandate cap off a `detail`
+string. It does not remove the deterministic ALLOW/DENY boundary itself — that
+boundary is still an oracle. A binary search over quantity or amount
+reconstructs the cap in roughly log2(range) probes instead of the two probes
+the original leak allowed. Narrowed, not closed.
+
+**What makes it exploitable today:** `LedgerDerivedState.txn_timestamps`
+counts successful transactions only, so `VELOCITY_EXCEEDED` never fires on a
+denial. Probing a mandate's boundary is currently free and unbounded.
+
+**Rejected:** making denials non-deterministic to defeat the search. `evaluate()`
+being a pure, reproducible function (D-02) is what makes the eval harness
+meaningful; sacrificing that to close this gap would cost more than the gap
+itself.
+
+**What closes it:** a denial-rate cap — past some number of DENYs for a
+mandate within a window, stop answering and escalate to a human, since
+repeated refusals are themselves a signal. `LedgerDerivedState.denied_attempts`
+was added now, while the type is still cheap to change; the cap that reads it
+is Phase 5 work, alongside the other gates.
+
+**Consequence:** stated honestly rather than silently narrowed and left
+looking fixed. A `mandate_evasion` corpus case — an agent that binary-searches
+its cap via repeated probes — is Phase 6 work, and this is the answer to
+"what's in your missing percentage" until the cap ships.
