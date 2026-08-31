@@ -6,7 +6,7 @@ export function evaluate(input: EvaluateInput): Decision {
   const ts = now.getTime();
 
   // 1. Idempotency — cheap, fatal, irreversible.
-  if (state.seen_idempotency_keys.includes(idempotency_key)) {
+  if (state.seen_idempotency_keys.has(idempotency_key)) {
     return {
       kind: "DENY",
       reason_code: "DUPLICATE_INTENT",
@@ -159,7 +159,7 @@ export function evaluate(input: EvaluateInput): Decision {
   }
 
   // 17. First-merchant step-up — merchant not yet transacted under this mandate.
-  if (!state.merchants_transacted.includes(intent.merchant_id)) {
+  if (!state.merchants_transacted.has(intent.merchant_id)) {
     return {
       kind: "STEP_UP",
       amount_paise: amount,

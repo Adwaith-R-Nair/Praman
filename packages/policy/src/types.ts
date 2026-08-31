@@ -44,8 +44,8 @@ export interface LedgerDerivedState {
   readonly spent_paise: Paise;
   readonly txn_timestamps: readonly Date[];   // successful txns, this mandate
   readonly revoked: boolean;
-  readonly merchants_transacted: readonly string[];
-  readonly seen_idempotency_keys: readonly string[];
+  readonly merchants_transacted: ReadonlySet<string>;
+  readonly seen_idempotency_keys: ReadonlySet<string>;
 }
 
 /** Trusted, server-side. Prices come from here — never from the model. */

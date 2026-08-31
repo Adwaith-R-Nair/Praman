@@ -83,8 +83,8 @@ function makeState(overrides: Partial<LedgerDerivedState> = {}): LedgerDerivedSt
     spent_paise: paise(0n),
     txn_timestamps: [],
     revoked: false,
-    merchants_transacted: [],
-    seen_idempotency_keys: [],
+    merchants_transacted: new Set<string>(),
+    seen_idempotency_keys: new Set<string>(),
     ...overrides,
   };
 }
@@ -130,7 +130,7 @@ describe("evaluate", () => {
       const result = evaluate({
         ...makeInput(),
         idempotency_key: "idem_seen",
-        state: makeState({ seen_idempotency_keys: ["idem_seen"] }),
+        state: makeState({ seen_idempotency_keys: new Set(["idem_seen"]) }),
       });
       expect(result).toEqual({
         kind: "DENY",
@@ -466,7 +466,7 @@ describe("evaluate", () => {
         ...makeInput(),
         state: makeState({
           txn_timestamps: timestamps,
-          merchants_transacted: [MERCHANT],
+          merchants_transacted: new Set([MERCHANT]),
         }),
       });
       expect(result).toEqual({
@@ -485,7 +485,7 @@ describe("evaluate", () => {
         ...makeInput(),
         state: makeState({
           txn_timestamps: timestamps,
-          merchants_transacted: [MERCHANT],
+          merchants_transacted: new Set([MERCHANT]),
         }),
       });
       expect(result.kind).not.toBe("DENY");
@@ -524,7 +524,7 @@ describe("evaluate", () => {
       const result = evaluate({
         ...makeInput(),
         catalog,
-        state: makeState({ merchants_transacted: [MERCHANT] }),
+        state: makeState({ merchants_transacted: new Set([MERCHANT]) }),
       });
       expect(result).toEqual({
         kind: "STEP_UP",
@@ -540,7 +540,7 @@ describe("evaluate", () => {
       const result = evaluate({
         ...makeInput(),
         mandate,
-        state: makeState({ merchants_transacted: [MERCHANT] }),
+        state: makeState({ merchants_transacted: new Set([MERCHANT]) }),
       });
       expect(result).toEqual({
         kind: "STEP_UP",
@@ -557,7 +557,7 @@ describe("evaluate", () => {
         ...makeInput(),
         state: makeState({
           spent_paise: paise(100000n),
-          merchants_transacted: [MERCHANT],
+          merchants_transacted: new Set([MERCHANT]),
         }),
       });
       expect(result).toEqual({
@@ -590,7 +590,7 @@ describe("evaluate", () => {
         ...makeInput(),
         mandate,
         catalog,
-        state: makeState({ merchants_transacted: [MERCHANT] }),
+        state: makeState({ merchants_transacted: new Set([MERCHANT]) }),
       });
       expect(result).toEqual({
         kind: "ALLOW",
@@ -610,7 +610,7 @@ describe("evaluate", () => {
         ...makeInput(),
         state: makeState({
           txn_timestamps: [edgeTime, edgeTime, edgeTime, edgeTime, edgeTime],
-          merchants_transacted: [MERCHANT],
+          merchants_transacted: new Set([MERCHANT]),
         }),
       });
       // 0 txns inside the window (< 3600000ms), so velocity passes
@@ -625,7 +625,7 @@ describe("evaluate", () => {
         ...makeInput(),
         state: makeState({
           txn_timestamps: [outside, outside, outside, outside, inside],
-          merchants_transacted: [MERCHANT],
+          merchants_transacted: new Set([MERCHANT]),
         }),
       });
       expect(result.kind).not.toBe("DENY");
@@ -670,7 +670,7 @@ describe("evaluate", () => {
           ],
         }),
         catalog,
-        state: makeState({ merchants_transacted: [MERCHANT] }),
+        state: makeState({ merchants_transacted: new Set([MERCHANT]) }),
       });
       expect(result).toEqual({
         kind: "DENY",
@@ -760,7 +760,7 @@ describe("evaluate", () => {
       const result = evaluate({
         ...makeInput(),
         now: new Date("2026-08-29T00:00:01Z"),
-        state: makeState({ merchants_transacted: [MERCHANT] }),
+        state: makeState({ merchants_transacted: new Set([MERCHANT]) }),
       });
       expect(result).toEqual({
         kind: "DENY",
@@ -867,7 +867,7 @@ describe("evaluate", () => {
           }),
           state: makeState({
             spent_paise: paise(spent),
-            merchants_transacted: [transactedMerchant],
+            merchants_transacted: new Set([transactedMerchant]),
             txn_timestamps: Array.from({ length: numPastTxns }, (_, j) =>
               new Date(NOW.getTime() - j * 60000),
             ),
