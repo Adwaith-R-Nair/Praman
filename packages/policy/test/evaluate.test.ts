@@ -17,6 +17,29 @@ const NOW = new Date("2026-08-28T12:00:00Z");
 const NOT_BEFORE = new Date("2026-08-28T00:00:00Z");
 const NOT_AFTER = new Date("2026-08-29T00:00:00Z");
 
+/** Seeded LCG in [0, 1) — deterministic stand-in for Math.random(). */
+function makeRng(seed: number): () => number {
+  let s = seed;
+  return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+}
+
+/** Recursively freezes an object graph, including Map values. */
+function deepFreeze<T>(value: T): T {
+  if (value instanceof Map) {
+    for (const v of value.values()) deepFreeze(v);
+    return Object.freeze(value);
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) deepFreeze(v);
+    return Object.freeze(value) as T;
+  }
+  if (value !== null && typeof value === "object" && !(value instanceof Date)) {
+    for (const v of Object.values(value)) deepFreeze(v);
+    return Object.freeze(value);
+  }
+  return value;
+}
+
 function makeMandate(overrides: Partial<VerifiedMandate> = {}): VerifiedMandate {
   return {
     mandate_id: "mnd_01",
@@ -791,19 +814,22 @@ describe("evaluate", () => {
     });
 
     it("1000 random inputs never throw", () => {
+      // Seeded LCG, not Math.random() — a failure on a given iteration must
+      // be reproducible by re-running with the same seed.
+      const rand = makeRng(42);
+
       for (let i = 0; i < 1000; i++) {
-        const qty = Math.floor(Math.random() * 10) + 1;
-        const stock = qty + Math.floor(Math.random() * 10);
-        const price = BigInt(Math.floor(Math.random() * 100000) + 1);
-        const maxPerTxn = BigInt(Math.floor(Math.random() * 200000) + 1);
-        const maxTotal = maxPerTxn + BigInt(Math.floor(Math.random() * 200000));
-        const spent = BigInt(Math.floor(Math.random() * Number(maxTotal)));
-        const windowSec = Math.floor(Math.random() * 7200) + 1;
-        const maxTxns = Math.floor(Math.random() * 10) + 1;
-        const threshold = BigInt(Math.floor(Math.random() * 200000) + 1);
-        const numPastTxns = Math.floor(Math.random() * 10);
-        const transactedMerchant =
-          Math.random() > 0.5 ? MERCHANT : OTHER_MERCHANT;
+        const qty = Math.floor(rand() * 10) + 1;
+        const stock = qty + Math.floor(rand() * 10);
+        const price = BigInt(Math.floor(rand() * 100000) + 1);
+        const maxPerTxn = BigInt(Math.floor(rand() * 200000) + 1);
+        const maxTotal = maxPerTxn + BigInt(Math.floor(rand() * 200000));
+        const spent = BigInt(Math.floor(rand() * Number(maxTotal)));
+        const windowSec = Math.floor(rand() * 7200) + 1;
+        const maxTxns = Math.floor(rand() * 10) + 1;
+        const threshold = BigInt(Math.floor(rand() * 200000) + 1);
+        const numPastTxns = Math.floor(rand() * 10);
+        const transactedMerchant = rand() > 0.5 ? MERCHANT : OTHER_MERCHANT;
 
         const input: EvaluateInput = {
           intent: {
@@ -849,6 +875,11 @@ describe("evaluate", () => {
 
         expect(() => evaluate(input)).not.toThrow();
       }
+    });
+
+    it("does not mutate its inputs", () => {
+      const input = deepFreeze(makeInput());
+      expect(() => evaluate(input)).not.toThrow();
     });
   });
 });
