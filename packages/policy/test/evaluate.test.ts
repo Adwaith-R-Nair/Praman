@@ -808,22 +808,25 @@ describe("evaluate", () => {
       expect(a).toEqual(b);
     });
 
-    it("if budget-denied, an identical intent is never allowed at higher spend", () => {
-      // First: denied because spent + amount > max_total
-      const inputHighSpend: EvaluateInput = {
-        ...makeInput(),
-        state: makeState({ spent_paise: paise(495000n) }),
-      };
-      const denied = evaluate(inputHighSpend);
-      expect(denied.kind).toBe("DENY");
+    it("budget denial is monotonic across a sweep of increasing spend", () => {
+      // Default mandate: max_total_paise = 500000n. Default intent resolves
+      // to amount = 10000n (SKU price 10000 * qty 1). Denial begins the
+      // first paise past (max_total - amount); once true, it must stay true
+      // for every higher spend — a real sweep, not two spot checks.
+      const maxTotal = 500000n;
+      const amount = 10000n;
+      const denialStarts = maxTotal - amount + 1n;
 
-      // Second: at higher spend, same intent should still be denied
-      const inputEvenHigher: EvaluateInput = {
-        ...makeInput(),
-        state: makeState({ spent_paise: paise(496000n) }),
-      };
-      const deniedAgain = evaluate(inputEvenHigher);
-      expect(deniedAgain.kind).toBe("DENY");
+      for (let spend = denialStarts; spend <= denialStarts + 100000n; spend += 5000n) {
+        const result = evaluate({
+          ...makeInput(),
+          state: makeState({ spent_paise: paise(spend) }),
+        });
+        expect(result).toMatchObject({
+          kind: "DENY",
+          reason_code: "MANDATE_BUDGET_EXHAUSTED",
+        });
+      }
     });
 
     it("1000 random inputs never throw", () => {
