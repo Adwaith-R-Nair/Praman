@@ -20,6 +20,9 @@ build/
 *.sqlite3
 prisma/dev.db*
 
+# generated prisma client
+packages/db/src/generated/
+
 # test & coverage
 coverage/
 .nyc_output/

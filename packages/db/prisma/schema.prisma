@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model LedgerEntry {
+  seq         BigInt   @id @default(autoincrement())
+  traceId     String   @map("trace_id")
+  ts          DateTime @db.Timestamptz(3)
+  actor       String
+  eventType   String   @map("event_type")
+  payload     Json
+  payloadHash String   @map("payload_hash") @db.Char(64)
+  prevHash    String   @map("prev_hash")    @db.Char(64)
+  entryHash   String   @unique @map("entry_hash") @db.Char(64)
+
+  @@index([traceId, seq])
+  @@map("ledger_entry")
+}
+
+model Mandate {
+  mandateId String   @id @map("mandate_id")
+  version   Int
+  issuerId  String   @map("issuer_id")
+  subjectId String   @map("subject_id")
+  document  Json
+  signature String
+  keyId     String   @map("key_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("mandate")
+}
+
+model CatalogItem {
+  merchantId  String @map("merchant_id")
+  sku         String
+  title       String
+  description String
+  category    String
+  pricePaise  BigInt @map("price_paise")
+  stockQty    Int    @map("stock_qty")
+
+  @@id([merchantId, sku])
+  @@map("catalog_item")
+}
+
+model IdempotencyRecord {
+  key       String   @id @db.Char(64)
+  traceId   String   @map("trace_id")
+  outcome   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("idempotency_record")
+}
+
+model Approval {
+  approvalId  String    @id @map("approval_id")
+  traceId     String    @map("trace_id")
+  mandateId   String    @map("mandate_id")
+  intent      Json
+  amountPaise BigInt    @map("amount_paise")
+  status      String
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz(3)
+
+  @@map("approval")
+}
