@@ -263,3 +263,37 @@ is Phase 5 work, alongside the other gates.
 looking fixed. A `mandate_evasion` corpus case — an agent that binary-searches
 its cap via repeated probes — is Phase 6 work, and this is the answer to
 "what's in your missing percentage" until the cap ships.
+
+---
+
+### D-21 · Prisma for schema and typed access; raw SQL at the money path · Accepted
+
+`@praman/db` owns the Prisma schema, migrations, and the generated client.
+`packages/ledger` reads and writes through Prisma for everything an ORM can
+express — but three things it structurally cannot, and don't go through it:
+the per-mandate advisory lock (`pg_advisory_xact_lock`, D-05), the ledger's
+append-only enforcement (the raising triggers, not a Prisma-level rule), and
+the hash-chain traversal query. Those are raw SQL via `$queryRaw`/`$executeRaw`.
+
+**Considered and rejected: no ORM, raw `pg` throughout.** Prisma is what Node
+payment backends actually use in practice, migration history as versioned SQL
+files is a genuinely better audit trail than hand-run scripts, and a typed
+client over `payload: Json` catches a class of mistake raw `pg` won't. Discarding
+it over three call sites it can't reach would be throwing away the 90% it does
+well to avoid the 10% it doesn't.
+
+**Considered and rejected: force everything through Prisma anyway.** An ORM
+that cannot express `pg_advisory_xact_lock`, a `BEFORE UPDATE OR DELETE`
+trigger, or a recursive chain-walk shouldn't be asked to fake it through
+application-level workarounds — that trades a database-enforced guarantee for
+an application-level convention, which is exactly the gap D-04 chose Postgres
+to close.
+
+**Consequence:** two query paths into the same database, which is real
+surface area — a reviewer could ask why `ledger.ts` doesn't just use
+`prisma.$transaction` throughout. The answer is that every ledger function
+takes `PrismaTx` — the transaction-scoped client type — as a parameter and
+never opens its own transaction, per the invariant that a ledger write and
+the action it records commit together. `$queryRaw`/`$executeRaw` run against
+that same `PrismaTx`, so the three raw-SQL call sites are still inside the
+one transaction boundary, not a separate connection working around it.
