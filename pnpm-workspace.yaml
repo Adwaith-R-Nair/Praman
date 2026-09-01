@@ -3,3 +3,14 @@ packages:
   - "apps/*"
 allowBuilds:
   esbuild: true
+  # @prisma/engines' postinstall fetches the native query/schema-engine
+  # binaries; without it `prisma generate`/`migrate` cannot talk to
+  # Postgres at all. Required functionality, same as esbuild above.
+  '@prisma/engines': true
+  prisma: true
+  # Transitive prisma deps. msgpackr-extract is a native msgpack accelerator
+  # (JS fallback works fine); workerd is Cloudflare's Workers runtime, for
+  # Prisma's edge/D1 adapters — we use @prisma/adapter-pg against local
+  # Postgres, so neither's postinstall script does anything we need.
+  msgpackr-extract: false
+  workerd: false
