@@ -27,8 +27,14 @@ export function mulPaise(unit: Paise, qty: number): Paise {
   return paise(unit * BigInt(qty));
 }
 
-/** Display only. Never parse this back. */
+/**
+ * Display only. Never parse this back.
+ * Rejects negative values: the brand is erased at compile time, so a value
+ * that reached this function via a cast rather than `paise()` would
+ * otherwise render as a plausible-looking, silently wrong amount.
+ */
 export function formatINR(value: Paise): string {
+  if (value < 0n) throw new RangeError(`Negative Paise reached formatINR: ${value}`);
   const rupees = value / 100n;
   const fraction = value % 100n;
   return `₹${rupees.toString()}.${fraction.toString().padStart(2, "0")}`;
