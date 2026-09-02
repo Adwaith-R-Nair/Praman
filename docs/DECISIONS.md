@@ -199,14 +199,28 @@ new unvalidated boundary in order to fix a problem caused by unvalidated
 boundaries. It does not remove the class of risk, it relocates it.
 
 **What was done instead.** Amounts enter Praman from exactly four enumerable
-boundaries — HTTP JSON bodies, Postgres rows, Razorpay API responses, and
-catalog price lookups — each with an explicit runtime check. `paiseFromJSON`
-validates with a strict pattern rather than trusting `BigInt` coercion, and CI
-greps for `as Paise` casts outside `money.ts`. A class wrapper (`class Paise {
-constructor(readonly value: bigint) {} }`) would also survive erasure without
-leaving TypeScript, and was rejected for the same cost/benefit reason: object
-allocation per amount and rehydration through every ORM and clone boundary,
-to guard four already-guarded entry points.
+boundaries, each of which requires an explicit runtime conversion through
+`paise()`. Identifying the boundaries and guarding them are separate claims;
+status as of Phase 2:
+
+| Boundary | Guard | Status |
+|---|---|---|
+| HTTP JSON bodies | `paiseFromJSON()` | implemented |
+| Postgres rows (`BigInt`) | hydration in `packages/db` | pending — Phase 3 |
+| Razorpay API responses | hydration in `packages/razorpay-exec` | pending — Phase 3 |
+| Catalog price lookup | hydration in `packages/db` | pending — Phase 3 |
+
+Only the first is complete today; the packages that would own the other
+three do not exist yet, so there is nothing to guard until they're built.
+`paiseFromJSON` validates with a strict pattern rather than trusting `BigInt`
+coercion, and CI greps for `as Paise` casts outside `money.ts` — currently
+the only one found is the sanctioned cast inside `paise()` itself. This
+table is updated as each remaining boundary lands. A class wrapper (`class
+Paise { constructor(readonly value: bigint) {} }`) would also survive
+erasure without leaving TypeScript, and was rejected for the same
+cost/benefit reason: object allocation per amount and rehydration through
+every ORM and clone boundary, to guard entry points that already collapse
+to a single validation call each.
 
 **Deferred, not dismissed.** A Rust policy core with nominal newtypes is first
 on the post-submission roadmap. The compile-time-only nature of the brand is a
