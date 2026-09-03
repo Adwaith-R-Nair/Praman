@@ -248,6 +248,12 @@ importers:
         specifier: 7.10.0
         version: 7.10.0(prisma@7.10.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@7.0.2))(typescript@7.0.2)
 
+  packages/ledger:
+    dependencies:
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../shared
+
   packages/policy:
     dependencies:
       '@praman/shared':
