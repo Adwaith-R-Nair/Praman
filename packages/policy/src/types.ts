@@ -1,4 +1,6 @@
-import type { Paise, StepUpCode, DenyCode } from "@praman/shared";
+import type { Paise, StepUpCode, DenyCode, LedgerDerivedState } from "@praman/shared";
+
+export type { LedgerDerivedState };
 
 /** What the agent proposes. Note: no price field. See D-01. */
 export interface PurchaseIntent {
@@ -36,22 +38,6 @@ export interface VerifiedMandate {
     readonly not_before: Date;
     readonly not_after: Date;
   };
-}
-
-/** Derived by replaying the ledger. Never stored on the mandate. See D-03. */
-export interface LedgerDerivedState {
-  readonly spent_paise: Paise;
-  readonly txn_timestamps: readonly Date[];   // successful txns, this mandate
-  readonly revoked: boolean;
-  readonly merchants_transacted: ReadonlySet<string>;
-  readonly seen_idempotency_keys: ReadonlySet<string>;
-  /**
-   * DENY outcomes, this mandate. Not yet read by evaluate() — denials cost
-   * nothing today, which makes the ALLOW/DENY boundary a free oracle for a
-   * probing agent. A future denial-rate cap reads this field to close that
-   * gap. See D-20.
-   */
-  readonly denied_attempts: readonly Date[];
 }
 
 /** Trusted, server-side. Prices come from here — never from the model. */
