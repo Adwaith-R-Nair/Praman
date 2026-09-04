@@ -311,3 +311,96 @@ never opens its own transaction, per the invariant that a ledger write and
 the action it records commit together. `$queryRaw`/`$executeRaw` run against
 that same `PrismaTx`, so the three raw-SQL call sites are still inside the
 one transaction boundary, not a separate connection working around it.
+
+---
+
+### D-22 · Two-phase execution with an outbox record, not a single transaction · Accepted
+
+**Supersedes** the single-transaction execution described in earlier
+revisions of `HLD.md` and `INVARIANTS.md` invariant 5, which is unachievable
+as stated.
+
+**What forced this.** Empirical testing of Razorpay's test-mode API showed two
+things its documentation does not: `receipt` is *not* enforced as unique —
+two orders created back to back with an identical receipt returned two
+distinct order IDs, no error — and order lookup by receipt (`GET
+/orders?receipt=...`) lags creation by anywhere from a few seconds to over
+fifteen, measured directly. A direct fetch by order ID, by contrast, was
+consistent every time. The original single-transaction design wrapped the
+Razorpay call inside the Postgres transaction and relied on "the next
+reconcile will find any orphan." Neither half of that holds: a retry landing
+inside the propagation window would find nothing and create a duplicate order.
+
+**The underlying problem** is the dual-write problem: a database transaction
+and an external API call cannot be made atomic, because no protocol exists
+between them. Any design claiming otherwise is claiming something impossible.
+
+**What is achievable, and is now guaranteed:** no external call is made
+without a durable, committed record that it was about to be made.
+
+- **T1** — under the per-mandate advisory lock: check our own idempotency
+  record first (immune to Razorpay's propagation lag — it's a row in the same
+  transaction, not a search index), verify the mandate, derive state, evaluate,
+  append `intent` and `decision`. On `ALLOW`, write a `pending` idempotency
+  record carrying the receipt and amount, append an `api_call` marked
+  `attempted`, and commit.
+- **The call** — outside any transaction, necessarily.
+- **T2** — append `outcome`, resolve the record to `succeeded` or `failed`.
+
+An orphaned order is therefore always accompanied by a row naming its receipt
+and amount. Unknown unknowns become known unknowns.
+
+**A bug this design caught before it shipped, not after.** The reconciler's
+first draft built its `outcome` event payload without `mandate_id` or
+`merchant_id`. `deriveState` filters ledger rows by
+`payload->>'mandate_id' = ${mandateId}` — an outcome event missing that key
+is invisible to *every* future `deriveState` call, for *every* mandate. A
+reconciled captured payment would have silently never counted against its
+mandate's budget cap: the exact kind of gap that lets a mandate spend past
+its limit while the system believes it hasn't. Caught by re-deriving the
+outcome payload's required fields from the `intent` ledger event (already
+durable from T1, carries both) rather than trusting the pending record alone,
+which doesn't store either field. A second, smaller bug in the same draft
+mirrored the idempotency record's `succeeded`/`failed` status off whether an
+order was *found* at all, not off the found order's own status — a declined
+payment located during reconciliation would have been recorded as
+`succeeded`. Both fixed before commit, both covered by
+`reconcile.test.ts`'s assertion that the reconciled outcome event carries the
+correct `mandate_id`.
+
+**A second, unrelated hazard surfaced by the same verification pass.** The
+ledger's integration tests `TRUNCATE ledger_entry` between runs — correct for
+test isolation, but pointed at the same `DATABASE_URL` as everything else,
+which means `pnpm test` was silently destroying real accumulated demo data
+the day before submission. Fixed by giving tests their own
+`TEST_DATABASE_URL` (separate database, migrated independently,
+`vitest.config.ts` injects it for the test process only) and truncating
+`ledger_entry` and `idempotency_record` together, so no idempotency row can
+outlive the ledger entries it refers to.
+
+**Rejected: client-supplied idempotency at the gateway.** Razorpay does not
+dedupe by receipt, so there is nothing to lean on there.
+
+**Rejected: cancelling the order as a compensating action.** A saga's
+compensation is itself a network call with the same failure mode. It moves
+the problem rather than removing it.
+
+**Residual gaps, stated rather than hidden:**
+1. Reconciliation refuses to act on records younger than 60 seconds
+   (`RECONCILE_MIN_AGE_MS`), because within the propagation window a lookup
+   returns nothing for an order that exists and a retry would double-charge.
+   Correctness is bought with latency.
+2. Between T1 and T2 the ledger records an attempt but no outcome, so
+   `deriveState` does not count it as spend. A concurrent intent under the
+   same mandate can therefore evaluate against a slightly understated budget.
+   The window is one API call wide. Closing it means treating unresolved
+   `api_call` entries as reserved spend — correct, and deferred.
+3. A crash between the Razorpay call returning and T2 committing leaves a
+   pending record; the reconciler resolves it, but the order exists
+   unrecorded until it runs.
+4. The reconciler does not hold the per-mandate advisory lock T1/T2 use,
+   because `idempotency_record` doesn't store `mandate_id` (only the ledger's
+   `intent` event does, requiring a lookup either way). The actual risk is
+   low — `deriveState` already doesn't count in-flight spend per gap 2 above
+   — but it's an inconsistency with the pattern used everywhere else, named
+   rather than silently matched or silently skipped.
