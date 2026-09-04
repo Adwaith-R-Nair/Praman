@@ -45,6 +45,13 @@ export async function runIntent(
   publicKeyPem: string,
   executor: Executor,
   now: Date,
+  /**
+   * Which model proposed this intent. Not part of PurchaseIntent itself —
+   * evaluate() doesn't care which model produced a proposal, only what it
+   * contains. Provenance is orchestration metadata, recorded on the ledger's
+   * `intent` event so a result is never separable from the model that made it.
+   */
+  modelId: string,
 ): Promise<RunResult> {
   const traceId = `trc_${intent.intent_id}`;
 
@@ -120,7 +127,7 @@ export async function runIntent(
       ts: now,
       actor: "agent",
       eventType: "intent",
-      payload: { ...intent, mandate_id: mandate.mandate_id, idempotency_key: key },
+      payload: { ...intent, mandate_id: mandate.mandate_id, idempotency_key: key, model_id: modelId },
     });
 
     const decision = evaluate({ intent, mandate, state, catalog, now, idempotency_key: key });

@@ -92,8 +92,8 @@ describe("runIntent never issues a second razorpay call for a duplicate intent",
     const executor = new CountingExecutor(new SimulatedExecutor());
     const now = new Date();
 
-    const first = await runIntent(intent, signed, publicKeyPem, executor, now);
-    const second = await runIntent(intent, signed, publicKeyPem, executor, now);
+    const first = await runIntent(intent, signed, publicKeyPem, executor, now, "test-model");
+    const second = await runIntent(intent, signed, publicKeyPem, executor, now, "test-model");
 
     expect(executor.callCount).toBe(1);
     expect(first.kind).toBe("DECIDED");
@@ -136,11 +136,11 @@ describe("runIntent never issues a second razorpay call for a duplicate intent",
     const now = new Date();
 
     // Fire call 1 but don't await it — it hangs inside createOrder.
-    void runIntent(intent, signed, publicKeyPem, executor, now);
+    void runIntent(intent, signed, publicKeyPem, executor, now, "test-model");
     // Give T1 time to commit its "pending" record before call 2 starts.
     await new Promise((r) => setTimeout(r, 200));
 
-    const second = await runIntent(intent, signed, publicKeyPem, executor, now);
+    const second = await runIntent(intent, signed, publicKeyPem, executor, now, "test-model");
 
     expect(executor.callCount).toBe(1);
     expect(second.kind).toBe("IN_FLIGHT");

@@ -105,7 +105,7 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
     // the wrong clock entirely.
     const now = new Date();
 
-    const result = await runIntent(intent, signed, publicKeyPem, crashy, now);
+    const result = await runIntent(intent, signed, publicKeyPem, crashy, now, "test-model");
     expect(result.kind).toBe("IN_FLIGHT");
 
     const traceId = `trc_${intent.intent_id}`;
@@ -159,7 +159,7 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
     const crashy = new CrashAfterSuccessExecutor(inner);
     const now = new Date();
 
-    await runIntent(intent, signed, publicKeyPem, crashy, now);
+    await runIntent(intent, signed, publicKeyPem, crashy, now, "test-model");
 
     // createdAt (stamped by Postgres just now) is only milliseconds old —
     // well within the propagation-lag window. Must not resolve yet.
