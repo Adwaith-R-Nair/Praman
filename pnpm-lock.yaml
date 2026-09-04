@@ -248,6 +248,18 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
+  apps/buyer-agent:
+    dependencies:
+      '@praman/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+      '@praman/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+
   packages/agent-core:
     dependencies:
       '@anthropic-ai/sdk':
