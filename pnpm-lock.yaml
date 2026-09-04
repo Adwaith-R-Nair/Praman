@@ -266,6 +266,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
+  packages/mandate:
+    dependencies:
+      '@praman/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../shared
+
   packages/policy:
     dependencies:
       '@praman/shared':

@@ -1,0 +1,12 @@
+{
+  "name": "@praman/mandate",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@praman/policy": "workspace:*",
+    "@praman/shared": "workspace:*"
+  }
+}
