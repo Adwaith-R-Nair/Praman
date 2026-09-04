@@ -104,6 +104,8 @@ export interface SeededCase {
   readonly signed: SignedMandate;
   readonly publicKeyPem: string;
   readonly now: Date;
+  /** The primary catalog fixture's merchant_id — Layer 2 needs it to call runAgent. */
+  readonly merchantId: string;
 }
 
 /** Resets the DB, seeds the case's catalog and prior ledger history, signs its mandate fixture fresh. */
@@ -139,8 +141,8 @@ export async function seedCase(c: Layer1Case | Layer2Case): Promise<SeededCase> 
   // one actually used to sign, so verifyMandate fails at the source.
   if (c.layer === 1 && c.tamper === "wrong_key") {
     const wrongKeypair = generateKeypair();
-    return { signed, publicKeyPem: wrongKeypair.publicKeyPem, now };
+    return { signed, publicKeyPem: wrongKeypair.publicKeyPem, now, merchantId: catalog.merchant_id };
   }
 
-  return { signed, publicKeyPem, now };
+  return { signed, publicKeyPem, now, merchantId: catalog.merchant_id };
 }
