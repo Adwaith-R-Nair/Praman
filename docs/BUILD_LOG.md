@@ -597,3 +597,31 @@ implied.
   (a pass for the wrong reason would be reported, not hidden — see
   `runner.ts`'s `incidental` field). Full `vitest` suite (143 tests) still
   green after the `run-intent.ts` fix.
+- The `canonical()` crash is the same "validate before compute" ordering bug
+  as the three fail-open instances found earlier, just facing the other
+  direction. Fail-open: a missing or malformed field reads as "no limit"
+  because a comparison against `undefined`/`NaN` is silently `false`.
+  Fail-loud: an unvalidated intent reaches a function built to throw on bad
+  input, before the check that was supposed to catch it first. Both are the
+  same root cause — a value used before it's validated — landing on
+  opposite failure modes. The fix is the same principle either way: the
+  money path returns a `Decision`, never an exception, and every input gets
+  checked before anything downstream trusts its shape.
+- The held-out split (`sha256(case_id)`, target 30%) lands at 16/32 (50%) on
+  this corpus — verified unbiased over 100k synthetic ids (29.92%), so this
+  is sampling variance at n=32, not a defect. Not re-salted after seeing the
+  result: choosing a split by its own outcome defeats the reason for
+  committing it before any tuning. Stratifying by family would reduce this
+  variance and is roadmap work, not tonight's work — the decision was
+  already made once results were visible, so revisiting it now would be
+  post-hoc regardless of how principled the justification sounds.
+- All 32 cases passed on the first run, zero failures. That is not evidence
+  the corpus is hard — it's expected, since the corpus was authored from the
+  same spec (`MANDATE_SPEC.md`) that the policy engine was built to. A
+  perfect score here measures that the implementation matches its own
+  specification (real regression value) but is weak evidence against attacks
+  the spec didn't anticipate, because no case has yet been observed to fail.
+  The discriminating power of Layer 1 is untested. Layer 2 — prompt
+  injection against the live model, which nobody here authored — is where
+  a genuine, not-designed-in-advance finding can actually come from, and is
+  the priority for the remaining time before README/diagrams/video.
