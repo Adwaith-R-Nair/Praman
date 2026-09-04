@@ -2,24 +2,42 @@ import { prisma, loadCatalogSnapshot } from "@praman/db";
 import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, redact, type PurchaseIntent, type AgentVisibleDecision } from "@praman/policy";
 import { verifyMandate, type SignedMandate } from "@praman/mandate";
-import { idempotencyKey, receiptFor, type Executor } from "@praman/razorpay-exec";
+import { idempotencyKey, receiptFor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
 import { paiseFromDb, paiseToJSON } from "@praman/shared";
 
 const MANDATE_LOCK_NS = 42;
+/** Below this age, findByReceipt may not yet see a just-created order. See D-22. */
+export const RECONCILE_MIN_AGE_MS = 60_000;
 
-export interface RunResult {
-  readonly trace_id: string;
-  readonly agent_visible: AgentVisibleDecision;
-  readonly internal_reason_code: string;
-  readonly order_id: string | null;
+export type RunResult =
+  | {
+      readonly kind: "DECIDED";
+      readonly trace_id: string;
+      readonly agent_visible: AgentVisibleDecision;
+      readonly internal_reason_code: string;
+      readonly order_id: string | null;
+    }
+  | {
+      readonly kind: "IN_FLIGHT";
+      readonly trace_id: string;
+      readonly key: string;
+      readonly detail: string;
+    };
+
+/** Reads a settled idempotency record's cached order id out of its JSON outcome. */
+function cachedOrderId(outcome: unknown, key: string): string {
+  if (outcome === null || typeof outcome !== "object" || !("order_id" in outcome)) {
+    throw new TypeError(`idempotency record ${key} is succeeded but its outcome has no order_id`);
+  }
+  return String((outcome as { order_id: unknown }).order_id);
 }
 
 /**
- * NOTE: still wraps the Razorpay call inside the same transaction as
- * everything else — that's the dual-write problem D-22 names, and this
- * commit only closes the "ordinary repeated retry" case via the idempotency
- * short-circuit below. The orphaned-order-after-rollback case is real and
- * unresolved here; the next commit restructures into two phases to fix it.
+ * Two phases with the external call between them, not one transaction around
+ * it. A database transaction and a call to Razorpay cannot be made atomic —
+ * there is no protocol between them (the dual-write problem). What's
+ * achievable instead: no external call is ever made without a durable,
+ * committed record that it was about to be made. See D-22.
  */
 export async function runIntent(
   intent: PurchaseIntent,
@@ -30,10 +48,10 @@ export async function runIntent(
 ): Promise<RunResult> {
   const traceId = `trc_${intent.intent_id}`;
 
-  return prisma.$transaction(async (tx) => {
+  // ── T1: decide, and durably record the intent to call, before calling ──
+  const phase1 = await prisma.$transaction(async (tx) => {
     // Serialise evaluation-and-execution per mandate. Two concurrent identical
-    // intents would otherwise both read spend before either wrote it. The lock
-    // makes the second wait and observe committed state. See D-05.
+    // intents would otherwise both read spend before either wrote it. See D-05.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${intent.mandate_id}))`;
 
     const verified = verifyMandate(signed, publicKeyPem);
@@ -47,31 +65,48 @@ export async function runIntent(
         payload: { mandate_id: intent.mandate_id, kind: "DENY", reason_code: decision.reason_code, detail: decision.detail },
       });
       return {
-        trace_id: traceId,
-        agent_visible: redact(decision),
-        internal_reason_code: decision.reason_code,
-        order_id: null,
+        go: false as const,
+        result: {
+          kind: "DECIDED" as const,
+          trace_id: traceId,
+          agent_visible: redact(decision),
+          internal_reason_code: decision.reason_code,
+          order_id: null,
+        },
       };
     }
 
     const mandate = verified.mandate;
     const key = idempotencyKey(mandate.mandate_id, intent);
 
-    // Short-circuit on our OWN record before touching evaluate() or the
-    // executor again — immune to Razorpay's propagation lag (see D-22's
-    // findByReceipt investigation), since this is our own row read inside the
-    // same transaction we already hold the mandate lock in.
+    // Short-circuit on our OWN record — immune to Razorpay's propagation lag,
+    // because it is a row in the same transaction we are already inside.
     const prior = await tx.idempotencyRecord.findUnique({ where: { key } });
     if (prior?.status === "succeeded") {
       if (prior.amountPaise === null) {
         throw new TypeError(`idempotency record ${key} is succeeded but has no amount_paise`);
       }
-      const cached = prior.outcome as { order_id: string; status: string };
       return {
-        trace_id: prior.traceId,
-        agent_visible: { kind: "ALLOW", amount_paise: paiseFromDb(prior.amountPaise) },
-        internal_reason_code: "OK",
-        order_id: cached.order_id,
+        go: false as const,
+        result: {
+          kind: "DECIDED" as const,
+          trace_id: prior.traceId,
+          agent_visible: { kind: "ALLOW" as const, amount_paise: paiseFromDb(prior.amountPaise) },
+          internal_reason_code: "OK",
+          order_id: cachedOrderId(prior.outcome, key),
+        },
+      };
+    }
+    if (prior?.status === "pending") {
+      // A call for this exact cart is unresolved. Do NOT call again.
+      return {
+        go: false as const,
+        result: {
+          kind: "IN_FLIGHT" as const,
+          trace_id: prior.traceId,
+          key,
+          detail: "a call for this intent is unresolved; run reconcile",
+        },
       };
     }
 
@@ -99,27 +134,31 @@ export async function runIntent(
         mandate_id: mandate.mandate_id,
         kind: decision.kind,
         reason_code: decision.reason_code,
-        ...(decision.kind !== "DENY" ? { amount_paise: paiseToJSON(decision.amount_paise) } : { detail: decision.detail }),
+        ...(decision.kind === "DENY" ? { detail: decision.detail } : { amount_paise: paiseToJSON(decision.amount_paise) }),
       },
     });
 
     if (decision.kind !== "ALLOW") {
       await maybeCheckpoint(tx, now);
       return {
-        trace_id: traceId,
-        agent_visible: redact(decision),
-        internal_reason_code: decision.reason_code,
-        order_id: null,
+        go: false as const,
+        result: {
+          kind: "DECIDED" as const,
+          trace_id: traceId,
+          agent_visible: redact(decision),
+          internal_reason_code: decision.reason_code,
+          order_id: null,
+        },
       };
     }
 
     const receipt = receiptFor(key);
 
-    // Reconcile before executing. After a prior timeout we cannot know whether
-    // the order was created — asking is the only safe move.
-    const existing = await executor.findByReceipt(receipt);
-    const outcome = existing ?? (await executor.createOrder(decision.amount_paise, receipt));
-
+    // The outbox row. Committed BEFORE any external call, so an orphaned
+    // order is always accompanied by a record naming its receipt and amount.
+    await tx.idempotencyRecord.create({
+      data: { key, traceId, status: "pending", receipt, amountPaise: decision.amount_paise, outcome: {} },
+    });
     await append(tx, {
       traceId,
       ts: now,
@@ -128,44 +167,73 @@ export async function runIntent(
       payload: {
         mandate_id: mandate.mandate_id,
         provider: "razorpay",
-        operation: existing ? "reconciled" : "orders.create",
+        operation: "orders.create",
         receipt,
+        amount_paise: paiseToJSON(decision.amount_paise),
+        status: "attempted",
       },
     });
 
+    return {
+      go: true as const,
+      key,
+      receipt,
+      mandateId: mandate.mandate_id,
+      amount: decision.amount_paise,
+      decision,
+    };
+  });
+
+  if (!phase1.go) return phase1.result;
+
+  // ── The external call. Outside any transaction, by necessity. ──
+  let outcome: ExecOutcome;
+  try {
+    outcome = await executor.createOrder(phase1.amount, phase1.receipt);
+  } catch (err) {
+    // We do NOT know whether the order was created. Leave the record pending.
+    return {
+      kind: "IN_FLIGHT",
+      trace_id: traceId,
+      key: phase1.key,
+      detail: `call failed with unknown outcome: ${String(err)}`,
+    };
+  }
+
+  // ── T2: record the outcome ──
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${phase1.mandateId}))`;
     await append(tx, {
       traceId,
       ts: now,
       actor: "praman",
       eventType: "outcome",
       payload: {
-        mandate_id: mandate.mandate_id,
+        mandate_id: phase1.mandateId,
         status: outcome.status,
         order_id: outcome.order_id,
         payment_id: outcome.payment_id,
         amount_paise: paiseToJSON(outcome.amount_paise),
         merchant_id: intent.merchant_id,
-        idempotency_key: key,
+        idempotency_key: phase1.key,
       },
     });
-
-    await tx.idempotencyRecord.create({
+    await tx.idempotencyRecord.update({
+      where: { key: phase1.key },
       data: {
-        key,
-        traceId,
         status: outcome.status === "failed" ? "failed" : "succeeded",
-        receipt,
-        amountPaise: decision.amount_paise,
         outcome: { order_id: outcome.order_id, status: outcome.status },
+        updatedAt: new Date(),
       },
     });
     await maybeCheckpoint(tx, now);
-
-    return {
-      trace_id: traceId,
-      agent_visible: redact(decision),
-      internal_reason_code: "OK",
-      order_id: outcome.order_id,
-    };
   });
+
+  return {
+    kind: "DECIDED",
+    trace_id: traceId,
+    agent_visible: redact(phase1.decision),
+    internal_reason_code: "OK",
+    order_id: outcome.order_id,
+  };
 }
