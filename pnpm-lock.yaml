@@ -281,6 +281,15 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
+  packages/razorpay-exec:
+    dependencies:
+      '@praman/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../shared
+
   packages/shared: {}
 
 packages:
