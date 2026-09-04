@@ -40,7 +40,9 @@ export async function append(tx: PrismaTx, e: AppendInput): Promise<AppendedEntr
   // two concurrent writers would read the same head and fork it. This lock is
   // global rather than per-mandate for that reason, and it is released
   // automatically at commit or rollback.
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(${LEDGER_LOCK_ID})`;
+  // $executeRaw, not $queryRaw: pg_advisory_xact_lock() returns Postgres's
+  // `void` type, which $queryRaw cannot deserialize into any JS type.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LEDGER_LOCK_ID})`;
 
   const head = await tx.ledgerEntry.findFirst({
     orderBy: { seq: "desc" },
