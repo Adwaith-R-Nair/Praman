@@ -14,3 +14,10 @@ allowBuilds:
   # Postgres, so neither's postinstall script does anything we need.
   msgpackr-extract: false
   workerd: false
+  # @google/genai's package.json declares a `prepare` script (scripts/prepare.js)
+  # and protobufjs declares a `postinstall` (scripts/postinstall) — neither
+  # file actually ships in the published npm tarball (checked: both paths are
+  # missing from node_modules). Running them is a harmless no-op/failure, not
+  # a security concern, but nothing to gain from allowing either either.
+  '@google/genai': false
+  protobufjs: false

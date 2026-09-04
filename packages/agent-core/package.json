@@ -5,5 +5,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
-  "dependencies": {}
+  "dependencies": {
+    "@google/genai": "2.21.0"
+  }
 }

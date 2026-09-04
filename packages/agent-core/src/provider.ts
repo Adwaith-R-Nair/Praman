@@ -20,7 +20,20 @@ export type ProviderTurn =
  */
 export type ConversationItem =
   | { readonly role: "user"; readonly text: string }
-  | { readonly role: "assistant"; readonly calls: readonly ToolCall[]; readonly text: string }
+  | {
+      readonly role: "assistant";
+      readonly calls: readonly ToolCall[];
+      readonly text: string;
+      /**
+       * The provider's own opaque turn data (ProviderTurn.raw), echoed back
+       * verbatim when present. Some providers require exact replay of their
+       * own prior turn, not a reconstruction from {id, name, input} — Gemini
+       * 3-generation models attach a `thoughtSignature` to each function-call
+       * part that must round-trip unchanged, or the API rejects the next
+       * request outright. A provider that doesn't need this ignores the field.
+       */
+      readonly raw?: unknown;
+    }
   | { readonly role: "tool_results"; readonly results: readonly { id: string; name: string; content: string }[] };
 
 export interface ModelProvider {
