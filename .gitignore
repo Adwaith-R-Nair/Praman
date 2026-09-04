@@ -39,6 +39,11 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 
+# throwaway verification scripts — not part of the submission, left in place
+# on purpose after use (rather than deleted) so they're inspectable
+**/scratch.ts
+**/smoke-*.ts
+
 # personal working notes — not part of the submission
 /private/
 .claude
