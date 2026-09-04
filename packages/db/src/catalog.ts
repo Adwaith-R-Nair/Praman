@@ -29,7 +29,16 @@ export async function loadCatalogSnapshot(tx: PrismaTx, merchantId: string) {
   };
 }
 
-/** Agent-facing view. Carries untrusted text; the consumer must wrap it. */
+/**
+ * Agent-facing view. Carries `price_paise` — prices are trusted, they come
+ * from this database, never from merchant free text, so D-01's guarantee
+ * (the intent carries no price; the charged amount is always resolved
+ * server-side) holds regardless of whether the model can see one. The agent
+ * cannot shop without knowing what things cost. What stays hidden is the
+ * mandate's limits (D-08), not the catalog's prices — those are public
+ * facts, caps are not. `title`/`description` are merchant-authored and
+ * untrusted; the consumer must wrap them (`wrapUntrusted`, D-07).
+ */
 export async function listCatalogForAgent(tx: PrismaTx, merchantId: string) {
   const rows = await tx.catalogItem.findMany({ where: { merchantId } });
   return rows.map((r) => ({
@@ -37,6 +46,7 @@ export async function listCatalogForAgent(tx: PrismaTx, merchantId: string) {
     title: r.title,
     description: r.description,
     category: r.category,
+    price_paise: paiseFromDb(r.pricePaise),
     in_stock: r.stockQty > 0,
   }));
 }
