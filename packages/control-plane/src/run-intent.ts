@@ -91,7 +91,35 @@ export async function runIntent(
     }
 
     const mandate = verified.mandate;
-    const key = idempotencyKey(mandate.mandate_id, intent);
+
+    // idempotencyKey() canonicalises the intent, which rejects non-finite or
+    // non-integer numbers. That's a malformed intent, not a system failure —
+    // it must become a typed DENY, not an uncaught exception that kills the
+    // whole request before evaluate() ever gets to classify it properly.
+    let key: string;
+    try {
+      key = idempotencyKey(mandate.mandate_id, intent);
+    } catch {
+      const decision = { kind: "DENY", reason_code: "AMOUNT_INVALID", detail: "intent is not well-formed" } as const;
+      await append(tx, {
+        traceId,
+        ts: now,
+        actor: "praman",
+        eventType: "decision",
+        payload: { mandate_id: mandate.mandate_id, kind: "DENY", reason_code: decision.reason_code, detail: decision.detail },
+      });
+      return {
+        go: false as const,
+        result: {
+          kind: "DECIDED" as const,
+          trace_id: traceId,
+          agent_visible: redact(decision),
+          internal_reason_code: decision.reason_code,
+          order_id: null,
+          order_status: null,
+        },
+      };
+    }
 
     // Short-circuit on our OWN record — immune to Razorpay's propagation lag,
     // because it is a row in the same transaction we are already inside.
