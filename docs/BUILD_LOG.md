@@ -387,3 +387,136 @@ the original. A log that gets quietly amended isn't evidence of anything.
   DELETE`) for a `TRUNCATE`; only a statement-level event trigger would catch
   it, and none exists yet. A real gap in the immutability story, named rather
   than left implicit. See `docs/ARCHITECTURE.md`'s "Scope and honesty".
+
+## Day 9 — 4 Sep 2026 · mandate, catalog, idempotency, execution
+
+- Boundary hydration: `paiseFromDb`/`paiseFromRazorpay` closed three of D-18's
+  four open rows in one pass; `loadCatalogSnapshot` landing right after
+  turned out to close the fourth for free — the "catalog price lookup"
+  boundary and the general "Postgres rows" boundary are the same call site
+  once that function exists, not two separate things to guard.
+- Mandate signing: caught two real bugs in the spec before trusting it.
+  First, `VerifiedMandate` was used as a return type but never imported —
+  harmless, would have failed at the first typecheck. Second, and serious:
+  hydrating `validity.not_before`/`not_after` via `new Date(string)` without
+  checking the result. `new Date("garbage")` doesn't throw, it returns an
+  Invalid Date, and `evaluate()`'s window checks are `ts < not_before.getTime()`
+  / `ts > not_after.getTime()` — comparisons against `NaN` are always `false`,
+  in both directions. An unchecked malformed validity window would have read
+  as *permanently valid*, not permanently invalid — fail-open in the
+  authorisation path, the worst shape a bug can take here. Added explicit
+  `Number.isNaN` checks; both regressions are pinned in `sign.test.ts`.
+- Idempotency: the spec's `canonicalIntent` includes `intent_id` in the hash,
+  which read as a bug on first pass — if idempotency exists to catch a
+  retried purchase, doesn't hashing the attempt's own ID defeat it? Checked
+  `docs/LLD.md` before assuming so: deliberate. Idempotency here means "an
+  exact replay of the same intent object," not "the agent's second attempt at
+  the same goal" — the latter is Block C's job (reuse the same intent on an
+  internal retry), not this layer's.
+- The Razorpay executor: `Number(amountPaise)` on the outbound call had no
+  guard symmetric to `paiseFromRazorpay`'s inbound `Number.isSafeInteger`
+  check. Currently unreachable at this project's mandate caps, fixed anyway —
+  a boundary is a boundary regardless of whether today's data can trip it.
+
+## Day 10 — 4 Sep 2026 · the Razorpay guarantees that weren't
+
+- Building the orchestrator, tested two of Razorpay's documented claims
+  empirically instead of trusting them. Created two orders back to back with
+  an identical `receipt` — despite the docs stating receipts "have to be
+  unique," got two distinct order IDs, no error. Then measured
+  `GET /orders?receipt=...`'s propagation lag directly: sometimes ~3 seconds,
+  once over 15. A direct fetch by order ID was instant and consistent every
+  time — only the receipt-filtered search lags.
+- Both findings broke the single-transaction design's core assumption: that a
+  retry after a timeout could always find its own prior order by receipt and
+  never double-create. Neither holds. This is the dual-write problem — a
+  database transaction and an external API call cannot be made atomic, full
+  stop, no protocol exists between them.
+- Restructured execution into two phases with an outbox record: decide and
+  durably record the intent to call *before* calling (T1), call outside any
+  transaction, record the outcome after (T2). An orphaned order is now always
+  accompanied by a row naming its receipt and amount — unknown unknowns
+  become known unknowns. Recorded as D-22, which supersedes the
+  single-transaction claim in `ARCHITECTURE.md`, `HLD.md`, and `INVARIANTS.md`
+  invariant 5 — all three corrected, not left to quietly contradict the new
+  design.
+- The reconciler's first draft had a bug that would have been genuinely
+  dangerous unnoticed: its `outcome` event payload carried no `mandate_id` or
+  `merchant_id`. `deriveState` filters ledger rows by
+  `payload->>'mandate_id'` — an event missing that key is invisible to
+  *every* future budget calculation, for *every* mandate. A reconciled
+  captured payment would never have counted against its mandate's cap. Fixed
+  by pulling both fields from the `intent` ledger event (durable since T1)
+  instead of trusting the pending record, which stores neither. A second bug
+  in the same draft mirrored the record's `succeeded`/`failed` status off
+  "was anything found" rather than the found order's own status — a declined
+  payment located during reconciliation would have been marked `succeeded`.
+- A near-miss worth naming honestly, not just the fix it produced: my own
+  first verification of the mandate_id fix looked like it had failed —
+  `undefined` printed where a real value should have been. It hadn't. An
+  interleaved `vitest run` (my own instruction, in between) had wiped the
+  ledger evidence via `TRUNCATE`, and my smoke script's `?.` silently treated
+  "row missing" as identical to "field missing" — two very different
+  failures wearing the same output. Caught by insisting on a clean
+  re-verification with independent raw SQL rather than accepting a confusing
+  first result. Same discipline as the Day 5 "test that proved nothing" — a
+  check must be observed passing for the right reason, not just observed
+  passing.
+- That interleaving pointed at something worse than a confusing result:
+  `pnpm test`'s `TRUNCATE` was pointed at the same database as everything
+  else, meaning a routine test run could — and did — silently destroy real
+  accumulated demo data the day before submission. Fixed with a dedicated
+  `TEST_DATABASE_URL`, verified by checking real-DB row counts unchanged
+  across a full test run. Truncation now covers `ledger_entry` and
+  `idempotency_record` together, closing a referential gap that had left one
+  ledger-less pending record permanently stuck — found in the act, itself an
+  artifact of the same root cause.
+
+## Day 11 — 4 Sep 2026 · closing Block A, opening the agent
+
+- D-18's boundary-hydration table had sat stale at "1 of 4 implemented" since
+  Day 6, because the commit meant to update it got skipped when the D-22
+  investigation started. By the time it actually happened, the real count was
+  4 of 4, not the 3 of 4 originally planned — `loadCatalogSnapshot`'s price
+  hydration and the general Postgres-rows boundary turned out to be the same
+  call site.
+- Built the three CLI scripts (`keygen`, `issue-mandate`, `seed-catalog`)
+  that had fallen off the list at the same point, then proved they actually
+  work together rather than trusting each in isolation: a real keypair → a
+  real signed mandate that verifies → a real 25-item catalog → `runIntent`
+  correctly evaluating all of it and returning `STEP_UP_FIRST_MERCHANT` for a
+  genuinely fresh mandate's first purchase.
+- The first instruction for the agent-facing catalog view was wrong, and was
+  corrected before anything got built on top of it: no prices, on the theory
+  that hiding them protected the mandate. Prices come from our own database,
+  not merchant text — D-01's guarantee is that the *intent* never carries a
+  price, not that the agent can't see one. What actually needs hiding is the
+  mandate's limits (D-08), because those are what make a probe oracle useful.
+  `listCatalogForAgent` now includes `price_paise`.
+- Chose Gemini's free tier over Anthropic for budget reasons — a genuine
+  constraint, not a preference — which forced a provider-neutral interface. A
+  better design regardless of why it happened: it makes D-02's "no LLM in the
+  authorisation path" claim demonstrable, not just asserted. Swap the model,
+  `evaluate()` doesn't change.
+- Picked the model empirically, not by guessing: checked the live per-project
+  rate-limit dashboard rather than trusting a ballpark. The plain Flash
+  models were capped at 5 RPM / 20 RPD — unusable for iteration, let alone an
+  eval sweep. The Lite variants showed 15 RPM / 500 RPD. Settled on
+  `gemini-3.1-flash-lite`.
+- Verified the `@google/genai` SDK's actual compiled types before writing the
+  provider, rather than trusting a draft. Found a real, silent bug:
+  `FunctionDeclaration.parameters` expects Gemini's own typed `Schema`, not
+  raw JSON Schema — the field for raw JSON Schema is `parametersJsonSchema`,
+  documented as mutually exclusive with `parameters`. Would have either
+  failed validation or silently sent malformed tool specs.
+- Found a second bug the type check couldn't have caught, only the live API
+  could: Gemini 3-generation models attach a `thoughtSignature` to every
+  function-call part and require the *exact* one back when that turn is
+  replayed in history — reconstructing the part from `{name, input}` alone
+  gets the next request rejected outright. This exposed a real gap in the
+  provider-neutral interface itself, not just this provider:
+  `ConversationItem`'s assistant variant had no way to carry a provider's
+  opaque turn data forward. Fixed by adding an optional `raw` field that
+  round-trips it — general enough for any future provider with a similar
+  requirement, not a Gemini-specific patch bolted onto one side of the
+  abstraction.
