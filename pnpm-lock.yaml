@@ -250,6 +250,9 @@ importers:
 
   packages/ledger:
     dependencies:
+      '@praman/db':
+        specifier: workspace:*
+        version: link:../db
       '@praman/shared':
         specifier: workspace:*
         version: link:../shared

@@ -5,5 +5,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@praman/shared": "workspace:*" }
+  "dependencies": {
+    "@praman/db": "workspace:*",
+    "@praman/shared": "workspace:*"
+  }
 }
