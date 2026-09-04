@@ -16,6 +16,8 @@ export type RunResult =
       readonly agent_visible: AgentVisibleDecision;
       readonly internal_reason_code: string;
       readonly order_id: string | null;
+      /** null when nothing was ever attempted (DENY/STEP_UP before execution). */
+      readonly order_status: ExecOutcome["status"] | null;
     }
   | {
       readonly kind: "IN_FLIGHT";
@@ -25,11 +27,15 @@ export type RunResult =
     };
 
 /** Reads a settled idempotency record's cached order id out of its JSON outcome. */
-function cachedOrderId(outcome: unknown, key: string): string {
-  if (outcome === null || typeof outcome !== "object" || !("order_id" in outcome)) {
-    throw new TypeError(`idempotency record ${key} is succeeded but its outcome has no order_id`);
+function parseCachedOutcome(outcome: unknown, key: string): { orderId: string; status: ExecOutcome["status"] } {
+  if (outcome === null || typeof outcome !== "object" || !("order_id" in outcome) || !("status" in outcome)) {
+    throw new TypeError(`idempotency record ${key} is succeeded but its outcome is malformed`);
   }
-  return String((outcome as { order_id: unknown }).order_id);
+  const raw = outcome as { order_id: unknown; status: unknown };
+  if (raw.status !== "created" && raw.status !== "captured" && raw.status !== "failed") {
+    throw new TypeError(`idempotency record ${key} has an unrecognised cached status: ${String(raw.status)}`);
+  }
+  return { orderId: String(raw.order_id), status: raw.status };
 }
 
 /**
@@ -79,6 +85,7 @@ export async function runIntent(
           agent_visible: redact(decision),
           internal_reason_code: decision.reason_code,
           order_id: null,
+          order_status: null,
         },
       };
     }
@@ -93,6 +100,7 @@ export async function runIntent(
       if (prior.amountPaise === null) {
         throw new TypeError(`idempotency record ${key} is succeeded but has no amount_paise`);
       }
+      const cached = parseCachedOutcome(prior.outcome, key);
       return {
         go: false as const,
         result: {
@@ -100,7 +108,8 @@ export async function runIntent(
           trace_id: prior.traceId,
           agent_visible: { kind: "ALLOW" as const, amount_paise: paiseFromDb(prior.amountPaise) },
           internal_reason_code: "OK",
-          order_id: cachedOrderId(prior.outcome, key),
+          order_id: cached.orderId,
+          order_status: cached.status,
         },
       };
     }
@@ -155,6 +164,7 @@ export async function runIntent(
           agent_visible: redact(decision),
           internal_reason_code: decision.reason_code,
           order_id: null,
+          order_status: null,
         },
       };
     }
@@ -242,5 +252,6 @@ export async function runIntent(
     agent_visible: redact(phase1.decision),
     internal_reason_code: "OK",
     order_id: outcome.order_id,
+    order_status: outcome.status,
   };
 }
