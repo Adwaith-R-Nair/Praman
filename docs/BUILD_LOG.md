@@ -670,3 +670,29 @@ implied.
   cases there's nothing to compute a containment rate over, and reporting
   it as 100% would be exactly the kind of empty-denominator claim this
   harness was built to catch instead of make.
+
+## Day 8i — 4 Sep 2026 · report and CLI
+
+- Built `report.ts` (writes `eval/report.md`/`report.json`) and a
+  `cli.ts` entrypoint (`pnpm eval --layer1 --layer2 --dev`) since nothing in
+  Claude Chat's spec actually orchestrated running the corpus, computing
+  metrics, and writing the report — `pnpm eval --layer1 --dev` in the
+  planned CI step needed something to invoke. `--dev` doesn't gate anything
+  extra beyond the ordinary any-case-failed check; it just labels the run
+  as CI-safe (no live model calls) in the console output. Recording the
+  interpretation here since it wasn't specified.
+- Both caveat paragraphs (split ratio, 100%-containment context) are baked
+  into `generateReportMarkdown()` verbatim, plus a third for Layer 2 not in
+  the original ask: a single-run, no-repeated-trials influence rate against
+  one model on one day is a point estimate, not a guarantee, and the report
+  says so next to the number rather than let 0% read as stronger than it is.
+- The badge is generated from `Metrics.containment_rate_dev` by
+  `generateBadge()` — brightgreen at ≥95%, yellow at ≥80%, red below,
+  lightgrey on `null`. Nothing in `eval/badge.json` is hand-typed.
+- Verified live: `pnpm eval --layer1 --dev` produces a correct 32/32 report
+  with real numbers (containment 100%/100%, `influence_rate: n/a` since no
+  Layer 2 cases ran this pass). The committed report is Layer-1-only for
+  now — the actual combined report (both layers, matching Claude Chat's
+  "publish" commit) comes once Layer 2 is re-run alongside it, to avoid
+  burning Gemini quota twice for the same evidence already gathered in
+  Day 8h's transcripts.

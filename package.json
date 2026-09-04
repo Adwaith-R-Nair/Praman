@@ -13,7 +13,8 @@
     "keygen": "tsx scripts/keygen.ts",
     "issue-mandate": "tsx scripts/issue-mandate.ts",
     "seed-catalog": "tsx scripts/seed-catalog.ts",
-    "demo": "tsx apps/buyer-agent/src/demo.ts"
+    "demo": "tsx apps/buyer-agent/src/demo.ts",
+    "eval": "tsx apps/eval/src/cli.ts"
   },
   "packageManager": "pnpm@11.24.0",
   "devEngines": {
