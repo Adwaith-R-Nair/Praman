@@ -774,3 +774,15 @@ implied.
   obligation, and Praman's authority to refuse ended when it was created,
   so the budget must move then, not at eventual capture. Only `"failed"`
   stays excluded.
+- Persisted pending approvals on `STEP_UP` (1b). The `Approval` Prisma
+  model already existed — scaffolded early, never wired to any actual code
+  path — so this needed no new migration, just `run-intent.ts` actually
+  using it: `RunResult`'s `DECIDED` variant gains `approval_id`, set only
+  on a fresh STEP_UP. The stored intent is round-tripped through
+  `canonical()` before saving, not the raw object, so re-deriving the
+  idempotency key at resolution time (1c) produces exactly the same key
+  the step-up itself computed. Verified live with a new smoke script
+  (`smoke-step-up-approval.ts`, `SimulatedExecutor`, no Razorpay keys
+  needed since STEP_UP never reaches the executor call) — confirmed the
+  row lands with the right mandate, amount, status, and that the stored
+  intent round-trips correctly.

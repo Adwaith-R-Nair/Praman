@@ -1,9 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { prisma, loadCatalogSnapshot } from "@praman/db";
 import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, redact, type PurchaseIntent, type AgentVisibleDecision } from "@praman/policy";
 import { verifyMandate, type SignedMandate } from "@praman/mandate";
 import { idempotencyKey, receiptFor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
-import { paiseFromDb, paiseToJSON } from "@praman/shared";
+import { canonical, paiseFromDb, paiseToJSON } from "@praman/shared";
 
 const MANDATE_LOCK_NS = 42;
 /** Below this age, findByReceipt may not yet see a just-created order. See D-22. */
@@ -18,6 +19,8 @@ export type RunResult =
       readonly order_id: string | null;
       /** null when nothing was ever attempted (DENY/STEP_UP before execution). */
       readonly order_status: ExecOutcome["status"] | null;
+      /** Set only on a fresh STEP_UP — pass to resolveApproval() to approve or reject. */
+      readonly approval_id: string | null;
     }
   | {
       readonly kind: "IN_FLIGHT";
@@ -86,6 +89,7 @@ export async function runIntent(
           internal_reason_code: decision.reason_code,
           order_id: null,
           order_status: null,
+          approval_id: null,
         },
       };
     }
@@ -117,6 +121,7 @@ export async function runIntent(
           internal_reason_code: decision.reason_code,
           order_id: null,
           order_status: null,
+          approval_id: null,
         },
       };
     }
@@ -138,6 +143,7 @@ export async function runIntent(
           internal_reason_code: "OK",
           order_id: cached.orderId,
           order_status: cached.status,
+          approval_id: null,
         },
       };
     }
@@ -182,7 +188,22 @@ export async function runIntent(
       },
     });
 
-    if (decision.kind !== "ALLOW") {
+    if (decision.kind === "STEP_UP") {
+      // A pending record, not just a redacted decision — otherwise there is
+      // no way to ever resolve this later. Stores the canonicalised intent
+      // (not the raw object) so re-deriving the idempotency key at
+      // resolution time produces exactly this `key`, byte for byte. See D-24.
+      const approvalId = `apr_${randomUUID()}`;
+      await tx.approval.create({
+        data: {
+          approvalId,
+          traceId,
+          mandateId: mandate.mandate_id,
+          intent: JSON.parse(canonical(intent)) as object,
+          amountPaise: decision.amount_paise,
+          status: "pending",
+        },
+      });
       await maybeCheckpoint(tx, now);
       return {
         go: false as const,
@@ -193,6 +214,23 @@ export async function runIntent(
           internal_reason_code: decision.reason_code,
           order_id: null,
           order_status: null,
+          approval_id: approvalId,
+        },
+      };
+    }
+
+    if (decision.kind === "DENY") {
+      await maybeCheckpoint(tx, now);
+      return {
+        go: false as const,
+        result: {
+          kind: "DECIDED" as const,
+          trace_id: traceId,
+          agent_visible: redact(decision),
+          internal_reason_code: decision.reason_code,
+          order_id: null,
+          order_status: null,
+          approval_id: null,
         },
       };
     }
@@ -281,5 +319,6 @@ export async function runIntent(
     internal_reason_code: "OK",
     order_id: outcome.order_id,
     order_status: outcome.status,
+    approval_id: null,
   };
 }
