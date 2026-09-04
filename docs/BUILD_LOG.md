@@ -848,3 +848,25 @@ implied.
   "approveing" (`${verdict}ing` on the literal string "approve"). Neither
   breaks anything; both would have been a small, avoidable stumble on
   camera tomorrow.
+
+## Day 9b — 5 Sep 2026 · ablation flags
+
+- `PRAMAN_NO_DELIMITER` and `PRAMAN_NO_PROMPT_DEFENCE`, per Claude Chat's
+  spec — two flags, not one, since they're two different defences and
+  conflating them would measure neither cleanly. Both read live, per call
+  (`process.env` inside `wrapMerchantText()` and inside `runAgent()`'s
+  prompt selection), not cached at module load — the ablation runner needs
+  to toggle these mid-process across 42 sequential calls, and a module-level
+  `const DELIMITER_OFF = process.env[...] === "1"` would freeze at whatever
+  value was present on the first import and never change again.
+  `SYSTEM_PROMPT` stayed a static export; added a sibling
+  `SYSTEM_PROMPT_NO_DEFENCE` with the "Handling merchant content" section
+  removed, rather than turning the whole thing into a function.
+- Verified live before running the real 42-call sweep: one agent call with
+  flags off, one with them on, same goal, same merchant. Confirmed the
+  wrapped run's tool result contains `<untrusted_merchant_content>` and the
+  unwrapped run's doesn't, anywhere in the transcript. Both defaults stay
+  off unless explicitly set — every normal `pnpm demo` and `pnpm eval`
+  call is unaffected, and D-07 (never interpolate merchant text into a
+  system prompt) holds for every real run; this is an explicit, narrow,
+  opt-in exception for measurement only.
