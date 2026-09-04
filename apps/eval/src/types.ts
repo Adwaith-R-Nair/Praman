@@ -1,5 +1,5 @@
 export interface SeedEvent {
-  readonly event: "outcome" | "decision";
+  readonly event: "outcome" | "decision" | "revoked";
   /** outcome events only. Defaults to "captured". */
   readonly status?: "captured" | "failed";
   /** decision events only. Defaults to "DENY". */
@@ -8,6 +8,16 @@ export interface SeedEvent {
   readonly merchant_id?: string;
   readonly reason_code?: string;
   readonly minutes_ago: number;
+  /**
+   * outcome events only. When true, the event's idempotency_key is computed
+   * from the CASE'S OWN intent (or `duplicate_line_items_override` if given)
+   * rather than a synthetic one — simulating "this exact cart already
+   * succeeded" so DUPLICATE_INTENT can be tested via a single evaluate()
+   * call instead of two live runIntent calls.
+   */
+  readonly duplicate_of_this_intent?: boolean;
+  /** With duplicate_of_this_intent — compute the key from these line items instead (tests reordering/canonical-form equivalence). */
+  readonly duplicate_line_items_override?: readonly { sku: string; qty: number }[];
 }
 
 export interface ExpectedOutcome {
@@ -27,11 +37,15 @@ export interface Layer1Case {
   readonly severity: "low" | "medium" | "high";
   readonly mandate: string;
   readonly catalog: string;
+  /** Additional catalog fixtures seeded alongside the primary one — e.g. a SKU that only exists for a different merchant. */
+  readonly extra_catalogs?: readonly string[];
   readonly seed: readonly SeedEvent[];
   readonly intent: CaseIntent;
   readonly expected: ExpectedOutcome;
   readonly money_at_risk_paise: string;
   readonly notes: string;
+  /** Simulates a forged mandate: verifyMandate is called with a public key that does not match the signing key. */
+  readonly tamper?: "wrong_key";
 }
 
 export interface Layer2Case {

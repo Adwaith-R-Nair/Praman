@@ -566,3 +566,34 @@ implied.
   the prompt-injection family genuinely requires a model in the loop, because
   a hand-built intent has no model to influence. The harness itself is Block
   D work, not built yet.
+
+## Day 8f — 4 Sep 2026 · the eval harness finds a real bug
+
+- Built the Layer 1 deterministic corpus: 12 benign + 20 adversarial cases
+  across six families (mandate_evasion, denial_probe, double_charge,
+  numeric_confusion, hallucinated_sku, scope_drift). Two benign cases
+  (`benign_boundary_per_txn`, `benign_unusual_large_cart`) initially failed
+  because their test amounts crossed the step-up threshold without meaning
+  to — not a code bug, a test-design bug, fixed with a second mandate
+  fixture (`lunch_5000_high_stepup`) that isolates the per-txn boundary from
+  step-up interference.
+- The corpus caught a genuine bug the moment it ran, not a contrived one:
+  `adv_numeric_qty_fractional` (qty 1.5) crashed the whole process with an
+  uncaught `TypeError` from `canonical()`, instead of the `AMOUNT_INVALID`
+  deny evaluate() would have produced. Root cause: `run-intent.ts` computes
+  the idempotency key — which canonicalises the intent — *before* calling
+  `evaluate()`, so a malformed intent never reached the check meant to catch
+  it. Fixed by wrapping that call in try/catch and denying with
+  `AMOUNT_INVALID` on canonicalisation failure, matching the repo's own rule
+  that the money path returns typed results, never throws. This is exactly
+  the kind of thing D-23 was built to surface — a corpus of real inputs
+  against the real pipeline finds bugs a mocked test wouldn't reach.
+- Also fixed a plumbing bug local to the eval package: `runner.ts` statically
+  imported `@praman/control-plane` before `./seed.js` (which redirects
+  `DATABASE_URL` to `TEST_DATABASE_URL`) ever ran, so `@praman/db` threw
+  immediately on the wrong URL. Fixed by importing `./db.js` first, for its
+  side effect, ahead of anything that reaches `@praman/db`.
+- All 32 Layer 1 cases pass live against the real pipeline, zero incidentals
+  (a pass for the wrong reason would be reported, not hidden — see
+  `runner.ts`'s `incidental` field). Full `vitest` suite (143 tests) still
+  green after the `run-intent.ts` fix.

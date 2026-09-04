@@ -1,4 +1,8 @@
 import { performance } from "node:perf_hooks";
+// Must be imported before any package that reaches @praman/db (control-plane
+// included) — its side effect points DATABASE_URL at TEST_DATABASE_URL
+// before that package's module body reads it.
+import "./db.js";
 import { runIntent } from "@praman/control-plane";
 import { SimulatedExecutor } from "@praman/razorpay-exec";
 import type { PurchaseIntent } from "@praman/policy";

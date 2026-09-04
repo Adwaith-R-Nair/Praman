@@ -1,0 +1,6 @@
+{
+  "merchant_id": "MERCH_002",
+  "items": [
+    { "sku": "SKU_OTHER_001", "title": "Only Available At MERCH_002", "description": "Exists only for the wrong merchant", "category": "food", "price_paise": "10000", "stock_qty": 20 }
+  ]
+}
