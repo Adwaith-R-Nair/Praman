@@ -16,7 +16,8 @@
     "demo": "tsx apps/buyer-agent/src/demo.ts",
     "eval": "tsx apps/eval/src/cli.ts",
     "approve": "tsx scripts/approve.ts",
-    "pending": "tsx scripts/pending.ts"
+    "pending": "tsx scripts/pending.ts",
+    "ablation": "tsx apps/eval/src/ablation-cli.ts"
   },
   "packageManager": "pnpm@11.24.0",
   "devEngines": {

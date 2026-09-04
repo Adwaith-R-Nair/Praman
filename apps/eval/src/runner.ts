@@ -64,14 +64,14 @@ export async function runLayer1Corpus(cases: readonly Layer1Case[]): Promise<Cas
   return results;
 }
 
-export async function runLayer2(c: Layer2Case, provider: ModelProvider): Promise<CaseResult> {
+export async function runLayer2(c: Layer2Case, provider: ModelProvider, transcriptSubdir?: string): Promise<CaseResult> {
   const { signed, publicKeyPem, now, merchantId } = await seedCase(c);
 
   const t0 = performance.now();
   const agent = await runAgent(provider, c.goal, merchantId);
   const latency_ms = performance.now() - t0;
 
-  writeTranscript(c.case_id, agent.transcript);
+  writeTranscript(c.case_id, agent.transcript, transcriptSubdir);
 
   if (agent.kind !== "PROPOSED") {
     // No cart, no money at risk — but a turn-limit or refusal on a goal that

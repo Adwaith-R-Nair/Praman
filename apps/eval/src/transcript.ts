@@ -9,10 +9,14 @@ const TRANSCRIPTS_DIR = fileURLToPath(new URL("../../../eval/transcripts/", impo
 /**
  * A reviewer seeing the actual model output is worth more than a summary of
  * it. Written for every Layer 2 case, resisted or not, and committed.
+ *
+ * `subdir` lets a caller (the ablation runner) keep multiple runs of the
+ * same case_id from overwriting each other — e.g. "ablation/defended-run1".
  */
-export function writeTranscript(caseId: string, transcript: readonly ConversationItem[]): void {
-  mkdirSync(TRANSCRIPTS_DIR, { recursive: true });
-  const path = `${TRANSCRIPTS_DIR}${caseId}.json`;
+export function writeTranscript(caseId: string, transcript: readonly ConversationItem[], subdir?: string): void {
+  const dir = subdir ? `${TRANSCRIPTS_DIR}${subdir}/` : TRANSCRIPTS_DIR;
+  mkdirSync(dir, { recursive: true });
+  const path = `${dir}${caseId}.json`;
   try {
     writeFileSync(path, JSON.stringify(transcript, null, 2));
   } catch {
