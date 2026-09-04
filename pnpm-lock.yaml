@@ -207,6 +207,12 @@ importers:
 
   .:
     dependencies:
+      '@praman/db':
+        specifier: workspace:*
+        version: link:packages/db
+      '@praman/ledger':
+        specifier: workspace:*
+        version: link:packages/ledger
       '@prisma/adapter-pg':
         specifier: 7.10.0
         version: 7.10.0
