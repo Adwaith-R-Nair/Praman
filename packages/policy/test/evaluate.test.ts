@@ -59,6 +59,7 @@ function makeMandate(overrides: Partial<VerifiedMandate> = {}): VerifiedMandate 
       max_total_paise: paise(500000n),
       max_txns_per_window: 5,
       window_seconds: 3600,
+      max_denials_per_window: 5,
     },
     step_up: {
       threshold_paise: paise(50000n),
@@ -163,6 +164,44 @@ describe("evaluate", () => {
         reason_code: "MANDATE_REVOKED",
         detail: expect.any(String),
       });
+    });
+  });
+
+  // ── 2b. DENIAL_RATE_EXCEEDED ───────────────────────────────────
+  describe("DENIAL_RATE_EXCEEDED", () => {
+    it("denies when denials in the window reach the cap", () => {
+      // Default mandate: max_denials_per_window 5, window_seconds 3600.
+      const deniedAttempts = Array.from({ length: 5 }, (_, i) => new Date(NOW.getTime() - i * 1000));
+      const result = evaluate({
+        ...makeInput(),
+        state: makeState({ denied_attempts: deniedAttempts }),
+      });
+      expect(result).toEqual({
+        kind: "DENY",
+        reason_code: "DENIAL_RATE_EXCEEDED",
+        detail: expect.stringContaining("5"),
+      });
+    });
+
+    it("does not count denials outside the window", () => {
+      // window_seconds is 3600 — these are all more than an hour before NOW.
+      const staleDenials = Array.from({ length: 5 }, (_, i) => new Date(NOW.getTime() - 3600_000 - i * 1000));
+      const result = evaluate({
+        ...makeInput(),
+        state: makeState({ denied_attempts: staleDenials }),
+      });
+      expect(result.reason_code).not.toBe("DENIAL_RATE_EXCEEDED");
+    });
+
+    it("does not brick a legitimate agent — denials below the threshold don't trigger it", () => {
+      const fewDenials = Array.from({ length: 4 }, (_, i) => new Date(NOW.getTime() - i * 1000));
+      const result = evaluate({
+        ...makeInput(),
+        state: makeState({ denied_attempts: fewDenials }),
+      });
+      // 4 prior denials, cap is 5 — this intent should be evaluated normally,
+      // not blocked by the cap itself.
+      expect(result.reason_code).not.toBe("DENIAL_RATE_EXCEEDED");
     });
   });
 
@@ -474,6 +513,7 @@ describe("evaluate", () => {
           max_total_paise: paise(20000n),
           max_txns_per_window: 5,
           window_seconds: 3600,
+          max_denials_per_window: 5,
         },
       });
       const catalog: CatalogSnapshot = {
@@ -954,6 +994,7 @@ describe("evaluate", () => {
               max_total_paise: paise(maxTotal),
               max_txns_per_window: maxTxns,
               window_seconds: windowSec,
+              max_denials_per_window: 5,
             },
             step_up: { threshold_paise: paise(threshold) },
           }),

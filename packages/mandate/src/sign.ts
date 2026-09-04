@@ -20,6 +20,7 @@ export interface MandateDocument {
     readonly max_total_paise: string;
     readonly max_txns_per_window: number;
     readonly window_seconds: number;
+    readonly max_denials_per_window: number;
   };
   readonly step_up: { readonly threshold_paise: string };
   readonly validity: { readonly not_before: string; readonly not_after: string };
@@ -90,6 +91,7 @@ export function verifyMandate(
           max_total_paise: paiseFromJSON(d.limits.max_total_paise),
           max_txns_per_window: d.limits.max_txns_per_window,
           window_seconds: d.limits.window_seconds,
+          max_denials_per_window: d.limits.max_denials_per_window,
         },
         step_up: { threshold_paise: paiseFromJSON(d.step_up.threshold_paise) },
         validity: { not_before: notBefore, not_after: notAfter },

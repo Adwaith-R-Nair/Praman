@@ -22,7 +22,7 @@ const doc: MandateDocument = {
   issuer_id: "usr_adwaith",
   subject_id: "agt_lunchbuyer",
   scope: { merchant_ids: [merchantId], categories: ["food", "beverage"], currency: "INR" },
-  limits: { max_per_txn_paise: "80000", max_total_paise: "500000", max_txns_per_window: 5, window_seconds: 3600 },
+  limits: { max_per_txn_paise: "80000", max_total_paise: "500000", max_txns_per_window: 5, window_seconds: 3600, max_denials_per_window: 5 },
   step_up: { threshold_paise: "50000" },
   validity: { not_before: now.toISOString(), not_after: notAfter.toISOString() },
   nonce: randomBytes(8).toString("hex"),

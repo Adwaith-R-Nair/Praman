@@ -23,6 +23,25 @@ export function evaluate(input: EvaluateInput): Decision {
     };
   }
 
+  // Hoisted here (not just above the velocity check further down) so the
+  // denial-rate cap below and the velocity check share one computation.
+  const windowMs = mandate.limits.window_seconds * 1000;
+
+  // 2b. Denial-rate cap. A deterministic allow/deny boundary is an oracle: an
+  // agent can binary-search its own cap by proposing progressively different
+  // carts. Redaction (D-19) narrowed reconstruction from ~2 probes to
+  // ~log2(range); it did not close it, because denials cost nothing. Capping
+  // them makes probing expensive. Placed early — a locked mandate should cost
+  // nothing to reject — but after revocation, so revocation still wins. See D-20.
+  const deniedInWindow = state.denied_attempts.filter((t) => ts - t.getTime() < windowMs).length;
+  if (deniedInWindow >= mandate.limits.max_denials_per_window) {
+    return {
+      kind: "DENY",
+      reason_code: "DENIAL_RATE_EXCEEDED",
+      detail: `${deniedInWindow.toString()} denials in the last ${mandate.limits.window_seconds.toString()}s; mandate is locked pending human review.`,
+    };
+  }
+
   // 3. Validity window — before not_before.
   if (ts < mandate.validity.not_before.getTime()) {
     return {
@@ -166,8 +185,8 @@ export function evaluate(input: EvaluateInput): Decision {
     };
   }
 
-  // 16. Velocity — count timestamps strictly inside the window.
-  const windowMs = mandate.limits.window_seconds * 1000;
+  // 16. Velocity — count timestamps strictly inside the window. windowMs is
+  // computed once, up at step 2b, and shared with the denial-rate cap.
   const txnsInWindow = state.txn_timestamps.filter(
     (t) => ts - t.getTime() < windowMs,
   ).length;

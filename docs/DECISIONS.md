@@ -256,7 +256,7 @@ good.
 
 ---
 
-### D-20 · Redaction narrows the probe oracle; a denial-rate cap closes it · Accepted
+### D-20 · Redaction narrows the probe oracle; a denial-rate cap closes it · Accepted, cap implemented
 
 `redact()` (D-19) stops the agent reading its exact mandate cap off a `detail`
 string. It does not remove the deterministic ALLOW/DENY boundary itself — that
@@ -273,16 +273,27 @@ being a pure, reproducible function (D-02) is what makes the eval harness
 meaningful; sacrificing that to close this gap would cost more than the gap
 itself.
 
-**What closes it:** a denial-rate cap — past some number of DENYs for a
-mandate within a window, stop answering and escalate to a human, since
-repeated refusals are themselves a signal. `LedgerDerivedState.denied_attempts`
-was added now, while the type is still cheap to change; the cap that reads it
-is Phase 5 work, alongside the other gates.
+**What closes it:** a denial-rate cap — `mandate.limits.max_denials_per_window`,
+checked in `evaluate()` immediately after revocation (step 2b), before
+anything else that could itself produce a denial. Past the cap,
+`DENIAL_RATE_EXCEEDED` fires instead of the real reason, and that DENY is
+itself recorded as a denied attempt — the lock is self-reinforcing, not a
+one-shot trip. Placed early because a locked mandate should cost nothing to
+reject; placed after revocation so revocation still wins.
+
+**Residual, named rather than hidden:** the cap is per window, not global. A
+determined attacker who stays under `max_denials_per_window` within any given
+window can still probe indefinitely, just slower — bounded to roughly
+`max_denials_per_window` probes per `window_seconds`, not bounded absolutely.
+Closing that fully would mean a cumulative, non-windowed denial ceiling with
+its own reset semantics, deliberately not built here: it trades a clean,
+auditable per-window rule for a policy question (how does a legitimate agent
+recover from a stale lock?) that deserves its own decision, not a rushed one.
 
 **Consequence:** stated honestly rather than silently narrowed and left
 looking fixed. A `mandate_evasion` corpus case — an agent that binary-searches
-its cap via repeated probes — is Phase 6 work, and this is the answer to
-"what's in your missing percentage" until the cap ships.
+its cap via repeated probes, and a slow-probe case that stays just under the
+window cap — are both eval-harness work (D-23, Layer 1).
 
 ---
 

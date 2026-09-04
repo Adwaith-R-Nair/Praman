@@ -46,7 +46,7 @@ function buildSignedMandate(mandateId: string) {
     issuer_id: "usr_t",
     subject_id: "agt_t",
     scope: { merchant_ids: [MERCHANT], categories: ["food"], currency: "INR" },
-    limits: { max_per_txn_paise: "80000", max_total_paise: "500000", max_txns_per_window: 5, window_seconds: 3600 },
+    limits: { max_per_txn_paise: "80000", max_total_paise: "500000", max_txns_per_window: 5, window_seconds: 3600, max_denials_per_window: 5 },
     step_up: { threshold_paise: "50000" },
     validity: { not_before: "2026-08-28T00:00:00.000Z", not_after: "2026-12-31T00:00:00.000Z" },
     nonce: "n1",

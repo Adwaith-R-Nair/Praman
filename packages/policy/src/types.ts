@@ -30,6 +30,8 @@ export interface VerifiedMandate {
     readonly max_total_paise: Paise;
     readonly max_txns_per_window: number;
     readonly window_seconds: number;
+    /** Denial-rate cap closing D-20's probe oracle — see evaluate() step 2b. */
+    readonly max_denials_per_window: number;
   };
   readonly step_up: {
     readonly threshold_paise: Paise;

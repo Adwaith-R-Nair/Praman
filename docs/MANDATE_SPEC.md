@@ -23,7 +23,8 @@ A mandate is a signed grant of bounded spend authority from a human issuer to an
     "max_per_txn_paise": 80000,            // ₹800.00
     "max_total_paise": 500000,             // ₹5,000.00
     "max_txns_per_window": 5,
-    "window_seconds": 3600
+    "window_seconds": 3600,
+    "max_denials_per_window": 5             // closes D-20's probe oracle
   },
   "step_up": {
     "threshold_paise": 50000               // above ₹500 → human approval
@@ -97,6 +98,7 @@ export type Decision =
 
 1. mandate signature valid → else `MANDATE_SIGNATURE_INVALID`
 2. mandate not revoked → else `MANDATE_REVOKED`
+2b. denials in `window_seconds` < `max_denials_per_window` → else `DENIAL_RATE_EXCEEDED` *(closes D-20's probe oracle — a locked mandate must cost nothing to reject, so this runs early, but after revocation so revocation still wins)*
 3. `now` within validity window → else `MANDATE_EXPIRED` / `MANDATE_NOT_YET_VALID`
 4. `intent.mandate_id === mandate.mandate_id` → else `MANDATE_SUBJECT_MISMATCH`
 5. merchant in scope → else `MERCHANT_OUT_OF_SCOPE`
@@ -131,6 +133,7 @@ Write this function first, on paper, before any other code in the repo.
 | `STEP_UP_FIRST_MERCHANT` | STEP_UP | first ever transaction at this merchant under this mandate |
 | `MANDATE_SIGNATURE_INVALID` | DENY | signature failed verification |
 | `MANDATE_REVOKED` | DENY | revocation present in ledger |
+| `DENIAL_RATE_EXCEEDED` | DENY | too many denials in window — mandate locked pending human review (D-20) |
 | `MANDATE_EXPIRED` | DENY | past `not_after` |
 | `MANDATE_NOT_YET_VALID` | DENY | before `not_before` |
 | `MANDATE_SUBJECT_MISMATCH` | DENY | intent references a different mandate/agent |
