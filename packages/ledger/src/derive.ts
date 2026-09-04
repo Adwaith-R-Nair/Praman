@@ -38,10 +38,16 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
         break;
 
       case "outcome": {
-        // ONLY a captured payment moves spend. A decision is not a payment.
-        // Counting decisions would let an attacker exhaust someone's budget
-        // with proposals they know will be denied.
-        if (row.payload["status"] !== "captured") break;
+        // A CREATED order moves spend, not only a captured one. An order
+        // that exists is a payable obligation the mandate authorised —
+        // Praman's authority to refuse ended when it was created (D-17).
+        // LiveExecutor returns "created" immediately and only becomes
+        // "captured" later via reconciliation; counting only "captured"
+        // would let a mandate create unlimited orders while its budget
+        // never moved. A decision is still not a payment — only outcome
+        // events reach this case at all.
+        const status = row.payload["status"];
+        if (status !== "created" && status !== "captured") break;
 
         const amount = row.payload["amount_paise"];
         if (typeof amount !== "string" || !/^\d+$/.test(amount)) {

@@ -16,7 +16,7 @@ const MANDATE = "mnd_derive_test";
 const OTHER_MANDATE = "mnd_other";
 
 describe("deriveState", () => {
-  it("only captured outcomes move spent_paise", async () => {
+  it("created and captured outcomes move spent_paise; failed does not", async () => {
     await prisma.$transaction((tx) =>
       append(tx, {
         traceId: "t1",
@@ -50,6 +50,24 @@ describe("deriveState", () => {
         },
       }),
     );
+    // LiveExecutor returns "created" immediately — capture happens later via
+    // reconciliation. This must still commit spend and register the
+    // merchant, or every purchase at a merchant steps up forever (D-17).
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t3",
+        ts: new Date("2026-09-04T10:00:02.500Z"),
+        actor: "system",
+        eventType: "outcome",
+        payload: {
+          mandate_id: MANDATE,
+          status: "created",
+          amount_paise: "1200",
+          merchant_id: "MERCH_003",
+          idempotency_key: "idem_3",
+        },
+      }),
+    );
     await prisma.$transaction((tx) =>
       append(tx, {
         traceId: "t2",
@@ -67,10 +85,10 @@ describe("deriveState", () => {
 
     const state = await prisma.$transaction((tx) => deriveState(tx, MANDATE));
 
-    expect(state.spent_paise).toBe(5000n);
-    expect(state.txn_timestamps).toHaveLength(1);
-    expect([...state.merchants_transacted]).toEqual(["MERCH_001"]);
-    expect([...state.seen_idempotency_keys]).toEqual(["idem_1"]);
+    expect(state.spent_paise).toBe(6200n);
+    expect(state.txn_timestamps).toHaveLength(2);
+    expect([...state.merchants_transacted].sort()).toEqual(["MERCH_001", "MERCH_003"]);
+    expect([...state.seen_idempotency_keys].sort()).toEqual(["idem_1", "idem_3"]);
   });
 
   it("a mandate_revoked entry sets revoked", async () => {

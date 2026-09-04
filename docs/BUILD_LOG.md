@@ -757,3 +757,20 @@ implied.
   was worth stating — the split ratio, what a 100% Layer 1 score does and
   doesn't prove, what a single-run 0% influence rate does and doesn't prove
   — is in `eval/report.md`, not just in this log.
+
+## Day 9a — 5 Sep 2026 · the step-up deadlock
+
+- Claude Chat's `pnpm demo` run surfaced a real deadlock: `STEP_UP_FIRST_MERCHANT`
+  fires when a merchant isn't in `merchants_transacted`, which `deriveState`
+  builds only from `status: "captured"` outcomes. `LiveExecutor.createOrder`
+  returns `status: "created"` immediately — capture only happens later via
+  reconciliation — so in live mode spend never accumulates and a merchant
+  never enters the set. First purchase steps up, nothing resolves it, no
+  capture, merchant never registers: every purchase at that merchant steps
+  up forever. Never caught by tests or eval because `SimulatedExecutor`
+  always returns `"captured"` directly.
+- Fixed in `derive.ts`: `"created"` now counts as committed spend alongside
+  `"captured"`, matching D-17 — an order that exists is a payable
+  obligation, and Praman's authority to refuse ended when it was created,
+  so the budget must move then, not at eventual capture. Only `"failed"`
+  stays excluded.
