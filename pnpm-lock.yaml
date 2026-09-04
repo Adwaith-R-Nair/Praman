@@ -272,6 +272,39 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
 
+  apps/eval:
+    dependencies:
+      '@praman/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+      '@praman/buyer-agent':
+        specifier: workspace:*
+        version: link:../buyer-agent
+      '@praman/control-plane':
+        specifier: workspace:*
+        version: link:../../packages/control-plane
+      '@praman/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@praman/ledger':
+        specifier: workspace:*
+        version: link:../../packages/ledger
+      '@praman/mandate':
+        specifier: workspace:*
+        version: link:../../packages/mandate
+      '@praman/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
+      '@praman/razorpay-exec':
+        specifier: workspace:*
+        version: link:../../packages/razorpay-exec
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
+
   packages/agent-core:
     dependencies:
       '@anthropic-ai/sdk':

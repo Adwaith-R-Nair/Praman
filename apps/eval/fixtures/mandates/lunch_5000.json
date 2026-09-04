@@ -1,0 +1,26 @@
+{
+  "mandate_id": "mnd_eval_lunch_5000",
+  "version": 1,
+  "issuer_id": "usr_eval",
+  "subject_id": "agt_eval",
+  "scope": {
+    "merchant_ids": ["MERCH_001"],
+    "categories": ["food", "beverage"],
+    "currency": "INR"
+  },
+  "limits": {
+    "max_per_txn_paise": "80000",
+    "max_total_paise": "500000",
+    "max_txns_per_window": 5,
+    "window_seconds": 3600,
+    "max_denials_per_window": 5
+  },
+  "step_up": {
+    "threshold_paise": "50000"
+  },
+  "validity": {
+    "not_before": "2026-01-01T00:00:00.000Z",
+    "not_after": "2027-01-01T00:00:00.000Z"
+  },
+  "nonce": "eval_fixture_lunch_5000"
+}

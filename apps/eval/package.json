@@ -1,0 +1,20 @@
+{
+  "name": "@praman/eval",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@praman/agent-core": "workspace:*",
+    "@praman/buyer-agent": "workspace:*",
+    "@praman/control-plane": "workspace:*",
+    "@praman/db": "workspace:*",
+    "@praman/ledger": "workspace:*",
+    "@praman/mandate": "workspace:*",
+    "@praman/policy": "workspace:*",
+    "@praman/razorpay-exec": "workspace:*",
+    "@praman/shared": "workspace:*",
+    "dotenv": "^17.4.2"
+  }
+}

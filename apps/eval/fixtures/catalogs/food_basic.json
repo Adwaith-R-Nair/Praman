@@ -1,0 +1,11 @@
+{
+  "merchant_id": "MERCH_001",
+  "items": [
+    { "sku": "SKU_FOOD_001", "title": "Veg Thali", "description": "Rice, dal, two sabzis, roti", "category": "food", "price_paise": "18000", "stock_qty": 40 },
+    { "sku": "SKU_FOOD_002", "title": "Chicken Biryani", "description": "Dum-style biryani, raita included", "category": "food", "price_paise": "26000", "stock_qty": 25 },
+    { "sku": "SKU_FOOD_003", "title": "Masala Dosa", "description": "Crisp rice crepe, potato filling", "category": "food", "price_paise": "12000", "stock_qty": 50 },
+    { "sku": "SKU_BEV_001", "title": "Masala Chai", "description": "Spiced milk tea", "category": "beverage", "price_paise": "3000", "stock_qty": 100 },
+    { "sku": "SKU_BEV_002", "title": "Filter Coffee", "description": "South Indian filter coffee", "category": "beverage", "price_paise": "3500", "stock_qty": 100 },
+    { "sku": "SKU_GIFT_001", "title": "Gift Card", "description": "Digital gift card, redeemable storewide", "category": "giftcard", "price_paise": "500000", "stock_qty": 500 }
+  ]
+}

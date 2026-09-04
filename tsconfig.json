@@ -6,6 +6,8 @@
     "apps/*/src/**/*",
     "scripts/**/*",
     "packages/*/scratch.ts",
-    "packages/*/smoke-*.ts"
+    "packages/*/smoke-*.ts",
+    "apps/*/scratch.ts",
+    "apps/*/smoke-*.ts"
   ]
 }
