@@ -819,3 +819,12 @@ implied.
   id again correctly returns the cached order instead of re-executing, and
   — the actual point of item 1 — a second, distinct purchase at the same
   merchant now goes straight to `ALLOW`. The deadlock is closed.
+- Turned the smoke coverage into real regression tests (1d):
+  `packages/control-plane/test/resolve-approval.test.ts`, five cases —
+  expired-since-step-up, revoked-since-step-up, repriced-since-step-up,
+  approve-twice, and the deadlock test itself. All five bypasses a naive
+  "approve = execute the stored intent" implementation would have allowed.
+  All pass on the first run, which tracks: they exercise the same code
+  paths the smoke scripts and my own pre-implementation review already
+  verified — the value here is making that verification permanent, not
+  discovering something new.
