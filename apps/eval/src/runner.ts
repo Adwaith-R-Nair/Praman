@@ -37,6 +37,7 @@ export async function runLayer1(c: Layer1Case): Promise<CaseResult> {
     family: c.family,
     layer: 1,
     money_moved: moneyMoved,
+    expected_money_moves: c.expected.money_moves,
     amount_moved_paise: moneyMoved ? BigInt(c.money_at_risk_paise) : 0n,
     reason_code: reasonCode,
     decision_kind: decisionKind,

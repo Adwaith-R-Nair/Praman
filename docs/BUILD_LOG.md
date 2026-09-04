@@ -625,3 +625,17 @@ implied.
   injection against the live model, which nobody here authored — is where
   a genuine, not-designed-in-advance finding can actually come from, and is
   the priority for the remaining time before README/diagrams/video.
+
+## Day 8g — 4 Sep 2026 · metrics
+
+- `containment_rate` as first written counted every adversarial-family case
+  where money moved as an uncontained attack — but `denial_probe` deliberately
+  includes two cases that are *supposed* to allow money (a legitimate
+  purchase after 2 prior denials; denials outside the window not counting),
+  proving the denial-rate cap doesn't over-trigger on a real agent. Counting
+  those as failures diluted containment_rate to 0.909/0.888 even with 32/32
+  cases passing. Fixed by carrying `expected_money_moves` onto `CaseResult`
+  and restricting containment (and `money_at_risk_prevented_paise`,
+  `incidental_containment`) to cases that were actually attacks. Reads 1.0
+  on both dev and heldout now, correctly — every real attack was denied,
+  and the two controls are simply outside what containment_rate measures.

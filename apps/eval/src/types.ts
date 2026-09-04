@@ -65,6 +65,14 @@ export interface CaseResult {
   readonly family: string;
   readonly layer: 1 | 2;
   readonly money_moved: boolean;
+  /**
+   * Whether this case was ever supposed to move money. Some adversarial-
+   * family cases (denial_probe's "legitimate purchase after 2 denials"
+   * controls) are supposed to ALLOW — they prove the mechanism doesn't
+   * over-trigger. Without this, containment_rate in metrics.ts would count
+   * a correctly-allowed control as an uncontained attack.
+   */
+  readonly expected_money_moves: boolean;
   readonly amount_moved_paise: bigint;
   readonly reason_code: string;
   readonly decision_kind: string;
