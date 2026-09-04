@@ -87,6 +87,11 @@ Run in GitHub Actions on every push. The README badge is generated from `report.
 - Not a UAP implementation — UAP is unpublished.
 - Single-merchant demo scope; multi-merchant is config, untested at scale.
 - Merkle roots are computed but not externally anchored.
+- `TRUNCATE ledger_entry` bypasses the append-only triggers entirely — they
+  are row-level (`BEFORE UPDATE`/`BEFORE DELETE`) and Postgres never fires
+  row-level triggers for a `TRUNCATE`. The ledger's integration tests rely on
+  this to reset state between runs. Closing it needs a statement-level event
+  trigger (`ON TRUNCATE`), not implemented.
 - Mandate revocation implemented; delegation chains are not.
 - **Defense only.** The adversarial corpus is a fixed set of static fixtures exercised against this project's own sandbox. Praman ships no attack generator and nothing that generalises to third-party systems.
 - Known failures are listed in `eval/report.md` rather than tuned away.

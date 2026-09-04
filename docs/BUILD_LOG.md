@@ -278,3 +278,112 @@ the original. A log that gets quietly amended isn't evidence of anything.
   test cards, Prisma's dist-tags, and now my own decision record. The failure
   mode of fast-moving systems isn't wrong code, it's confident text describing
   code that has changed or hasn't been written.
+
+## Day 7 — 3 Sep 2026 · the hash-chain core
+
+- Hardened `computeEntryHash`'s pipe-delimited preimage: the separator is only
+  safe while no field can contain a `|`, and that was a comment-level
+  guarantee, not a checked one. Added explicit rejects for a malformed
+  `prevHash`/`payloadHash` (not 64-char lowercase hex — `digest("hex")` only
+  ever emits lowercase, so uppercase means the value came from somewhere
+  else), a non-positive `seq`, an invalid `Date`, and a separator inside
+  `actor`/`eventType`. Also made the `"utf8"` encoding on both hash calls
+  explicit rather than relying on the implicit default — a hash preimage is
+  exactly the place "the default happens to be right" is worth stating.
+- Added the round-trip test that actually matters: `computePayloadHash` on a
+  payload survives `JSON.parse(JSON.stringify(...))`. This is the whole
+  tamper-detection story working at all — Postgres jsonb does not preserve key
+  insertion order (it sorts by length then bytes), so if hashing depended on
+  insertion order, every entry would fail verification the moment it was read
+  back from the database, indistinguishable from real tampering. It works
+  because `canonical()` sorts keys, making insertion order irrelevant by
+  construction — but that was an untested assumption until now.
+- Moved `LedgerDerivedState` out of `packages/policy` and into
+  `packages/shared`, re-exported from policy's `types.ts` so nothing else
+  changed. The ledger must not depend on the policy package — the ledger
+  doesn't know what a decision means — so the contract the two packages share
+  has to live below both of them, not inside either.
+- Added `assertLedgerPayload`, a recursive JSON-safety guard, and wired it
+  into every ledger write. `JSON.stringify` throws on `bigint`, but
+  `canonical()` (used for hashing) handles bigints fine by serialising them as
+  strings — so a payload carrying a raw `Paise` would hash cleanly and then
+  explode on insert into Postgres's jsonb column. Checked at the boundary
+  rather than documented as a convention, because a payload that hashes
+  successfully and then fails on insert would leave a lock held and the error
+  confusing. `Date` is rejected too, on purpose: `JSON.stringify` would
+  silently convert it to an ISO string, which technically "works" but leaves
+  the hashed object and the stored object disagreeing in type.
+
+## Day 8 — 4 Sep 2026 · append, derive, verify, and three bugs only Postgres could show me
+
+- `append()`'s advisory lock used `$queryRaw`, which failed immediately
+  against the real database: `pg_advisory_xact_lock()` returns Postgres's
+  `void` type, and Prisma's `$queryRaw` tries to deserialise every returned
+  column into a JS type — `void` has no mapping. Fixed with `$executeRaw`
+  instead, which runs the statement without trying to parse a result set —
+  the documented pattern for advisory locks specifically because they return
+  nothing meaningful. A typecheck would never have caught this; only running
+  it against Postgres did.
+- `deriveState()` replays the ledger to compute a mandate's spend, revocation
+  status, and denial history — spend is never stored (D-03), because a stored
+  counter is a number an attacker can edit, while inflating a derived one
+  means forging every subsequent entry hash. Verified against a live chain
+  that only `captured` outcomes move `spent_paise`; a `failed` outcome at a
+  much larger amount correctly contributed nothing.
+- Vitest runs different test files in parallel by default. Once a second
+  DB-backed test file (`derive.test.ts`) existed alongside `append.test.ts`,
+  their `beforeEach` `TRUNCATE`s and `append()` calls started interleaving
+  across files against the same live table — `append()` computes the next
+  `seq` by reading the table's current max, so one file's `TRUNCATE` firing
+  mid-sequence from another file corrupted the count (`seq: 4n` where `2n` was
+  expected). Not flakiness: the ledger's single global chain and single
+  global lock are a real constraint, and file-level test parallelism was the
+  first thing to violate it. Fixed with `fileParallelism: false` in
+  `vitest.config.ts` — a fine tradeoff at this suite's size, and it makes the
+  same constraint the advisory lock enforces in production visible in the
+  test harness too.
+- Built `merkleRoot()` with domain-separated leaf (`0x00`) and internal
+  (`0x01`) hash prefixes, pinned against hand-computed vectors (`sha256sum` in
+  a shell, not the code under test) for one, two, and three (odd-count,
+  duplicate-last) leaves. Caught my own transcription error here: a first
+  pass at "cleaning up" the pinned strings silently dropped the trailing
+  character on two of the three vectors while retyping them by hand. Only
+  caught by re-verifying lengths with a script instead of trusting my own
+  eyes on a 64-character hex string — exactly why pinned vectors get
+  generated once, from the real output, and never hand-edited again.
+- `verifyChain()` walks the whole chain recomputing every hash from stored
+  fields and fails fast at the first break rather than collecting all of
+  them — once the chain is broken, everything after it is unverifiable
+  anyway. Verified against a live, deliberately corrupted database: a
+  tampered payload is caught as `PAYLOAD_HASH_MISMATCH` at the exact seq: a
+  tampered `actor` (payload untouched) as `ENTRY_HASH_MISMATCH`; a deleted row
+  as `SEQ_GAP`. The checkpoint-forgery case needed care to test honestly — a
+  naive corruption of a checkpoint's claimed `merkle_root` gets caught earlier
+  at `PAYLOAD_HASH_MISMATCH`, which proves nothing about the merkle check
+  itself. A real forgery re-signs the checkpoint's own `payload_hash` and
+  `entry_hash` to look valid up to that point, and only *then* is
+  `MERKLE_MISMATCH` the thing that catches it.
+- Built `scripts/verify-ledger.ts` as a CLI, then found it couldn't actually
+  run standalone: `@praman/db` throws at import time if `DATABASE_URL` is
+  unset, and static `import` statements are hoisted above a module's own
+  top-level code — so a `dotenv` config call textually placed before
+  `import { prisma } from "@praman/db"` still runs *after* that import's
+  module body already threw. Fixed with a dynamic `import()` after loading
+  `.env`, since dynamic imports execute in normal statement order. Confirmed
+  by running the CLI with `DATABASE_URL` unset in the shell, not just by
+  reading the fix and assuming it worked.
+- Discovered mid-session that `DATABASE_URL` in `.env` points at port 5433 —
+  a native Postgres 18 install running as a system service on this machine —
+  while a `praman-db` Docker container has been sitting on port 5432 the
+  entire time, apparently never actually used by anything in this project.
+  Nothing was broken by this; every test and every commit this whole phase
+  correctly used the real (5433) database. But `docker exec praman-db psql`
+  had been checked against an empty, unrelated database earlier without that
+  being noticed, which is a reminder to verify which resource a command is
+  actually touching rather than assuming a name implies the connection.
+- `TRUNCATE ledger_entry` bypasses the append-only triggers entirely — the
+  ledger's own integration tests rely on exactly this to reset state between
+  runs. Postgres never fires row-level triggers (`BEFORE UPDATE`/`BEFORE
+  DELETE`) for a `TRUNCATE`; only a statement-level event trigger would catch
+  it, and none exists yet. A real gap in the immutability story, named rather
+  than left implicit. See `docs/ARCHITECTURE.md`'s "Scope and honesty".
