@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: praman
+          POSTGRES_DB: praman
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d praman"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Points at this job's own ephemeral Postgres service, not a secret —
+    # nothing in `pnpm test` / `verify-ledger` / `eval --layer1` reads
+    # Razorpay, Anthropic, Gemini, or mandate-signing keys (Layer 1 signs
+    # fresh throwaway keypairs per case, and every executor here is
+    # simulated). Layer 2 needs GEMINI_API_KEY and stays manual — it burns
+    # real rate-limit budget and isn't run on every push.
+    env:
+      DATABASE_URL: postgresql://postgres:praman@localhost:5432/praman
+      TEST_DATABASE_URL: postgresql://postgres:praman@localhost:5432/praman_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The service starts one database (praman); a second is needed for
+      # TEST_DATABASE_URL — the same separation `vitest.config.ts` and
+      # `apps/eval/src/db.ts` enforce locally, so tests and evals can never
+      # touch the (here, ephemeral, but the pattern matters) "real" one.
+      - name: create test database
+        run: PGPASSWORD=praman psql -h localhost -U postgres -d praman -c "CREATE DATABASE praman_test;"
+
+      - name: apply migrations — praman
+        run: pnpm --filter @praman/db exec prisma migrate deploy
+
+      - name: apply migrations — praman_test
+        run: pnpm --filter @praman/db exec prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:praman@localhost:5432/praman_test
+
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm verify-ledger
+      - run: pnpm eval --layer1 --dev

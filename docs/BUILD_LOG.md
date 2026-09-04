@@ -696,3 +696,25 @@ implied.
   "publish" commit) comes once Layer 2 is re-run alongside it, to avoid
   burning Gemini quota twice for the same evidence already gathered in
   Day 8h's transcripts.
+
+## Day 8j — 4 Sep 2026 · CI
+
+- Wrote `.github/workflows/ci.yml`: a Postgres 17 service, a second
+  `praman_test` database created alongside it, `prisma migrate deploy`
+  against both, then `pnpm typecheck`, `pnpm test`, `pnpm verify-ledger`,
+  `pnpm eval --layer1 --dev`. No repo secrets needed — nothing in that
+  sequence reads a Razorpay, Anthropic, Gemini, or mandate-signing key
+  (Layer 1 signs fresh throwaway keypairs per case, every executor is
+  simulated); only Layer 2 needs `GEMINI_API_KEY`, and it stays manual.
+- Couldn't typecheck YAML, so verified it for real instead of trusting it:
+  span up the `docker-compose.yml` Postgres — sitting dormant since Day 8d's
+  discovery that local dev actually runs against a native Postgres 18 on
+  port 5433, not this container — wiped it with `down -v` for a genuinely
+  empty instance, created `praman_test`, ran `prisma migrate deploy` against
+  both databases, then ran the exact four CI commands against that fresh
+  environment with `DATABASE_URL`/`TEST_DATABASE_URL` pointed at it. All
+  four passed, including all 143 vitest tests against a database that had
+  never seen this schema before — real evidence the migrations are complete,
+  not just that they'd worked once on a long-lived dev database that might
+  be carrying manual fixes no migration file captures. Tore the container
+  and volume back down afterward, restoring the dormant state Day 8d found.
