@@ -49,10 +49,14 @@ model CatalogItem {
 }
 
 model IdempotencyRecord {
-  key       String   @id @db.Char(64)
-  traceId   String   @map("trace_id")
-  outcome   Json
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  key         String   @id @db.Char(64)
+  traceId     String   @map("trace_id")
+  status      String   @default("pending")
+  receipt     String?
+  amountPaise BigInt?  @map("amount_paise")
+  outcome     Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
 
   @@map("idempotency_record")
 }
