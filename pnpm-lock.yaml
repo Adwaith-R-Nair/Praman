@@ -207,6 +207,9 @@ importers:
 
   .:
     dependencies:
+      '@praman/control-plane':
+        specifier: workspace:*
+        version: link:packages/control-plane
       '@praman/db':
         specifier: workspace:*
         version: link:packages/db
@@ -216,6 +219,12 @@ importers:
       '@praman/mandate':
         specifier: workspace:*
         version: link:packages/mandate
+      '@praman/razorpay-exec':
+        specifier: workspace:*
+        version: link:packages/razorpay-exec
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:packages/shared
       '@prisma/adapter-pg':
         specifier: 7.10.0
         version: 7.10.0

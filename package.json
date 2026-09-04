@@ -14,7 +14,9 @@
     "issue-mandate": "tsx scripts/issue-mandate.ts",
     "seed-catalog": "tsx scripts/seed-catalog.ts",
     "demo": "tsx apps/buyer-agent/src/demo.ts",
-    "eval": "tsx apps/eval/src/cli.ts"
+    "eval": "tsx apps/eval/src/cli.ts",
+    "approve": "tsx scripts/approve.ts",
+    "pending": "tsx scripts/pending.ts"
   },
   "packageManager": "pnpm@11.24.0",
   "devEngines": {
@@ -34,9 +36,12 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "@praman/control-plane": "workspace:*",
     "@praman/db": "workspace:*",
     "@praman/ledger": "workspace:*",
     "@praman/mandate": "workspace:*",
+    "@praman/razorpay-exec": "workspace:*",
+    "@praman/shared": "workspace:*",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "pg": "^8.23.0"

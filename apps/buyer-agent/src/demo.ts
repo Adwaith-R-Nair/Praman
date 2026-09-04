@@ -94,7 +94,13 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
   console.log(`  trace:  ${result.trace_id}`);
   if (result.order_id) console.log(`  order:  ${result.order_id} (${result.order_status ?? "n/a"})`);
   console.log(`\n  (agent sees only the above — mandate limits are redacted, D-08)`);
-  console.log(`  internal reason code: ${result.internal_reason_code}\n`);
+  console.log(`  internal reason code: ${result.internal_reason_code}`);
+  if (result.approval_id) {
+    console.log(`\n  awaiting human approval — run one of:`);
+    console.log(`    pnpm approve ${result.approval_id} approve`);
+    console.log(`    pnpm approve ${result.approval_id} reject`);
+  }
+  console.log();
 
   if (result.order_status === "failed" && attempt < MAX_ATTEMPTS) {
     console.log(`▸ payment declined — one re-plan permitted\n`);

@@ -828,3 +828,23 @@ implied.
   paths the smoke scripts and my own pre-implementation review already
   verified — the value here is making that verification permanent, not
   discovering something new.
+- `scripts/approve.ts` and `scripts/pending.ts` (1e), same dotenv-before-
+  dynamic-import pattern as `verify-ledger.ts` (a static import would reach
+  `@praman/db` before the config() call). Needed adding
+  `@praman/control-plane`, `@praman/razorpay-exec`, and `@praman/shared` to
+  the root `package.json` — `scripts/` had never imported them before, so
+  they weren't resolvable there yet.
+- Ran the actual video beat end-to-end through the real CLI, not a smoke
+  script: `pnpm demo` → `STEP_UP_FIRST_MERCHANT` → `pnpm approve <id>
+  approve` → executed → `pnpm demo` again, same goal, same merchant →
+  straight to `ALLOW`. This is the first time the full deadlock-to-resolution
+  path has run through the actual demo agent and a live Gemini call, not a
+  hand-built intent.
+- Two small things the live run caught that a type-correct implementation
+  wouldn't: `demo.ts` never printed the `approval_id` a `STEP_UP` produces,
+  so there was no way to actually run `pnpm approve` without a separate
+  `pnpm pending` lookup — added it directly to the decision output, with
+  the exact commands to run. And `approve.ts`'s own status line read
+  "approveing" (`${verdict}ing` on the literal string "approve"). Neither
+  breaks anything; both would have been a small, avoidable stumble on
+  camera tomorrow.
