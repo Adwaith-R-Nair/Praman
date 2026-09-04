@@ -6,7 +6,8 @@ import { verifyMandate, type SignedMandate } from "@praman/mandate";
 import { idempotencyKey, receiptFor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
 import { canonical, paiseFromDb, paiseToJSON } from "@praman/shared";
 
-const MANDATE_LOCK_NS = 42;
+/** Shared with resolve-approval.ts — the same mandate must serialise through the same lock regardless of which path is mutating its state. */
+export const MANDATE_LOCK_NS = 42;
 /** Below this age, findByReceipt may not yet see a just-created order. See D-22. */
 export const RECONCILE_MIN_AGE_MS = 60_000;
 

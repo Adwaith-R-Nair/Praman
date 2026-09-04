@@ -786,3 +786,36 @@ implied.
   needed since STEP_UP never reaches the executor call) — confirmed the
   row lands with the right mandate, amount, status, and that the stored
   intent round-trips correctly.
+- Built `resolveApproval()` (1c) — the security-sensitive part. Approval
+  satisfies only the step-up gate; everything else (revocation, expiry,
+  budget, velocity) is re-evaluated fresh against current state, and the
+  approved amount is binding, so a repriced catalog voids the approval
+  rather than silently executing a different figure than what was shown.
+  See D-24.
+- Verified Claude Chat's draft carefully before writing anything, since
+  earlier drafts this session had real bugs — this one did too, caught
+  before committing, not after: `noUnusedLocals` would have failed on an
+  imported-but-never-used `randomUUID`, and `MANDATE_LOCK_NS` was a magic
+  `42` duplicated in both files rather than a shared constant, a real risk
+  if one copy ever drifted from the other. Exported it from `run-intent.ts`
+  instead.
+- My own smoke test then caught two more, both in the "approve twice"
+  path (Claude Chat's own listed test case 4): the initial guard
+  `if (apr.status !== "pending") return REJECTED` fired on a SECOND
+  approve() call, before ever reaching the idempotency-record check that
+  should return the cached `EXECUTED` result — an already-approved
+  approval read as a refusal instead of a no-op success. And the 15-minute
+  TTL check ran unconditionally on wall-clock time regardless of
+  `apr.status`, so a second approve() arriving after the window on an
+  *already-executed* approval would have been mis-marked `"expired"` even
+  though money had already moved. Both fixed: the reject/expire branch
+  and the terminal-status guard now only ever apply while still
+  `"pending"` — an already-`"approved"` approval falls straight through to
+  the idempotency check regardless of verdict or elapsed time, because
+  money already moved is the ground truth, not something this function
+  can retroactively revise.
+- Live end-to-end (`smoke-resolve-approval.ts`, `SimulatedExecutor`): first
+  purchase at a merchant steps up, approve executes it, approving the same
+  id again correctly returns the cached order instead of re-executing, and
+  — the actual point of item 1 — a second, distinct purchase at the same
+  merchant now goes straight to `ALLOW`. The deadlock is closed.

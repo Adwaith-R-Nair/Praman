@@ -90,9 +90,11 @@ export function evaluate(
 
 export type Decision =
   | { kind: "ALLOW";   amount_paise: bigint; reason_code: "OK"; remaining_paise: bigint }
-  | { kind: "STEP_UP"; amount_paise: bigint; reason_code: StepUpCode; approval_id: string }
+  | { kind: "STEP_UP"; amount_paise: bigint; reason_code: StepUpCode }
   | { kind: "DENY";    reason_code: DenyCode; detail: string };
 ```
+
+`approval_id` is not part of `Decision` — `evaluate()` is pure and knows nothing about approvals. It's assigned by `run-intent.ts` after a `STEP_UP`, and lives on `RunResult`, one level up from the agent-visible decision (D-24).
 
 **Evaluation order matters and must be documented.** Cheapest and most fatal checks first:
 
@@ -146,8 +148,20 @@ Write this function first, on paper, before any other code in the repo.
 | `INSUFFICIENT_STOCK` | DENY | requested qty unavailable |
 | `AMOUNT_INVALID` | DENY | non-positive or absurd resolved amount |
 | `DUPLICATE_INTENT` | DENY | idempotency key already resolved |
+| `AMOUNT_CHANGED_SINCE_APPROVAL` | DENY | catalog price moved between step-up and approval; the human approved a different rupee figure (D-24) |
 
-Every code must appear in at least one eval fixture. A code with no fixture is untested surface.
+Every code must appear in at least one eval fixture. A code with no fixture is untested surface. `AMOUNT_CHANGED_SINCE_APPROVAL` is a known gap here — the Layer 1 eval corpus tests `evaluate()` directly and has no seeding path for an approval/resolution cycle yet.
+
+### 4b. Resolving a step-up (D-24)
+
+A `STEP_UP` persists a pending `Approval` row (`run-intent.ts`) rather than executing anything. `resolveApproval()` (`packages/control-plane/src/resolve-approval.ts`) is the only way to move it forward, and approval satisfies **only** the step-up gate — nothing else:
+
+- **Reject or expire** (15 minutes, `APPROVAL_TTL_MS`) → the approval is marked `rejected`/`expired`, a `step_up_resolved` ledger event records it, nothing executes.
+- **Approve** → `evaluate()` runs again, fresh, against the mandate and ledger state *as they are now*, not as they were at step-up time. Revocation, expiry, budget and velocity are all re-checked. A `DENY` here refuses the approval outright (`REFUSED`), even though a human already said yes — approval cannot revive a mandate that died in the meantime.
+- **Amount binding** — the human approved a specific rupee figure. If the catalog moved between step-up and approval, the re-evaluated amount won't match what was approved, and the approval is refused with `AMOUNT_CHANGED_SINCE_APPROVAL` rather than silently executing a different amount than what was shown.
+- **Idempotent** — approving twice returns the same cached order the second time; exactly one Razorpay call ever happens per approval.
+
+The rejected alternative was executing the stored intent directly on approval, without re-evaluating. That's a bypass: park a `STEP_UP`, wait for the mandate to expire or be revoked, then approve, and money moves under dead authority.
 
 ---
 

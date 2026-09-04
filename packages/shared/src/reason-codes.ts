@@ -17,6 +17,7 @@ export const REASON_CODES = [
   "INSUFFICIENT_STOCK",
   "AMOUNT_INVALID",
   "DUPLICATE_INTENT",
+  "AMOUNT_CHANGED_SINCE_APPROVAL",
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];
