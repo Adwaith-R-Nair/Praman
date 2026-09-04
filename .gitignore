@@ -44,6 +44,9 @@ Thumbs.db
 **/scratch.ts
 **/smoke-*.ts
 
+# scripts/issue-mandate.ts output — generated, run-specific, holds a signature
+mandate.json
+
 # personal working notes — not part of the submission
 /private/
 .claude

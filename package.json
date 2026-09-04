@@ -9,7 +9,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "verify-ledger": "tsx scripts/verify-ledger.ts"
+    "verify-ledger": "tsx scripts/verify-ledger.ts",
+    "keygen": "tsx scripts/keygen.ts",
+    "issue-mandate": "tsx scripts/issue-mandate.ts",
+    "seed-catalog": "tsx scripts/seed-catalog.ts"
   },
   "packageManager": "pnpm@11.24.0",
   "devEngines": {
@@ -31,6 +34,7 @@
   "dependencies": {
     "@praman/db": "workspace:*",
     "@praman/ledger": "workspace:*",
+    "@praman/mandate": "workspace:*",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "pg": "^8.23.0"

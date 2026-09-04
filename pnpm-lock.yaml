@@ -213,6 +213,9 @@ importers:
       '@praman/ledger':
         specifier: workspace:*
         version: link:packages/ledger
+      '@praman/mandate':
+        specifier: workspace:*
+        version: link:packages/mandate
       '@prisma/adapter-pg':
         specifier: 7.10.0
         version: 7.10.0
