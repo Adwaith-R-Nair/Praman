@@ -10,6 +10,16 @@ Razorpay AI Buildathon 2026 · Track 01 — AI Growth & Agentic Commerce
 
 Status: in development. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
+## Setup
+
+```bash
+pnpm install
+docker compose up -d              # Postgres on 5432 — port taken? point DATABASE_URL at your own instance instead
+cp .env.example .env              # fill in RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, ANTHROPIC_API_KEY, MANDATE_SIGNING_KEY
+pnpm --filter @praman/db migrate
+pnpm test
+```
+
 ## Documentation
 - [Architecture](docs/ARCHITECTURE.md) — start here, 5 minutes
 - [High Level Design](docs/HLD.md) · [Low Level Design](docs/LLD.md)

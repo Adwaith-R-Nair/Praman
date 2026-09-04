@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:17
+    container_name: praman-db
+    environment:
+      POSTGRES_PASSWORD: praman
+      POSTGRES_DB: praman
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d praman"]
+      interval: 5s
+      retries: 10
+    volumes: [praman-pgdata:/var/lib/postgresql/data]
+volumes:
+  praman-pgdata:
