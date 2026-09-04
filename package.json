@@ -12,7 +12,8 @@
     "verify-ledger": "tsx scripts/verify-ledger.ts",
     "keygen": "tsx scripts/keygen.ts",
     "issue-mandate": "tsx scripts/issue-mandate.ts",
-    "seed-catalog": "tsx scripts/seed-catalog.ts"
+    "seed-catalog": "tsx scripts/seed-catalog.ts",
+    "demo": "tsx apps/buyer-agent/src/demo.ts"
   },
   "packageManager": "pnpm@11.24.0",
   "devEngines": {

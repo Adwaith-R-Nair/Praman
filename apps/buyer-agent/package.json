@@ -7,7 +7,11 @@
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
     "@praman/agent-core": "workspace:*",
+    "@praman/control-plane": "workspace:*",
     "@praman/db": "workspace:*",
+    "@praman/mandate": "workspace:*",
+    "@praman/policy": "workspace:*",
+    "@praman/razorpay-exec": "workspace:*",
     "@praman/shared": "workspace:*"
   }
 }
