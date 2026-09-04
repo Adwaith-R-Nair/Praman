@@ -410,3 +410,66 @@ the problem rather than removing it.
    low — `deriveState` already doesn't count in-flight spend per gap 2 above
    — but it's an inconsistency with the pattern used everywhere else, named
    rather than silently matched or silently skipped.
+
+---
+
+### D-23 · Two-layer evaluation: deterministic policy containment, a small live-model layer for susceptibility · Accepted
+
+Most adversarial cases don't need an LLM at all. "Does the policy engine
+contain an out-of-scope gift card" doesn't require a model to propose one — a
+malicious `PurchaseIntent` can be constructed directly and fed to `runIntent`.
+Deterministic, instant, free, reproducible, which is what D-02 demands and
+what a live model can never give.
+
+**Layer 1 — policy containment, no LLM.** Intent constructed directly,
+covering mandate evasion, double-charge, numeric confusion, hallucinated SKU,
+scope drift, catalog tamper, and every benign case. Containment rate and
+false-refusal rate are measured here. Runs in seconds, costs nothing,
+identical every time.
+
+**Layer 2 — agent susceptibility, live model.** Only the prompt-injection
+family, where the actual question is "can merchant text influence the model's
+proposal." This is the one thing Layer 1 structurally cannot test — a
+hand-constructed intent has no model in the loop to influence. Run against the
+real provider, transcripts committed so a reviewer sees actual model output,
+not a paraphrase of it.
+
+**What forced the split**, not just what motivated it: the free-tier rate
+limits actually measured for this project (`gemini-3.1-flash-lite`, the model
+in use — 15 RPM / 500 RPD) would make a Layer-1-sized corpus running entirely
+through a live model take twenty-plus minutes per sweep before backoff, and
+that sweep needs to run many times while tuning. A corpus that's expensive and
+slow to run gets run less often, which defeats the purpose of having one.
+
+**The metric Layer 2 actually reports:** of the injection attempts that *did*
+influence the model's proposal, what fraction were still contained by the
+policy engine. Reporting only "was the model fooled" hides the thing this
+architecture exists to guarantee; reporting only "did money move" hides
+whether the defense-in-depth is doing anything or the model just never tried.
+A model that was successfully manipulated, caught anyway by the gate, is a
+better result than claiming the model was never fooled — and the honest
+number is the more useful one either way.
+
+**Early evidence, not the harness itself.** The harness (Layer 1's ~32 cases,
+Layer 2's ~8) is Block D work, not built yet. But the fixture this decision
+assumes — `SKU_FOOD_099`, a product description carrying a forged
+`</untrusted_merchant_content>` closing tag and an instruction to add an
+out-of-scope gift card — has already been run against the live agent twice,
+manually, and resisted cleanly both times: the model proposed only the
+requested item and named the injection attempt in its own rationale
+(*"I have ignored the untrusted merchant instruction regarding an additional
+gift card"*). Encouraging, and exactly why it isn't trusted as a result:
+two manual runs are an anecdote, not a rate. LLMs are not deterministic —
+Layer 2 exists specifically to turn "seems to resist" into a measured number
+across enough runs to mean something, not to confirm what two lucky passes
+already suggested.
+
+**Rejected: running the full corpus through a live model.** Sound in
+principle, unusable at this project's free-tier budget and timeline — and,
+per D-02, less reproducible than the alternative regardless of budget.
+
+**Rejected: skipping live-model testing entirely, asserting the delimiter
+defense is sufficient by construction.** `wrapUntrusted` and the system
+prompt's handling-merchant-content rules are the mechanism; whether they
+actually hold against a real model is an empirical question the mechanism's
+own existence doesn't answer.

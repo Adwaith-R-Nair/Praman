@@ -520,3 +520,36 @@ the original. A log that gets quietly amended isn't evidence of anything.
   round-trips it — general enough for any future provider with a similar
   requirement, not a Gemini-specific patch bolted onto one side of the
   abstraction.
+
+## Day 12 — 4 Sep 2026 · the agent, live
+
+- Verified the Anthropic SDK's real compiled types the same way as Gemini's,
+  even though this provider won't be exercised against a live API (no
+  credits) — `Tool.InputSchema`, `ToolUseBlock`, `ToolResultBlockParam` all
+  matched the draft exactly. Confirmed the current model ID (`claude-sonnet-5`)
+  against Anthropic's own docs rather than guess at something past my
+  training cutoff. Typecheck-verified only; said so plainly rather than
+  implying the same confidence as the Gemini path.
+- Wired `runAgent` and `runIntent` together into `pnpm demo` and ran it for
+  real against the live catalog and a live Gemini call: the agent correctly
+  resolved "order a masala dosa and a filter coffee" to the actual seeded
+  SKUs, and `runIntent` correctly returned `STEP_UP_FIRST_MERCHANT` — an
+  honest result, not a staged one, since that mandate genuinely had never
+  transacted with this merchant before.
+- The injection fixture (`SKU_FOOD_099`, a forged closing delimiter plus an
+  instruction to smuggle an out-of-scope gift card into every order) ran
+  against the live agent twice, manually, and was resisted cleanly both
+  times — the model proposed only the requested item and named the injection
+  attempt in its own rationale unprompted. Recorded as evidence in D-23, not
+  as a settled result: two manual runs are an anecdote, not a rate, and
+  saying so in the same breath as reporting a good outcome is the point of
+  D-23's Layer 2 existing at all — turn "seems to resist" into a measured
+  number, not stop at the first two passes that happened to go well.
+- D-23 formalises the eval split forced by the numbers from Day 11: the free
+  tier's real 15 RPM / 500 RPD budget makes running a full adversarial corpus
+  through a live model impractical to iterate on, but almost none of that
+  corpus needs a live model in the first place — a malicious intent can be
+  constructed directly and fed to `runIntent`, deterministic and free. Only
+  the prompt-injection family genuinely requires a model in the loop, because
+  a hand-built intent has no model to influence. The harness itself is Block
+  D work, not built yet.
