@@ -1,0 +1,159 @@
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { prisma } from "@praman/db";
+import { append } from "../src/append.js";
+import { deriveState } from "../src/derive.js";
+
+beforeEach(async () => {
+  await prisma.$executeRaw`TRUNCATE ledger_entry RESTART IDENTITY`;
+});
+
+afterAll(async () => {
+  await prisma.$disconnect();
+});
+
+const MANDATE = "mnd_derive_test";
+const OTHER_MANDATE = "mnd_other";
+
+describe("deriveState", () => {
+  it("only captured outcomes move spent_paise", async () => {
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t1",
+        ts: new Date("2026-09-04T10:00:00.000Z"),
+        actor: "system",
+        eventType: "decision",
+        payload: { mandate_id: MANDATE, kind: "ALLOW" },
+      }),
+    );
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t1",
+        ts: new Date("2026-09-04T10:00:01.000Z"),
+        actor: "system",
+        eventType: "api_call",
+        payload: { mandate_id: MANDATE, provider: "razorpay" },
+      }),
+    );
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t1",
+        ts: new Date("2026-09-04T10:00:02.000Z"),
+        actor: "system",
+        eventType: "outcome",
+        payload: {
+          mandate_id: MANDATE,
+          status: "captured",
+          amount_paise: "5000",
+          merchant_id: "MERCH_001",
+          idempotency_key: "idem_1",
+        },
+      }),
+    );
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t2",
+        ts: new Date("2026-09-04T10:00:03.000Z"),
+        actor: "system",
+        eventType: "outcome",
+        payload: {
+          mandate_id: MANDATE,
+          status: "failed",
+          amount_paise: "9999",
+          merchant_id: "MERCH_002",
+        },
+      }),
+    );
+
+    const state = await prisma.$transaction((tx) => deriveState(tx, MANDATE));
+
+    expect(state.spent_paise).toBe(5000n);
+    expect(state.txn_timestamps).toHaveLength(1);
+    expect([...state.merchants_transacted]).toEqual(["MERCH_001"]);
+    expect([...state.seen_idempotency_keys]).toEqual(["idem_1"]);
+  });
+
+  it("a mandate_revoked entry sets revoked", async () => {
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t1",
+        ts: new Date("2026-09-04T10:00:00.000Z"),
+        actor: "system",
+        eventType: "mandate_revoked",
+        payload: { mandate_id: MANDATE, reason: "user requested" },
+      }),
+    );
+
+    const state = await prisma.$transaction((tx) => deriveState(tx, MANDATE));
+    expect(state.revoked).toBe(true);
+  });
+
+  it("denied_attempts collects DENY decisions, not ALLOW or STEP_UP", async () => {
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t1",
+        ts: new Date("2026-09-04T10:00:00.000Z"),
+        actor: "system",
+        eventType: "decision",
+        payload: { mandate_id: MANDATE, kind: "ALLOW" },
+      }),
+    );
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t2",
+        ts: new Date("2026-09-04T10:00:01.000Z"),
+        actor: "system",
+        eventType: "decision",
+        payload: { mandate_id: MANDATE, kind: "STEP_UP" },
+      }),
+    );
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t3",
+        ts: new Date("2026-09-04T10:00:02.000Z"),
+        actor: "system",
+        eventType: "decision",
+        payload: { mandate_id: MANDATE, kind: "DENY" },
+      }),
+    );
+
+    const state = await prisma.$transaction((tx) => deriveState(tx, MANDATE));
+    expect(state.denied_attempts).toEqual([new Date("2026-09-04T10:00:02.000Z")]);
+  });
+
+  it("entries for a different mandate do not contribute to this mandate's state", async () => {
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t1",
+        ts: new Date("2026-09-04T10:00:00.000Z"),
+        actor: "system",
+        eventType: "outcome",
+        payload: {
+          mandate_id: OTHER_MANDATE,
+          status: "captured",
+          amount_paise: "999999",
+          merchant_id: "MERCH_003",
+        },
+      }),
+    );
+
+    const state = await prisma.$transaction((tx) => deriveState(tx, MANDATE));
+    expect(state.spent_paise).toBe(0n);
+    expect(state.merchants_transacted.size).toBe(0);
+  });
+
+  it("throws on a captured outcome with a malformed amount_paise", async () => {
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t1",
+        ts: new Date("2026-09-04T10:00:00.000Z"),
+        actor: "system",
+        eventType: "outcome",
+        payload: { mandate_id: MANDATE, status: "captured", amount_paise: "not-a-number" },
+      }),
+    );
+
+    await expect(prisma.$transaction((tx) => deriveState(tx, MANDATE))).rejects.toThrow(
+      /amount_paise is malformed/,
+    );
+  });
+});
