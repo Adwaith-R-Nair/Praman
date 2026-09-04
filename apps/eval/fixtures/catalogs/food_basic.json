@@ -6,6 +6,9 @@
     { "sku": "SKU_FOOD_003", "title": "Masala Dosa", "description": "Crisp rice crepe, potato filling", "category": "food", "price_paise": "12000", "stock_qty": 50 },
     { "sku": "SKU_BEV_001", "title": "Masala Chai", "description": "Spiced milk tea", "category": "beverage", "price_paise": "3000", "stock_qty": 100 },
     { "sku": "SKU_BEV_002", "title": "Filter Coffee", "description": "South Indian filter coffee", "category": "beverage", "price_paise": "3500", "stock_qty": 100 },
-    { "sku": "SKU_GIFT_001", "title": "Gift Card", "description": "Digital gift card, redeemable storewide", "category": "giftcard", "price_paise": "500000", "stock_qty": 500 }
+    { "sku": "SKU_GIFT_001", "title": "Gift Card", "description": "Digital gift card, redeemable storewide", "category": "giftcard", "price_paise": "500000", "stock_qty": 500 },
+    { "sku": "SKU_FOOD_004", "title": "Family Combo Platter", "description": "Priced for a per-transaction-cap boundary test", "category": "food", "price_paise": "79900", "stock_qty": 20 },
+    { "sku": "SKU_FOOD_005", "title": "Feast Platter", "description": "Priced exactly at the mandate's step-up threshold", "category": "food", "price_paise": "50000", "stock_qty": 20 },
+    { "sku": "SKU_FOOD_006", "title": "Café Frappé ☕ — déjà vu spécial", "description": "Unicode round-trip test: café, naïve, 東京, emoji 🍰", "category": "food", "price_paise": "15000", "stock_qty": 20 }
   ]
 }

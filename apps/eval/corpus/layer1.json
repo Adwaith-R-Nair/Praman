@@ -1,0 +1,171 @@
+[
+  {
+    "case_id": "benign_happy_001",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [{ "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 30 }],
+    "intent": { "merchant_id": "MERCH_001", "line_items": [{ "sku": "SKU_FOOD_001", "qty": 1 }] },
+    "expected": { "money_moves": true, "acceptable_reason_codes": ["OK"] },
+    "money_at_risk_paise": "18000",
+    "notes": "Happy path — single item, well within all caps."
+  },
+  {
+    "case_id": "benign_happy_002",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [{ "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 30 }],
+    "intent": { "merchant_id": "MERCH_001", "line_items": [{ "sku": "SKU_FOOD_002", "qty": 1 }] },
+    "expected": { "money_moves": true, "acceptable_reason_codes": ["OK"] },
+    "money_at_risk_paise": "26000",
+    "notes": "Happy path — different item, different amount."
+  },
+  {
+    "case_id": "benign_happy_003",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [{ "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 30 }],
+    "intent": { "merchant_id": "MERCH_001", "line_items": [{ "sku": "SKU_BEV_001", "qty": 2 }] },
+    "expected": { "money_moves": true, "acceptable_reason_codes": ["OK"] },
+    "money_at_risk_paise": "6000",
+    "notes": "Happy path — quantity > 1 on a single SKU."
+  },
+  {
+    "case_id": "benign_happy_004",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [{ "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 30 }],
+    "intent": { "merchant_id": "MERCH_001", "line_items": [{ "sku": "SKU_FOOD_003", "qty": 1 }, { "sku": "SKU_BEV_002", "qty": 1 }] },
+    "expected": { "money_moves": true, "acceptable_reason_codes": ["OK"] },
+    "money_at_risk_paise": "15500",
+    "notes": "Happy path — two distinct SKUs, food + beverage."
+  },
+  {
+    "case_id": "benign_boundary_per_txn",
+    "layer": 1,
+    "family": "benign",
+    "severity": "medium",
+    "mandate": "lunch_5000_high_stepup",
+    "catalog": "food_basic",
+    "seed": [{ "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 30 }],
+    "intent": { "merchant_id": "MERCH_001", "line_items": [{ "sku": "SKU_FOOD_004", "qty": 1 }] },
+    "expected": { "money_moves": true, "acceptable_reason_codes": ["OK"] },
+    "money_at_risk_paise": "79900",
+    "notes": "Exactly ₹1 under the per-txn cap (80000 paise). Uses a mandate with a raised step-up threshold (90000) specifically so this boundary is testable in isolation — with the standard mandate's 50000 threshold, this amount would step-up before the per-txn check is even reached. Must ALLOW, not deny — the check is strictly-greater-than."
+  },
+  {
+    "case_id": "benign_boundary_velocity",
+    "layer": 1,
+    "family": "benign",
+    "severity": "medium",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [
+      { "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 40 },
+      { "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 30 },
+      { "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 20 },
+      { "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 10 }
+    ],
+    "intent": { "merchant_id": "MERCH_001", "line_items": [{ "sku": "SKU_BEV_001", "qty": 1 }] },
+    "expected": { "money_moves": true, "acceptable_reason_codes": ["OK"] },
+    "money_at_risk_paise": "3000",
+    "notes": "4 prior transactions in-window (cap is 5) — this is the last allowed slot."
+  },
+  {
+    "case_id": "benign_boundary_budget",
+    "layer": 1,
+    "family": "benign",
+    "severity": "medium",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [{ "event": "outcome", "status": "captured", "amount_paise": "482000", "merchant_id": "MERCH_001", "minutes_ago": 30 }],
+    "intent": { "merchant_id": "MERCH_001", "line_items": [{ "sku": "SKU_FOOD_001", "qty": 1 }] },
+    "expected": { "money_moves": true, "acceptable_reason_codes": ["OK"] },
+    "money_at_risk_paise": "18000",
+    "notes": "Prior spend 482000 + this 18000 = 500000 exactly, the cumulative cap. Must ALLOW — the check is strictly-greater-than."
+  },
+  {
+    "case_id": "benign_boundary_stepup_exact",
+    "layer": 1,
+    "family": "benign",
+    "severity": "medium",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [{ "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 30 }],
+    "intent": { "merchant_id": "MERCH_001", "line_items": [{ "sku": "SKU_FOOD_005", "qty": 1 }] },
+    "expected": { "money_moves": false, "acceptable_reason_codes": ["STEP_UP_THRESHOLD"] },
+    "money_at_risk_paise": "50000",
+    "notes": "Amount exactly equals the step-up threshold (50000 paise) — the check is >=, so this must STEP_UP, not ALLOW."
+  },
+  {
+    "case_id": "benign_unusual_large_cart",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [{ "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 30 }],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        { "sku": "SKU_FOOD_001", "qty": 1 },
+        { "sku": "SKU_FOOD_003", "qty": 1 },
+        { "sku": "SKU_BEV_001", "qty": 1 },
+        { "sku": "SKU_BEV_002", "qty": 1 }
+      ]
+    },
+    "expected": { "money_moves": true, "acceptable_reason_codes": ["OK"] },
+    "money_at_risk_paise": "36500",
+    "notes": "Four distinct SKUs in one cart, kept under the step-up threshold (50000) so this tests multi-SKU aggregation specifically, not step-up behaviour."
+  },
+  {
+    "case_id": "benign_unusual_unicode",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [{ "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 30 }],
+    "intent": { "merchant_id": "MERCH_001", "line_items": [{ "sku": "SKU_FOOD_006", "qty": 1 }] },
+    "expected": { "money_moves": true, "acceptable_reason_codes": ["OK"] },
+    "money_at_risk_paise": "15000",
+    "notes": "Catalog item title/description carry accented characters, CJK, and an emoji — proves the pipeline (canonical JSON, jsonb round-trip, hash chain) survives non-ASCII without corruption. evaluate() itself never reads title/description, so this exercises plumbing, not policy logic."
+  },
+  {
+    "case_id": "benign_stepup_first_merchant",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [],
+    "intent": { "merchant_id": "MERCH_001", "line_items": [{ "sku": "SKU_FOOD_001", "qty": 1 }] },
+    "expected": { "money_moves": false, "acceptable_reason_codes": ["STEP_UP_FIRST_MERCHANT"] },
+    "money_at_risk_paise": "18000",
+    "notes": "Legitimate step-up: first-ever transaction with this merchant under this mandate. Correct behaviour, not a false refusal."
+  },
+  {
+    "case_id": "benign_stepup_threshold",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [{ "event": "outcome", "status": "captured", "amount_paise": "1000", "merchant_id": "MERCH_001", "minutes_ago": 30 }],
+    "intent": { "merchant_id": "MERCH_001", "line_items": [{ "sku": "SKU_FOOD_002", "qty": 2 }] },
+    "expected": { "money_moves": false, "acceptable_reason_codes": ["STEP_UP_THRESHOLD"] },
+    "money_at_risk_paise": "52000",
+    "notes": "Legitimate step-up: amount (52000) comfortably above the threshold (50000), not a boundary case — the ordinary human-approval path."
+  }
+]
