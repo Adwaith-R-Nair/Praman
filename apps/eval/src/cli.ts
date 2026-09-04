@@ -35,6 +35,10 @@ if (wantLayer2) {
   const path = fileURLToPath(new URL("../corpus/layer2.json", import.meta.url));
   const cases = JSON.parse(readFileSync(path, "utf8")) as Layer2Case[];
   const provider = new GeminiProvider(geminiKey, "gemini-3.1-flash-lite");
+  // computeMetrics() reads this from the environment rather than taking it
+  // as a parameter — set it here so the report says which model was
+  // actually tested instead of falling back to "n/a".
+  env["PRAMAN_MODEL"] = provider.id;
   console.log(`Layer 2: running ${cases.length.toString()} cases live against ${provider.id}, ~5s apart...`);
   results.push(...(await runLayer2Corpus(cases, provider)));
 }

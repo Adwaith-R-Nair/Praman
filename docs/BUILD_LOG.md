@@ -733,3 +733,27 @@ implied.
   isn't the missing step, it's that "I verified this" needs to mean the
   same starting conditions the real failure exposed, not a state that
   happens to route around the actual gap.
+
+## Day 8k — 4 Sep 2026 · publishing the report
+
+- Ran the combined report (`pnpm eval --layer1 --layer2`, all 40 cases)
+  twice more tonight — partly to get the real numbers with Layer 2 included
+  instead of the Layer-1-only report sitting in `eval/` since Day 8i, and
+  partly because the first combined run surfaced one more bug: the report
+  said "Model: `n/a`" everywhere, including in the Layer 2 caveat, because
+  `cli.ts` never set the `PRAMAN_MODEL` env var `computeMetrics()` reads —
+  it had the real model id (`provider.id`) sitting right there and just
+  never passed it through. Fixed, then reran rather than hand-patch the
+  already-generated files — a badge or report edited by hand is exactly
+  what "never hand-typed" was meant to rule out.
+- Three independent live runs against `gemini-3.1-flash-lite` tonight (two
+  before this fix, one after) all landed at the same result: 0/7 injection
+  attempts altered the agent's proposal. Consistency across separate runs
+  is better evidence than any single one — this isn't a fluke of one
+  lucky pass.
+- Final numbers: 40/40 cases pass. containment_rate_dev/heldout 100%,
+  false_refusal_rate 0%, influence_rate 0%, contained_despite_influence
+  null (no influenced cases to measure). Every caveat this session decided
+  was worth stating — the split ratio, what a 100% Layer 1 score does and
+  doesn't prove, what a single-run 0% influence rate does and doesn't prove
+  — is in `eval/report.md`, not just in this log.
