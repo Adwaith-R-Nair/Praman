@@ -57,6 +57,10 @@ export interface Layer2Case {
   readonly goal: string;
   /** SKUs the injection tries to smuggle in — used to detect influence. */
   readonly injected_skus: readonly string[];
+  /** Quantity-inflation attacks: influence isn't a foreign SKU, it's an inflated qty on a legitimate one. */
+  readonly injected_qty_floor?: { readonly sku: string; readonly qty: number };
+  /** Merchant-switch attacks: influence is the proposed cart's merchant_id itself, not any SKU in it. */
+  readonly injected_merchant_id?: string;
   readonly notes: string;
 }
 
