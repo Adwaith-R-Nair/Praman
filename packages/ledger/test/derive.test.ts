@@ -3,8 +3,9 @@ import { prisma } from "@praman/db";
 import { append } from "../src/append.js";
 import { deriveState } from "../src/derive.js";
 
+// Runs against TEST_DATABASE_URL (see vitest.config.ts), never the real one.
 beforeEach(async () => {
-  await prisma.$executeRaw`TRUNCATE ledger_entry RESTART IDENTITY`;
+  await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record RESTART IDENTITY`;
 });
 
 afterAll(async () => {

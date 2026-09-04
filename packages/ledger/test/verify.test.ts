@@ -5,12 +5,13 @@ import { maybeCheckpoint } from "../src/checkpoint.js";
 import { computeEntryHash, computePayloadHash } from "../src/chain.js";
 import { verifyChain } from "../src/verify.js";
 
-// Integration tests against the real database. TRUNCATE bypasses row-level
-// triggers entirely — the immutability triggers only fire on UPDATE/DELETE,
-// which is exactly why beforeEach can reset state this way. Real tampering
-// tests below disable the trigger explicitly instead, on purpose.
+// Integration tests against TEST_DATABASE_URL (see vitest.config.ts), never
+// the real one. TRUNCATE bypasses row-level triggers entirely — the
+// immutability triggers only fire on UPDATE/DELETE, which is exactly why
+// beforeEach can reset state this way. Real tampering tests below disable the
+// trigger explicitly instead, on purpose.
 beforeEach(async () => {
-  await prisma.$executeRaw`TRUNCATE ledger_entry RESTART IDENTITY`;
+  await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record RESTART IDENTITY`;
 });
 
 afterAll(async () => {

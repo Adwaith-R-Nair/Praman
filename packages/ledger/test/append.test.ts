@@ -3,11 +3,13 @@ import { prisma } from "@praman/db";
 import { append } from "../src/append.js";
 import { GENESIS_HASH } from "../src/chain.js";
 
-// Integration tests against the real database (docker: praman-db). TRUNCATE
-// bypasses row-level triggers entirely — that's a genuine gap in the
-// immutability story, not exploited here. See BUILD_LOG.
+// Integration tests against TEST_DATABASE_URL (see vitest.config.ts) — never
+// the real DATABASE_URL, so a test run can't destroy real ledger history.
+// TRUNCATE bypasses row-level triggers entirely — that's a genuine gap in the
+// immutability story, not exploited here. See BUILD_LOG. Both tables together
+// so no idempotency_record row can outlive the ledger entry it points at.
 beforeEach(async () => {
-  await prisma.$executeRaw`TRUNCATE ledger_entry RESTART IDENTITY`;
+  await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record RESTART IDENTITY`;
 });
 
 afterAll(async () => {

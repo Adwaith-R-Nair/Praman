@@ -16,5 +16,11 @@ export default defineConfig({
     // another's inserts — not flakiness, the real single-chain constraint
     // showing up in the test harness.
     fileParallelism: false,
+    // Tests TRUNCATE ledger_entry/idempotency_record for isolation. Pointed
+    // at the real DATABASE_URL, `pnpm test` would silently destroy real demo
+    // data — a live hazard the day before a submission. TEST_DATABASE_URL is
+    // a separate database (same schema, migrated independently) that only
+    // tests ever touch.
+    env: { DATABASE_URL: process.env["TEST_DATABASE_URL"] ?? "" },
   },
 });
