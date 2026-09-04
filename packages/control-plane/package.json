@@ -1,0 +1,16 @@
+{
+  "name": "@praman/control-plane",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@praman/db": "workspace:*",
+    "@praman/ledger": "workspace:*",
+    "@praman/mandate": "workspace:*",
+    "@praman/policy": "workspace:*",
+    "@praman/razorpay-exec": "workspace:*",
+    "@praman/shared": "workspace:*"
+  }
+}

@@ -245,6 +245,27 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.4.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
+  packages/control-plane:
+    dependencies:
+      '@praman/db':
+        specifier: workspace:*
+        version: link:../db
+      '@praman/ledger':
+        specifier: workspace:*
+        version: link:../ledger
+      '@praman/mandate':
+        specifier: workspace:*
+        version: link:../mandate
+      '@praman/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@praman/razorpay-exec':
+        specifier: workspace:*
+        version: link:../razorpay-exec
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../shared
+
   packages/db:
     dependencies:
       '@praman/shared':
