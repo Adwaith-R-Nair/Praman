@@ -49,3 +49,20 @@ export function paiseFromJSON(value: string): Paise {
   if (!/^\d+$/.test(value)) throw new TypeError(`Not a paise string: ${value}`);
   return paise(BigInt(value));
 }
+
+/** Postgres BIGINT → Paise. The ONLY place a database value becomes money. */
+export function paiseFromDb(value: bigint): Paise {
+  if (typeof value !== "bigint") throw new TypeError(`Expected bigint from db, got ${typeof value}`);
+  return paise(value);
+}
+
+/**
+ * Razorpay JSON number → Paise. Razorpay sends amounts as JSON numbers in
+ * paise, so this is the one place a float can enter the money path.
+ */
+export function paiseFromRazorpay(value: unknown): Paise {
+  if (typeof value !== "number") throw new TypeError(`Razorpay amount is not a number: ${typeof value}`);
+  if (!Number.isSafeInteger(value)) throw new RangeError(`Razorpay amount is not a safe integer: ${value}`);
+  if (value < 0) throw new RangeError(`Razorpay amount is negative: ${value}`);
+  return paise(BigInt(value));
+}

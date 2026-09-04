@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { paise, addPaise, subPaise, mulPaise, formatINR, paiseFromJSON } from "../src/money.js";
+import {
+  paise,
+  addPaise,
+  subPaise,
+  mulPaise,
+  formatINR,
+  paiseFromJSON,
+  paiseFromDb,
+  paiseFromRazorpay,
+} from "../src/money.js";
 
 describe("Paise", () => {
   it("rejects negative construction", () => {
@@ -46,5 +55,39 @@ describe("Paise", () => {
     expect(() => paiseFromJSON("0x10")).toThrow();
     expect(() => paiseFromJSON(" 42 ")).toThrow();
     expect(() => paiseFromJSON("480.00")).toThrow();
+  });
+});
+
+describe("paiseFromDb", () => {
+  it("hydrates a database bigint", () => {
+    expect(paiseFromDb(48000n)).toBe(48000n);
+  });
+
+  it("rejects a negative value via paise()'s own guard", () => {
+    expect(() => paiseFromDb(-1n)).toThrow(RangeError);
+  });
+});
+
+describe("paiseFromRazorpay", () => {
+  it("hydrates a Razorpay JSON number", () => {
+    expect(paiseFromRazorpay(48000)).toBe(48000n);
+  });
+
+  it("rejects a fractional amount", () => {
+    expect(() => paiseFromRazorpay(48000.5)).toThrow(RangeError);
+  });
+
+  it("rejects a value past Number.MAX_SAFE_INTEGER", () => {
+    expect(() => paiseFromRazorpay(2 ** 53)).toThrow(RangeError);
+  });
+
+  it("rejects a negative amount", () => {
+    expect(() => paiseFromRazorpay(-100)).toThrow(RangeError);
+  });
+
+  it("rejects a non-number", () => {
+    expect(() => paiseFromRazorpay("48000")).toThrow(TypeError);
+    expect(() => paiseFromRazorpay(null)).toThrow(TypeError);
+    expect(() => paiseFromRazorpay(undefined)).toThrow(TypeError);
   });
 });
