@@ -201,21 +201,27 @@ boundaries. It does not remove the class of risk, it relocates it.
 **What was done instead.** Amounts enter Praman from exactly four enumerable
 boundaries, each of which requires an explicit runtime conversion through
 `paise()`. Identifying the boundaries and guarding them are separate claims;
-status as of Phase 2:
+status as of Block A:
 
 | Boundary | Guard | Status |
 |---|---|---|
 | HTTP JSON bodies | `paiseFromJSON()` | implemented |
-| Postgres rows (`BigInt`) | hydration in `packages/db` | pending — Phase 3 |
-| Razorpay API responses | hydration in `packages/razorpay-exec` | pending — Phase 3 |
-| Catalog price lookup | hydration in `packages/db` | pending — Phase 3 |
+| Postgres rows (`BigInt`) | `paiseFromDb()` | implemented |
+| Razorpay API responses | `paiseFromRazorpay()` | implemented |
+| Catalog price lookup | `paiseFromDb()`, `packages/db/src/catalog.ts` | implemented |
 
-Only the first is complete today; the packages that would own the other
-three do not exist yet, so there is nothing to guard until they're built.
+All four now guarded. The catalog boundary and the general Postgres-rows
+boundary turned out to be the same call site once `loadCatalogSnapshot` was
+built — `catalog_item.price_paise` is exactly the raw `BigInt` column
+`paiseFromDb` exists for, not a separate hydration path. `paiseFromRazorpay`
+additionally checks `Number.isSafeInteger` in both directions — inbound on
+Razorpay's response amounts, and via a matching outbound guard
+(`toRazorpayAmount` in `executor.ts`) before a `Paise` is ever converted back
+to a `Number` for the API call, closing the boundary from both sides.
 `paiseFromJSON` validates with a strict pattern rather than trusting `BigInt`
 coercion, and CI greps for `as Paise` casts outside `money.ts` — currently
-the only one found is the sanctioned cast inside `paise()` itself. This
-table is updated as each remaining boundary lands. A class wrapper (`class
+the only one found is the sanctioned cast inside `paise()` itself. A class
+wrapper (`class
 Paise { constructor(readonly value: bigint) {} }`) would also survive
 erasure without leaving TypeScript, and was rejected for the same
 cost/benefit reason: object allocation per amount and rehydration through
