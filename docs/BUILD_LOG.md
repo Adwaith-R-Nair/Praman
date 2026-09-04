@@ -7,6 +7,19 @@ Entries are dated and are not retroactively edited. Where a later day proves an
 earlier entry wrong, the correction is recorded forward rather than by rewriting
 the original. A log that gets quietly amended isn't evidence of anything.
 
+"Day N" counts elapsed calendar days since Day 0 (27 Aug), verified against
+`git log --format='%ad %s' --date=short`, not a count of entries. Day 8 (4 Sep)
+covers five distinct work sessions in one sitting — labelled 8a–8e in the order
+they happened, not five separate days. An earlier version of this log
+incremented the number per session instead of per elapsed day, which made "Day
+12" read as 8 September to a reviewer checking it against the submission
+deadline — a real, caught mistake, corrected here rather than quietly fixed.
+Days 8a–8e were also written up after that session rather than turn-by-turn
+during it — reconstructed from the session's own record within hours of the
+work, not fabricated after the fact, but not the same as the daily-write
+discipline the rest of this log holds to, and worth stating rather than leaving
+implied.
+
 ## Day 0 — 27 Aug 2026 · repo and specification
 
 - Wrote the full spec before any code: architecture, HLD, LLD, mandate spec,
@@ -314,7 +327,7 @@ the original. A log that gets quietly amended isn't evidence of anything.
   silently convert it to an ISO string, which technically "works" but leaves
   the hashed object and the stored object disagreeing in type.
 
-## Day 8 — 4 Sep 2026 · append, derive, verify, and three bugs only Postgres could show me
+## Day 8a — 4 Sep 2026 · append, derive, verify, and three bugs only Postgres could show me
 
 - `append()`'s advisory lock used `$queryRaw`, which failed immediately
   against the real database: `pg_advisory_xact_lock()` returns Postgres's
@@ -388,7 +401,7 @@ the original. A log that gets quietly amended isn't evidence of anything.
   it, and none exists yet. A real gap in the immutability story, named rather
   than left implicit. See `docs/ARCHITECTURE.md`'s "Scope and honesty".
 
-## Day 9 — 4 Sep 2026 · mandate, catalog, idempotency, execution
+## Day 8b — 4 Sep 2026 · mandate, catalog, idempotency, execution
 
 - Boundary hydration: `paiseFromDb`/`paiseFromRazorpay` closed three of D-18's
   four open rows in one pass; `loadCatalogSnapshot` landing right after
@@ -418,7 +431,7 @@ the original. A log that gets quietly amended isn't evidence of anything.
   check. Currently unreachable at this project's mandate caps, fixed anyway —
   a boundary is a boundary regardless of whether today's data can trip it.
 
-## Day 10 — 4 Sep 2026 · the Razorpay guarantees that weren't
+## Day 8c — 4 Sep 2026 · the Razorpay guarantees that weren't
 
 - Building the orchestrator, tested two of Razorpay's documented claims
   empirically instead of trusting them. Created two orders back to back with
@@ -472,7 +485,7 @@ the original. A log that gets quietly amended isn't evidence of anything.
   ledger-less pending record permanently stuck — found in the act, itself an
   artifact of the same root cause.
 
-## Day 11 — 4 Sep 2026 · closing Block A, opening the agent
+## Day 8d — 4 Sep 2026 · closing Block A, opening the agent
 
 - D-18's boundary-hydration table had sat stale at "1 of 4 implemented" since
   Day 6, because the commit meant to update it got skipped when the D-22
@@ -521,7 +534,7 @@ the original. A log that gets quietly amended isn't evidence of anything.
   requirement, not a Gemini-specific patch bolted onto one side of the
   abstraction.
 
-## Day 12 — 4 Sep 2026 · the agent, live
+## Day 8e — 4 Sep 2026 · the agent, live
 
 - Verified the Anthropic SDK's real compiled types the same way as Gemini's,
   even though this provider won't be exercised against a live API (no
@@ -545,7 +558,7 @@ the original. A log that gets quietly amended isn't evidence of anything.
   saying so in the same breath as reporting a good outcome is the point of
   D-23's Layer 2 existing at all — turn "seems to resist" into a measured
   number, not stop at the first two passes that happened to go well.
-- D-23 formalises the eval split forced by the numbers from Day 11: the free
+- D-23 formalises the eval split forced by the numbers from Day 8d: the free
   tier's real 15 RPM / 500 RPD budget makes running a full adversarial corpus
   through a live model impractical to iterate on, but almost none of that
   corpus needs a live model in the first place — a malicious intent can be
