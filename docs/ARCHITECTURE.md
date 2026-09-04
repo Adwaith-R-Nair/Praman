@@ -59,7 +59,7 @@ Injection can make the model *want* the wrong thing. It cannot make the system *
         ╚══════════════════════════════════════════════════╝
 ```
 
-Evaluation and execution run in **one transaction** under a per-mandate advisory lock, so concurrent duplicate intents cannot race the budget or double-charge.
+Evaluation and execution run in **two phases**, not one transaction: a database transaction and an external Razorpay call cannot be made atomic (there is no protocol between them). What's guaranteed instead is that no call to Razorpay is ever made without a durable, committed record naming what was about to happen — so a crash or ambiguous failure between the call and recording its outcome leaves a resolvable trail, not a silent gap. A per-mandate advisory lock, held in both phases, still stops concurrent duplicate intents from racing the budget. See D-22.
 
 ## Stack
 
@@ -92,6 +92,10 @@ Run in GitHub Actions on every push. The README badge is generated from `report.
   row-level triggers for a `TRUNCATE`. The ledger's integration tests rely on
   this to reset state between runs. Closing it needs a statement-level event
   trigger (`ON TRUNCATE`), not implemented.
+- Execution is two-phase (D-22): between the ledger recording an attempt and
+  recording its outcome, `deriveState` doesn't count that spend — a
+  concurrent intent under the same mandate can evaluate against a slightly
+  understated budget for the width of one API call. Deferred, not hidden.
 - Mandate revocation implemented; delegation chains are not.
 - **Defense only.** The adversarial corpus is a fixed set of static fixtures exercised against this project's own sandbox. Praman ships no attack generator and nothing that generalises to third-party systems.
 - Known failures are listed in `eval/report.md` rather than tuned away.

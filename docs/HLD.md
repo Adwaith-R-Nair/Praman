@@ -110,20 +110,37 @@ That second point is the core insight of the whole project. **Constrain the inte
 ```
 agent          control-plane        policy      ledger       razorpay
   │  intent ────────►│                 │           │            │
+  │                  │ [T1 — advisory lock]         │            │
   │                  │ verify mandate  │           │            │
+  │                  │ idempotency check (own row, not Razorpay) │
   │                  │ deriveState ────────────────►│            │
   │                  │◄──── spent, velocity ────────│            │
   │                  │ evaluate() ─────►│           │            │
   │                  │◄─ ALLOW, amount ─│           │            │
   │                  │ append(intent, decision) ───►│            │
-  │                  │ idempotency check             │            │
-  │                  │ execute ─────────────────────────────────►│
-  │                  │◄───────────── payment_id ──────────────────│
-  │                  │ append(api_call, outcome) ──►│            │
+  │                  │ write PENDING idempotency row │            │
+  │                  │ append(api_call: attempted) ─►│            │
+  │                  │ [T1 commits]                 │            │
+  │                  │ execute — no transaction ────────────────►│
+  │                  │◄────────────── order/outcome ──────────────│
+  │                  │ [T2 — advisory lock]                      │
+  │                  │ append(outcome) ─────────────►│            │
+  │                  │ resolve idempotency row       │            │
+  │                  │ [T2 commits]                 │            │
   │◄─ trace_id, OK ──│                 │           │            │
 ```
 
-All of steps 2–8 run inside **one database transaction**, guarded by a per-mandate advisory lock. An executed payment with no ledger entry is the single worst bug this system can have; the transaction makes it structurally impossible.
+**Two phases, not one transaction — see D-22.** A database transaction and an
+external API call cannot be made atomic; there is no protocol between
+Postgres and Razorpay that makes both commit or both fail together. What's
+achievable instead: no external call is ever made without a durable,
+committed record (T1's pending row) naming what was about to happen. If
+execution fails ambiguously (timeout, crash before T2), the call returns
+`IN_FLIGHT` rather than a decision, and a reconciler resolves the pending row
+once Razorpay's own propagation lag has passed. An executed payment with no
+trace of the attempt at all is structurally impossible; an executed payment
+whose *outcome* is briefly unrecorded, with a durable pointer to what to
+check, is the accepted, named trade-off.
 
 ### 5.2 Step-up
 
@@ -143,9 +160,9 @@ Razorpay returns a decline or times out. Typed error → agent diagnoses → **a
 |---|---|---|
 | Injection in product description | Agent proposes out-of-scope purchase | Intent has no price/scope field; policy resolves from catalog |
 | Duplicate intent (retry storm) | Double charge | Deterministic idempotency key, unique index |
-| Concurrent duplicate intents | Double charge, budget race | Per-mandate advisory lock inside the transaction |
-| Payment succeeds, ledger write fails | Untraceable money movement | Same transaction; ledger append precedes commit |
-| Payment times out, status unknown | Unknown state, possible double charge | Reconcile by idempotency key against Razorpay before any retry |
+| Concurrent duplicate intents | Double charge, budget race | Per-mandate advisory lock, held in both T1 and T2 |
+| Payment succeeds, T2 never runs (crash) | Order exists, temporarily unrecorded | T1's pending row names the receipt/amount before the call; reconciler resolves it once past the propagation-lag window (D-22) |
+| Payment times out, status unknown | Unknown state, possible double charge | `runIntent` returns `IN_FLIGHT` rather than guessing; reconcile by receipt before any retry, never blind-retry |
 | Mandate row tampered in DB | Inflated budget | Spend derived by ledger replay, not stored on mandate |
 | Ledger row tampered | Falsified history | Hash chain + `verify-ledger` + DB rules blocking UPDATE/DELETE |
 | Agent loops on failure | Runaway spend | Retry cap of 1, velocity limit, escalation path |
