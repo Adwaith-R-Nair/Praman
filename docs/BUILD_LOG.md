@@ -718,3 +718,18 @@ implied.
   not just that they'd worked once on a long-lived dev database that might
   be carrying manual fixes no migration file captures. Tore the container
   and volume back down afterward, restoring the dormant state Day 8d found.
+- The first real run on GitHub's own infrastructure failed anyway, on
+  `pnpm typecheck` — a pile of implicit-`any` errors and one real type
+  mismatch in `run-intent.ts`, none of which happened locally. Cause:
+  `packages/db/src/generated/` (the Prisma client) is gitignored, and the
+  workflow ran `prisma migrate deploy` but never `prisma generate`. My
+  "fresh database" verification above didn't catch it because it reused
+  this machine's already-generated client — a fresh *database* isn't a
+  fresh *checkout*. Reproduced properly this time: deleted
+  `packages/db/src/generated/` locally, watched the identical error list
+  reappear, fixed it by adding a `prisma generate` step, then reran the
+  entire docker-based simulation from Day 8j with the client deleted too,
+  not just the database wiped. All eight steps passed clean. The lesson
+  isn't the missing step, it's that "I verified this" needs to mean the
+  same starting conditions the real failure exposed, not a state that
+  happens to route around the actual gap.

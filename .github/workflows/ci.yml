@@ -44,6 +44,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # packages/db/src/generated/ is gitignored (it's derived from
+      # schema.prisma) — a fresh checkout has no client at all until this
+      # runs, unlike a long-lived local dev copy that already has one from
+      # whenever it was last generated. `migrate deploy` alone isn't enough:
+      # it only applies SQL, it doesn't produce the TS client.
+      - run: pnpm --filter @praman/db run generate
+
       # The service starts one database (praman); a second is needed for
       # TEST_DATABASE_URL — the same separation `vitest.config.ts` and
       # `apps/eval/src/db.ts` enforce locally, so tests and evals can never
