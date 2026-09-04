@@ -484,3 +484,59 @@ defense is sufficient by construction.** `wrapUntrusted` and the system
 prompt's handling-merchant-content rules are the mechanism; whether they
 actually hold against a real model is an empirical question the mechanism's
 own existence doesn't answer.
+
+---
+
+### D-24 · Approval satisfies only the step-up gate; everything else is re-checked live · Accepted
+
+A `STEP_UP` persists a pending `Approval` row instead of executing. Resolving
+it — `resolveApproval()` — does not execute the stored intent on a bare
+"approved" verdict. Approval satisfies **only** the condition that produced
+the step-up. Revocation, expiry, budget, and velocity are all re-evaluated
+against the mandate and ledger state as they are at resolution time, not as
+they were when the step-up fired.
+
+**Rejected: executing the stored intent directly on approval.** That is a
+bypass, not a convenience. Get a `STEP_UP`, wait for the mandate to expire or
+be revoked, then approve — money moves under authority that no longer exists.
+A human saying yes to a proposal is not the same thing as the mandate still
+being valid; only re-running `evaluate()` against current state actually
+checks the second claim.
+
+**The approved amount is binding.** The human approved a specific rupee
+figure. If the catalog price moves between step-up and approval, the
+re-evaluated amount no longer matches what was shown, and the approval is
+refused (`AMOUNT_CHANGED_SINCE_APPROVAL`) rather than silently executing a
+different amount than the one a human actually signed off on. Silent
+substitution here would be worse than refusing and asking again.
+
+**Approvals expire — 15 minutes.** A human's attention is not indefinite
+authority. An approval sitting unresolved long enough stops being "this
+person is thinking about it" and starts being "nobody is looking at this
+anymore"; expiring it is the honest default, not a technicality.
+
+**This is D-17's logic in the other direction.** D-17 put the gate before
+order creation because authority to refuse ends once an order exists. The
+same reasoning says a `STEP_UP` cannot be resolved by *creating* the order
+first and asking questions later — the gate has to run again, live, at the
+one moment a bypass would actually work: after a human said yes, before
+anything is committed.
+
+**A bug this surfaced, not just what it fixed:** `deriveState` originally
+counted only `status: "captured"` outcomes toward spend and
+`merchants_transacted`. `LiveExecutor.createOrder` returns `status:
+"created"` immediately — capture happens later, via reconciliation — so in
+live mode spend never accumulated and a merchant never entered the set.
+First purchase steps up, nothing resolves it, no capture, merchant never
+registers: every purchase at that merchant steps up forever. `SimulatedExecutor`
+always returns `"captured"` directly, which is exactly why this never showed
+up in any test or eval run before a real `pnpm demo` call surfaced it. Fixed
+by counting `"created"` as committed spend too — an order that exists is
+already a payable obligation per D-17, so the budget has to move when it's
+created, not when it's eventually captured.
+
+**Consequence:** approving something is no more powerful than the mandate
+would have allowed at that exact moment anyway. The human's "yes" narrows
+what would otherwise have been an automatic refusal (the step-up condition)
+down to nothing — it does not grant anything beyond what the mandate itself
+still authorises.
