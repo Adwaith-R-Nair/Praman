@@ -29,7 +29,7 @@ export const REASON_CODE_PLAIN: Record<ReasonCode, string> = {
   STEP_UP_FIRST_MERCHANT: "This is the first purchase from this merchant under this mandate.",
   MANDATE_SIGNATURE_INVALID: "The mandate's signature didn't verify.",
   MANDATE_REVOKED: "This mandate has been revoked.",
-  DENIAL_RATE_EXCEEDED: "Too many denials recently — the mandate is locked pending review.",
+  DENIAL_RATE_EXCEEDED: "Too many denials recently. The mandate is locked pending review.",
   MANDATE_EXPIRED: "This mandate's validity period has ended.",
   MANDATE_NOT_YET_VALID: "This mandate isn't valid yet.",
   MANDATE_SUBJECT_MISMATCH: "This purchase doesn't belong to this mandate.",

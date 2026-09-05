@@ -26,7 +26,7 @@ const server = createServer((req, res) => {
 
       if (url.pathname === "/") {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(layout("Recent traces", "<p>Index page — coming soon.</p>"));
+        res.end(layout("Recent traces", "<p>Index page (coming soon).</p>"));
         return;
       }
 

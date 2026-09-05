@@ -1026,3 +1026,10 @@ implied.
   strings, just flex layout doing the separation. Verified live against a
   real `pnpm demo` trace — six real catalog items, each its own clean
   card, correctly priced, no duplicates.
+- User instruction: no em dashes anywhere in the receipt-ui's rendered
+  output (comments/docs stay as-is, cleanup deferred to later). Found and
+  fixed the three that were actually user-visible — `decisionLabel`'s
+  "Allowed — captured" (now "Allowed (captured)"), a reason-code string
+  (now split into two sentences), and the index page's placeholder text.
+  Left every em dash inside code comments and JSDoc untouched — those
+  aren't part of what a viewer of the page ever sees.
