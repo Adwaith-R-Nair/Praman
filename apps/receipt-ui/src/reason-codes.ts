@@ -1,5 +1,14 @@
 import type { ReasonCode } from "@praman/shared";
-import type { EventType } from "@praman/ledger";
+import type { BreakReason, EventType } from "@praman/ledger";
+
+/** What each verifyChain() BreakReason means for someone who isn't the person who wrote it. */
+export const BREAK_REASON_PLAIN: Record<BreakReason, string> = {
+  SEQ_GAP: "An entry is missing from the chain — deleted, or never actually recorded.",
+  PREV_MISMATCH: "This entry doesn't link to the one that comes before it.",
+  PAYLOAD_HASH_MISMATCH: "This entry's contents changed after it was written.",
+  ENTRY_HASH_MISMATCH: "This entry's own fields changed after it was written.",
+  MERKLE_MISMATCH: "A checkpoint's summary doesn't match the entries it's supposed to cover.",
+};
 
 export const EVENT_TYPE_PLAIN: Record<EventType, string> = {
   intent: "Agent proposed a purchase",

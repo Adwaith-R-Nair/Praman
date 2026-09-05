@@ -153,9 +153,21 @@ ${
       stateEl.textContent = "chain verified through " + data.checked + " entries";
       stateEl.className = "state state-verified";
     } else {
-      stateEl.textContent = "chain broken at seq " + data.brokenAtSeq + " (" + data.breakReason + ")";
+      stateEl.textContent = "chain broken at seq " + data.brokenAtSeq;
       stateEl.className = "state state-broken";
     }
+  }
+
+  // breakReasonPlain/breakReason come from our own server's closed
+  // BreakReason enum, never from free text, so no HTML-escaping is needed
+  // for them here.
+  function insertBreakMarker(afterEl, data) {
+    var marker = document.createElement("div");
+    marker.className = "chain-break";
+    marker.innerHTML =
+      "Chain verification stopped here, at seq " + data.brokenAtSeq + ". " + data.breakReasonPlain +
+      ' <span class="data">' + data.breakReason + "</span>";
+    afterEl.parentNode.insertBefore(marker, afterEl.nextSibling);
   }
 
   function walk(data) {
@@ -164,8 +176,15 @@ ${
       if (i >= entries.length) return finish(data);
       var seq = Number(entries[i].getAttribute("data-seq"));
       var isBroken = !data.traceVerified && data.brokenAtSeq !== null && seq >= data.brokenAtSeq;
-      entries[i].classList.add(isBroken ? "entry-broken" : "entry-confirmed");
-      if (isBroken) return finish(data);
+      if (isBroken) {
+        entries[i].classList.add("entry-broken");
+        insertBreakMarker(entries[i], data);
+        for (var j = i + 1; j < entries.length; j++) {
+          entries[j].classList.add("entry-unresolved");
+        }
+        return finish(data);
+      }
+      entries[i].classList.add("entry-confirmed");
       i++;
       setTimeout(step, STAGGER_MS);
     }
@@ -176,7 +195,10 @@ ${
     btn.disabled = true;
     btn.textContent = "Verifying...";
     entries.forEach(function (el) {
-      el.classList.remove("entry-confirmed", "entry-broken");
+      el.classList.remove("entry-confirmed", "entry-broken", "entry-unresolved");
+    });
+    document.querySelectorAll(".chain-break").forEach(function (el) {
+      el.remove();
     });
 
     fetch("/verify/" + encodeURIComponent(TRACE_ID))

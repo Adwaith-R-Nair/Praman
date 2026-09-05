@@ -1051,3 +1051,26 @@ implied.
   there (safely against the test database, never the real one), rather
   than testing broken-path plumbing now against a state nothing has been
   designed for yet.
+- Commit 7: the broken-chain state. Added `BREAK_REASON_PLAIN` (plain
+  language for each `BreakReason` — "This entry's contents changed after
+  it was written" for `PAYLOAD_HASH_MISMATCH`, same pattern as the reason
+  codes). The spine's line doesn't literally sever at the DOM/CSS level —
+  restructuring the continuous `::before` rule into per-entry segments
+  felt like real regression risk against a spine that already works,
+  for a state that only ever affects one insertion point. Instead the
+  walk inserts a `.chain-break` element with a paper-coloured background
+  and red top/bottom borders right after the broken entry, which visually
+  cuts the line passing behind it — same reader-facing result (a visible
+  gap, in `--refused`) without touching working code. Entries after the
+  break get `.entry-unresolved` (dimmed, not red) — they were never
+  reached, which isn't the same claim as "broken."
+- Tested for real, not just designed: seeded a small chain in the TEST
+  database (`apps/receipt-ui/scratch.ts`) and tampered with one entry's
+  payload using the exact disable-trigger/corrupt/re-enable technique
+  `packages/ledger/test/verify.test.ts` already established — never
+  touched the real ledger. Pointed `receipt-ui` at `TEST_DATABASE_URL`
+  temporarily, opened the trace, clicked verify: seq 3-4 confirmed green,
+  seq 5 (the tampered one) turned red, the break marker landed exactly
+  there reading "This entry's contents changed after it was written.
+  PAYLOAD_HASH_MISMATCH," and seq 6 dimmed as unresolved. Exactly the
+  intended design, working end to end against a genuine corruption.

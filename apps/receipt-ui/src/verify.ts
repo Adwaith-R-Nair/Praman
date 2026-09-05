@@ -1,5 +1,6 @@
 import { prisma } from "@praman/db";
-import { read, verifyChain } from "@praman/ledger";
+import { read, verifyChain, type BreakReason } from "@praman/ledger";
+import { BREAK_REASON_PLAIN } from "./reason-codes.js";
 
 export interface TraceVerification {
   readonly chainOk: boolean;
@@ -7,6 +8,7 @@ export interface TraceVerification {
   readonly head: string | null;
   readonly brokenAtSeq: number | null;
   readonly breakReason: string | null;
+  readonly breakReasonPlain: string | null;
   readonly breakDetail: string | null;
   /** Whether every one of THIS trace's own entries is confirmed intact — not the same as chainOk. */
   readonly traceVerified: boolean;
@@ -31,6 +33,7 @@ export async function verifyTrace(traceId: string): Promise<TraceVerification | 
       head: chainResult.head,
       brokenAtSeq: null,
       breakReason: null,
+      breakReasonPlain: null,
       breakDetail: null,
       traceVerified: true,
     };
@@ -45,6 +48,7 @@ export async function verifyTrace(traceId: string): Promise<TraceVerification | 
     head: null,
     brokenAtSeq,
     breakReason: chainResult.reason,
+    breakReasonPlain: BREAK_REASON_PLAIN[chainResult.reason as BreakReason] ?? chainResult.reason,
     breakDetail: chainResult.detail,
     // Every one of this trace's own entries was confirmed intact before the
     // walk ever reached the break — a corruption elsewhere in the shared
