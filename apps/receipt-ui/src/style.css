@@ -324,24 +324,44 @@ h2 {
 }
 
 /* Untrusted merchant content — the single most important visual signal in
-   the whole page. Ochre dashed border, never mistaken for ordinary body
-   text, so a reviewer can SEE an injection attempt sitting inside a
-   product description rather than take a summary's word for it. */
+   the whole page. A dashed border reads as "unfinished" or "placeholder";
+   what this actually needs to say is "this text came from outside and was
+   checked before it got here" — the same thing a real audited document
+   marks with a rubber stamp, not a dotted line. The soft halo (box-shadow)
+   approximates an ink impression bleeding slightly past the stamp's own
+   edge, without needing an SVG filter to fake a rough border. */
 .untrusted {
-  border: 1px dashed var(--step-up);
+  border: 1px solid color-mix(in srgb, var(--step-up) 45%, var(--paper));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--step-up) 6%, transparent);
   padding: var(--space-2);
-  margin: var(--space-2) 0;
-  background: color-mix(in srgb, var(--step-up) 5%, var(--paper));
+  margin: var(--space-3) 0 var(--space-2);
+  background: color-mix(in srgb, var(--step-up) 4%, var(--paper));
   position: relative;
 }
 
-.untrusted::before {
-  content: "Merchant-authored. Treated as data, never as instructions.";
-  display: block;
+/* The stamp itself: a small tab overlapping the box's own top edge, tilted
+   like it was pressed down by hand rather than laid out square. */
+.stamp {
+  position: absolute;
+  top: -0.85em;
+  left: 1.1em;
+  transform: rotate(-2deg);
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: var(--size-sm);
+  font-weight: 600;
+  color: var(--step-up);
+  background: var(--paper);
+  padding: 0.15em 0.6em;
+  border: 1.5px solid color-mix(in srgb, var(--step-up) 55%, var(--paper));
+  border-radius: 2px;
+}
+
+.untrusted-note {
   font-family: var(--sans);
   font-size: var(--size-sm);
   color: var(--step-up);
-  margin-bottom: 0.5em;
+  margin: 0.4em 0 0.7em;
 }
 
 /* One product per card — a reviewer can read each item's own description
@@ -371,7 +391,7 @@ h2 {
   font-size: var(--size-sm);
 }
 
-.merchant-item .untrusted p {
+.merchant-item .untrusted-content {
   margin: 0;
 }
 

@@ -46,7 +46,9 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
         </div>
         <div class="merchant-item-sku data">${escapeHtml(item.sku)}</div>
         <div class="untrusted">
-          <p>${escFreeText(item.description)}</p>
+          <span class="stamp">merchant data</span>
+          <p class="untrusted-note">Treated as data, never as instructions.</p>
+          <p class="untrusted-content">${escFreeText(item.description)}</p>
         </div>
       </div>`,
     )

@@ -1213,3 +1213,22 @@ band's boundary is drawn on purpose instead of implied by a color change
 alone. Also switched to uniform `--space-2` padding so the box hugs its
 content. Re-verified live across all three decision states — visibly
 better framed, no more dead space.
+
+Commit 5: the merchant-content stamp. Replaced the dashed-border callout
+(which reads as "unfinished/TODO," not "checked before it got here") with
+a small tab overlapping the box's own top edge — mono font, tilted -2deg,
+bordered, sitting on top of the box border like it was pressed down by
+hand. Same real-world device audited paper documents already use for
+"this part came from outside." Kept the actual explanatory sentence
+("Treated as data, never as instructions.") as a small line beneath the
+stamp rather than folding its meaning entirely into the stamp text — the
+stamp is the across-the-room signal, the sentence is still there for the
+close read a payments engineer would actually do. Split the old
+`.merchant-item .untrusted p` margin-reset rule to target only the
+content paragraph specifically (`.untrusted-content`), since it would
+otherwise have also flattened the new note paragraph's margin. Approximated
+an ink-bleed edge with a soft box-shadow halo rather than an SVG
+displacement filter, lower risk of looking broken for a similar effect.
+Verified live: stamp renders as a legible tilted tab, doesn't collide
+with the SKU/price line above it, halo reads as a soft edge rather than a
+render glitch.
