@@ -720,7 +720,18 @@ a:focus-visible {
     display: none;
   }
 
-  .hero {
+  /* .hero.decision-allow/-step-up/-deny (D-32) are 2-class selectors with
+     no media qualifier of their own, so they apply in print too and beat
+     a plain .hero override on specificity regardless of source order —
+     matching their specificity here, one level up from the original
+     commit 4 attempt, is what actually makes this win. Caught via the
+     reconstructed-print-CSS technique (D-25/D-27), not by inspection: the
+     wash was still showing in every previous print check because no
+     check had actually re-applied these rules together before now. */
+  .hero,
+  .hero.decision-allow,
+  .hero.decision-step-up,
+  .hero.decision-deny {
     background: none;
     border: none;
     margin: 0 0 var(--space-2);
@@ -747,6 +758,41 @@ a:focus-visible {
   .entry,
   .merchant-item {
     break-inside: avoid;
+  }
+
+  /* Same reasoning as .hero above: print relies on structure and text,
+     not color, since a print engine's handling of background-color and
+     box-shadow is inconsistent across browsers and print settings the
+     page has no control over. Flattening the untrusted callout to plain
+     ink-on-white keeps it legible regardless. The stamp specifically also
+     drops its absolute-position overlap with the box's top border —
+     that trick depends on the stamp's own background painting over the
+     border, which a printer that skips backgrounds would render as a
+     border line cutting through the stamp text. */
+  .untrusted {
+    background: none;
+    border-color: var(--ink);
+    box-shadow: none;
+  }
+
+  .stamp {
+    position: static;
+    transform: none;
+    display: inline-block;
+    margin: 0 0 0.4em;
+    background: none;
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  .untrusted-note {
+    color: var(--ink);
+  }
+
+  /* A filled shape has nothing to show if the printer skips backgrounds;
+     the border keeps the marker visible either way. */
+  .chain-break::before {
+    border: 1px solid var(--refused);
   }
 
   .print-footer {

@@ -1286,3 +1286,45 @@ stamp, and the untrusted-content note. Added `--step-up-text: #8a5f22`
 every border/background use of `--step-up` and the large hero headline
 untouched. Verified live: "Needs approval" and the stamp both read in the
 darker tone now, same family of color, no other visual change.
+
+Commit 8: print stylesheet touch-ups for everything added to the trace
+page since the original print pass (commit 9). Flattened the untrusted
+callout and stamp to plain ink-on-white in print, matching the hero's own
+precedent (print relies on structure and text, not color, since
+background/box-shadow handling varies by print engine and settings the
+page doesn't control) — the stamp also drops its absolute-position
+overlap with the box's border in print specifically, since that trick
+depends on the stamp's own background painting over the border, which
+would otherwise print as a line cutting through the stamp text. Gave the
+chain-break marker's diamond an explicit border as a fallback, since a
+purely-background-filled shape has nothing left to show if a printer
+skips backgrounds.
+
+Real bug found by this commit's own verification, not by inspection: the
+commit 4 hero print override has never actually worked. `.hero { background:
+none; ... }` inside `@media print` is a 1-class selector; `.hero.decision-allow`
+etc. (2 classes, no media qualifier — applies in every medium including
+print) beats it on specificity regardless of source order, so the tinted
+wash was still printing on every decision state. This had gone
+undetected since commit 4 because that commit's own verification only
+checked on-screen rendering across the three states, never a
+reconstructed print check specifically. Caught here by extending the
+established reconstructed-print-CSS technique (D-25/D-27): fetched the
+rendered page, brace-counted out the `@media print` block, and reapplied
+it unconditionally — this time actually re-testing the hero specifically,
+which the original commit 4 log entry claimed but never verified. Fixed
+by matching specificity: `.hero, .hero.decision-allow, .hero.decision-step-up,
+.hero.decision-deny { background: none; ... }` inside the print block, appearing
+after the unconditional rules so it wins.
+
+Extended the technique further for the chain-break marker, which only
+exists in the DOM after a client-side JS insertion (the static-fetch
+version of the reconstruction can't see it) — loaded the tampered scratch
+trace in a real browser tab, clicked "Verify this chain" for real so the
+marker actually got inserted, then injected the extracted print block
+into that already-mutated live DOM instead of a freshly fetched one.
+Confirmed: hero wash gone on both ALLOW and DENY traces (headline stays
+its own color, only the background/border strip), stamp and untrusted
+box render as plain bordered ink, full 64-character hashes and the
+print footer still work exactly as before, chain-break diamond and
+border still visible.
