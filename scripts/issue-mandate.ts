@@ -1,6 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { config } from "dotenv";
 import { signMandate, type MandateDocument } from "@praman/mandate";
+
+// Same reason as approve.ts/verify-ledger.ts — dotenv must load before
+// requireEnv() reads MANDATE_PRIVATE_KEY from process.env.
+config({ path: fileURLToPath(new URL("../.env", import.meta.url)) });
 
 function requireEnv(name: string): string {
   const value = process.env[name];

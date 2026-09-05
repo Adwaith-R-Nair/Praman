@@ -1,4 +1,11 @@
-import { prisma } from "@praman/db";
+import { fileURLToPath } from "node:url";
+import { config } from "dotenv";
+
+// Same reason as approve.ts/verify-ledger.ts — dotenv must load before any
+// dynamic import reaches @praman/db.
+config({ path: fileURLToPath(new URL("../.env", import.meta.url)) });
+
+const { prisma } = await import("@praman/db");
 
 const MERCHANT_ID = process.argv[2] ?? "MERCH_001";
 

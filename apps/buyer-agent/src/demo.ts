@@ -2,14 +2,22 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { env } from "node:process";
 import { fileURLToPath } from "node:url";
-import { runIntent } from "@praman/control-plane";
-import { LiveExecutor, SimulatedExecutor } from "@praman/razorpay-exec";
+import { config } from "dotenv";
 import type { SignedMandate } from "@praman/mandate";
 import type { PurchaseIntent } from "@praman/policy";
-import { formatINR } from "@praman/shared";
-import { GeminiProvider } from "@praman/agent-core";
-import { runAgent } from "./agent.js";
-import { recordAgentTranscript } from "./record-transcript.js";
+
+// Same reason as approve.ts/verify-ledger.ts — dotenv must load before any
+// dynamic import reaches @praman/db (via @praman/control-plane here). Type-only
+// imports above are erased at compile time and never actually execute, so
+// they're safe to keep static.
+config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
+
+const { runIntent } = await import("@praman/control-plane");
+const { LiveExecutor, SimulatedExecutor } = await import("@praman/razorpay-exec");
+const { formatINR } = await import("@praman/shared");
+const { GeminiProvider } = await import("@praman/agent-core");
+const { runAgent } = await import("./agent.js");
+const { recordAgentTranscript } = await import("./record-transcript.js");
 
 const baseGoal = process.argv[2] ?? "order lunch for two under ₹700";
 const merchantId = env["DEMO_MERCHANT_ID"] ?? "MERCH_001";
