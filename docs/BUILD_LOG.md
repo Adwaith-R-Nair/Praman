@@ -1000,3 +1000,15 @@ implied.
   already proven correct from the hero. Reconnected the browser tool
   afterward and verified directly — zoomed screenshot confirms the actual
   ₹ glyph now, in both the goal and the rationale.
+- Reason-code copy pass (commit 4). Dropped the "Allowed —"/"Refused —"
+  prefixes from every `REASON_CODE_PLAIN` string: the hero already states
+  the verdict, in color, as the page's own headline, so the line right
+  below it repeating "Refused —" was the page contradicting its own
+  hierarchy rather than adding the one thing that line exists to add —
+  the reason. Also suppressed the whole reason section for a plain `OK`:
+  "Allowed" already says everything OK would add. Verified against a real
+  DENY trace (`pnpm demo "order two family combo platters"` →
+  `MANDATE_AMOUNT_EXCEEDED`, genuinely over the ₹800 per-purchase cap, not
+  contrived) — reads as "Refused / This is over the mandate's
+  per-purchase limit. / MANDATE_AMOUNT_EXCEEDED", no repetition, and
+  confirmed the earlier ALLOW trace no longer shows the redundant OK line.

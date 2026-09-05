@@ -2,13 +2,13 @@ import { formatINR, paiseFromJSON, type ReasonCode } from "@praman/shared";
 import type { EventType } from "@praman/ledger";
 import { loadTrace } from "../data.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
+import { layout } from "../layout.js";
+import { EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
 
 /** Free text (goal, rationale, merchant content) may contain a literal ₹. */
 function escFreeText(value: string): string {
   return fixRupeeGlyph(escapeHtml(value));
 }
-import { layout } from "../layout.js";
-import { EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
 
 function decisionClass(kind: string | null): string {
   if (kind === "ALLOW") return "decision-allow";
@@ -39,7 +39,12 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
     };
   }
 
-  const reasonPlain = trace.refusalReason ?? (trace.reasonCode ? (REASON_CODE_PLAIN[trace.reasonCode as ReasonCode] ?? trace.reasonCode) : null);
+  // Suppressed for a plain OK: the hero already says "Allowed", and OK adds
+  // no information beyond that — showing it anyway would be the page
+  // repeating its own headline back to the reader.
+  const reasonPlain =
+    trace.refusalReason ??
+    (trace.reasonCode && trace.reasonCode !== "OK" ? (REASON_CODE_PLAIN[trace.reasonCode as ReasonCode] ?? trace.reasonCode) : null);
   const amount = trace.amountPaise ? formatINR(paiseFromJSON(trace.amountPaise)) : null;
 
   const merchantReadsHtml = trace.merchantReads
