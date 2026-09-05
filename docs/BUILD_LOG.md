@@ -889,3 +889,11 @@ implied.
   stopped it. Extended `writeTranscript`/`runLayer2` with an optional
   subdir so six runs of the same 7 case_ids don't overwrite each other's
   transcripts.
+- Published the ablation to `eval/report.md` (docs commit). Wired it
+  through `report.ts`/`cli.ts` rather than hand-editing the committed
+  file: `pnpm eval` now reads `eval/ablation/*.json` if present and folds
+  a data-driven section in automatically, with a templated (not hand-typed)
+  interpretation chosen from the actual numbers. Hand-editing once would
+  have meant the next `pnpm eval --layer1 --layer2` silently dropped the
+  section, since the generator wouldn't know it existed — the same
+  "never hand-typed" discipline the badge has held to all along.

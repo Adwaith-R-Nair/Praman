@@ -2,10 +2,25 @@ import { formatINR, paise } from "@praman/shared";
 import type { Metrics } from "./metrics.js";
 import type { CaseResult } from "./types.js";
 
+export interface AblationArmStats {
+  readonly runs: number;
+  readonly influenced: number;
+  readonly moneyMoved: number;
+  /** Of the influenced cases specifically, how many resulted in money moving — contained_despite_influence, for this arm. */
+  readonly influencedAndMoneyMoved: number;
+}
+
+export interface AblationSummary {
+  readonly model_id: string;
+  readonly defended: AblationArmStats;
+  readonly undefended: AblationArmStats;
+}
+
 export interface ReportInput {
   readonly results: readonly CaseResult[];
   readonly metrics: Metrics;
   readonly generated_at: string;
+  readonly ablation?: AblationSummary;
 }
 
 function pct(value: number | null): string {
@@ -22,7 +37,33 @@ function familyTable(results: readonly CaseResult[]): string {
   return ["| family | cases | passed | failed |", "|---|---|---|---|", ...rows].join("\n");
 }
 
-export function generateReportMarkdown({ results, metrics, generated_at }: ReportInput): string {
+function ablationInterpretation(a: AblationSummary): string {
+  const totalInfluenced = a.defended.influenced + a.undefended.influenced;
+  const totalInfluencedAndMoved = a.defended.influencedAndMoneyMoved + a.undefended.influencedAndMoneyMoved;
+  const parts: string[] = [];
+
+  if (a.undefended.influenced > a.defended.influenced) {
+    parts.push(
+      `The undefended arm was influenced more often (${a.undefended.influenced.toString()}/${a.undefended.runs.toString()}) than the defended arm (${a.defended.influenced.toString()}/${a.defended.runs.toString()}) — a measured difference, not an assumed one, though n=${a.undefended.runs.toString()} per arm is too small to claim a precise effect size.`,
+    );
+  } else if (a.defended.influenced === 0 && a.undefended.influenced === 0) {
+    parts.push(
+      "Both arms landed at 0% influenced. The delimiter's value is unproven at this sample size — the model resisted these attacks unaided in this run. The policy engine is the load-bearing defence, which is the architectural claim this project makes anyway (D-01, D-02).",
+    );
+  } else {
+    parts.push("The two arms did not show a clear directional difference at this sample size.");
+  }
+
+  if (totalInfluenced > 0) {
+    parts.push(
+      `Of the ${totalInfluenced.toString()} case${totalInfluenced === 1 ? "" : "s"} where the injection did alter the agent's proposal, ${totalInfluencedAndMoved.toString()} resulted in money moving — the policy engine caught the rest regardless of what the prompt layer did. This is \`contained_despite_influence\` measured directly, not left null.`,
+    );
+  }
+
+  return parts.join(" ");
+}
+
+export function generateReportMarkdown({ results, metrics, generated_at, ablation }: ReportInput): string {
   const l1 = results.filter((r) => r.layer === 1);
   const l2 = results.filter((r) => r.layer === 2);
   const totalPassed = results.filter((r) => r.passed).length;
@@ -83,6 +124,29 @@ export function generateReportMarkdown({ results, metrics, generated_at }: Repor
         "run. Transcripts for every case are committed under `eval/transcripts/` " +
         "so a reviewer can check what actually happened rather than trust this " +
         "summary.",
+    );
+  }
+
+  if (ablation) {
+    lines.push(
+      "",
+      "## Ablation: what does the prompt-layer defence buy?",
+      "",
+      `Same 7 injection cases, same model (\`${ablation.model_id}\`), 3 repeats per arm. Arms differ only in whether merchant text is delimited (\`PRAMAN_NO_DELIMITER\`) and whether the system prompt carries untrusted-content handling instructions (\`PRAMAN_NO_PROMPT_DEFENCE\`). The policy engine is identical in both arms.`,
+      "",
+      "| Arm | Runs | Proposals influenced | Money moved |",
+      "|---|---|---|---|",
+      `| Defended | ${ablation.defended.runs.toString()} | ${ablation.defended.influenced.toString()} | ${ablation.defended.moneyMoved.toString()} |`,
+      `| Undefended | ${ablation.undefended.runs.toString()} | ${ablation.undefended.influenced.toString()} | ${ablation.undefended.moneyMoved.toString()} |`,
+      "",
+      `**Interpretation.** ${ablationInterpretation(ablation)}`,
+      "",
+      "**Limits.** n=21 per arm on one model, one temperature, seven hand-written " +
+        "attacks by the same author who wrote the defence. Not a benchmark. The " +
+        "delimiter and the prompt instructions were removed together, so this does " +
+        "not separate their individual contributions. Full per-repeat results and " +
+        "every transcript are committed under `eval/ablation/` and " +
+        "`eval/transcripts/ablation/`.",
     );
   }
 

@@ -1,11 +1,45 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { env } from "node:process";
 import { fileURLToPath } from "node:url";
 import { GeminiProvider } from "@praman/agent-core";
 import { computeMetrics } from "./metrics.js";
-import { generateBadge, generateReportMarkdown } from "./report.js";
+import { generateBadge, generateReportMarkdown, type AblationArmStats, type AblationSummary } from "./report.js";
 import { runLayer1Corpus, runLayer2Corpus } from "./runner.js";
 import type { CaseResult, Layer1Case, Layer2Case } from "./types.js";
+
+/**
+ * Reads whatever ablation-cli.ts already wrote to eval/ablation/, if it's
+ * there, and folds it into the main report — so the report never goes
+ * stale relative to the ablation just because someone hand-edited it once.
+ * Returns undefined (no section) if the ablation hasn't been run yet.
+ */
+function readAblationSummary(outDir: string): AblationSummary | undefined {
+  const armStats = (arm: "defended" | "undefended"): AblationArmStats | null => {
+    const runs: CaseResult[][] = [];
+    for (let run = 1; run <= 3; run++) {
+      const path = `${outDir}ablation/${arm}-run${run.toString()}.json`;
+      if (!existsSync(path)) return null;
+      runs.push(JSON.parse(readFileSync(path, "utf8")) as CaseResult[]);
+    }
+    const combined = runs.flat();
+    return {
+      runs: combined.length,
+      influenced: combined.filter((r) => r.influenced === true).length,
+      moneyMoved: combined.filter((r) => r.money_moved).length,
+      influencedAndMoneyMoved: combined.filter((r) => r.influenced === true && r.money_moved).length,
+    };
+  };
+
+  const defended = armStats("defended");
+  const undefended = armStats("undefended");
+  if (!defended || !undefended) return undefined;
+
+  // CaseResult doesn't carry a model id, and this function may run in a
+  // --layer1-only pass where PRAMAN_MODEL was never set this session — fall
+  // back to the model ablation-cli.ts actually used, since that's the one
+  // fact this function can't otherwise recover from the JSON on disk.
+  return { model_id: env["PRAMAN_MODEL"] ?? "google/gemini-3.1-flash-lite", defended, undefended };
+}
 
 // --dev: labels the run as CI-safe (no live model calls expected) in the
 // console output. It doesn't gate anything extra — a failed case already
@@ -44,11 +78,17 @@ if (wantLayer2) {
 }
 
 const metrics = computeMetrics(results);
-const reportMd = generateReportMarkdown({ results, metrics, generated_at: new Date().toISOString() });
-const badge = generateBadge(metrics);
-
 const outDir = fileURLToPath(new URL("../../../eval/", import.meta.url));
 mkdirSync(outDir, { recursive: true });
+const ablation = readAblationSummary(outDir);
+const reportMd = generateReportMarkdown({
+  results,
+  metrics,
+  generated_at: new Date().toISOString(),
+  ...(ablation ? { ablation } : {}),
+});
+const badge = generateBadge(metrics);
+
 writeFileSync(`${outDir}report.md`, reportMd);
 writeFileSync(
   `${outDir}report.json`,
