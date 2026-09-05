@@ -20,6 +20,42 @@ pnpm --filter @praman/db migrate
 pnpm test
 ```
 
+## Merchant MCP server
+
+`apps/merchant-mcp` exposes one merchant's catalog (`list_catalog`,
+`get_sku`, `check_stock`, `get_refund_policy`) as a real [MCP](https://modelcontextprotocol.io)
+server over stdio — any MCP-speaking client can browse and query it, not
+just Praman's own buyer agent. It does not sanitise its own output;
+untrusted-content delimiting happens once, at the buyer agent's own
+boundary (D-07), not inside the merchant's server.
+
+Point Claude Desktop (or any other MCP client) at it via
+`claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "praman-merchant": {
+      "command": "pnpm",
+      "args": ["--dir", "/absolute/path/to/praman", "exec", "tsx", "apps/merchant-mcp/src/server.ts"],
+      "env": { "MERCHANT_MCP_MERCHANT_ID": "MERCH_001" }
+    }
+  }
+}
+```
+
+Praman's own buyer agent talks to this same server, over the same
+protocol, when run with `PRAMAN_MCP=1`:
+
+```bash
+PRAMAN_MCP=1 pnpm demo
+```
+
+Unset (the default), the agent calls the catalog in-process instead — the
+eval harness always uses that direct path, since spawning a subprocess
+per one of 40 corpus cases would be slow and flaky. The demo and any
+recorded walkthrough use MCP.
+
 ## Documentation
 - [Architecture](docs/ARCHITECTURE.md) — start here, 5 minutes
 - [High Level Design](docs/HLD.md) · [Low Level Design](docs/LLD.md)

@@ -1497,3 +1497,36 @@ committing: running eval directly (`--layer1`) had overwritten the
 repo's real 40/40 `eval/report.md`/`report.json` with a partial 32/32
 one — reverted those two generated files rather than commit an
 accidental regression of the actual submission's eval report.
+
+## Day 9h — 5 Sep 2026 · README: connecting to the merchant
+
+Item 4, commit 3, the last one for this item. Added a "Merchant MCP
+server" section to README.md with the `claude_desktop_config.json`
+snippet — the actual proof this is a protocol boundary, not a private
+API: any MCP client can point at it, not just Praman's own agent.
+
+Didn't take the config on faith. Wrote a scratch client
+(`apps/merchant-mcp/scratch.ts`, gitignored) that spawns the exact
+documented command (`pnpm --dir <path> exec tsx apps/merchant-mcp/src/server.ts`)
+with `cwd: "/tmp"` specifically — a real external working directory, the
+way Claude Desktop or any other client actually would invoke it, not
+from inside the repo the way `apps/buyer-agent`'s own `McpCatalogClient`
+does. First attempt at checking this a cruder way (backgrounding the
+server and polling whether the process was still alive) gave a false
+"failed to start" reading — a stdio server correctly sitting idle
+waiting for input looks identical to a dead one from the outside if
+you're just checking liveness rather than actually calling a tool.
+Confirmed for real via `list_catalog`/`get_refund_policy` from that
+external cwd: 9 real catalog items back, real refund policy text.
+
+Left the file's existing em dashes alone (README.md already used them
+throughout, predating this session) rather than "fixing" them while
+here for an unrelated change — that cleanup is explicitly scoped to a
+later pass, not opportunistic edits to docs while touching them for
+something else.
+
+Item 4 (merchant MCP server) is done: the server itself, the buyer
+agent wired through it behind `PRAMAN_MCP=1`, and this doc. Item 5
+(revocation CLI) was done first (Day 9e). Item 6 (dispute evidence
+bundle) is what's left of the original 22-hour plan, lowest priority
+by Claude Chat's own stated cut order — next, time permitting.
