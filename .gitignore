@@ -47,6 +47,10 @@ Thumbs.db
 # scripts/issue-mandate.ts output — generated, run-specific, holds a signature
 mandate.json
 
+# scripts/dispute.ts output — generated per trace, not a single canonical
+# artifact like eval/report.md; copy one deliberately if you want an example
+disputes/
+
 # personal working notes — not part of the submission
 /private/
 .claude
