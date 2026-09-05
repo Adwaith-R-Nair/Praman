@@ -123,6 +123,7 @@ ${
 
 <section>
   <p class="nav data">trace_id ${escapeHtml(traceId)}</p>
+  <p class="nav"><a href="/dispute/${escapeHtml(traceId)}">Download dispute bundle</a></p>
 </section>
 
 <script>

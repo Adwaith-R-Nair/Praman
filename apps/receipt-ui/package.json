@@ -8,6 +8,7 @@
   "dependencies": {
     "@praman/agent-core": "workspace:*",
     "@praman/db": "workspace:*",
+    "@praman/dispute": "workspace:*",
     "@praman/ledger": "workspace:*",
     "@praman/shared": "workspace:*",
     "dotenv": "^17.4.2"

@@ -9,6 +9,7 @@ config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 const { renderTracePage } = await import("./pages/trace.js");
 const { renderIndexPage } = await import("./pages/index.js");
 const { verifyTrace } = await import("./verify.js");
+const { buildBundleStandalone } = await import("@praman/dispute");
 
 const PORT = Number(process.env["RECEIPT_UI_PORT"] ?? 4100);
 
@@ -17,6 +18,7 @@ const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const traceMatch = /^\/r\/([^/]+)\/?$/.exec(url.pathname);
     const verifyMatch = /^\/verify\/([^/]+)\/?$/.exec(url.pathname);
+    const disputeMatch = /^\/dispute\/([^/]+)\/?$/.exec(url.pathname);
 
     try {
       if (traceMatch?.[1]) {
@@ -30,6 +32,22 @@ const server = createServer((req, res) => {
         const result = await verifyTrace(decodeURIComponent(verifyMatch[1]));
         res.writeHead(result ? 200 : 404, { "Content-Type": "application/json; charset=utf-8" });
         res.end(JSON.stringify(result));
+        return;
+      }
+
+      if (disputeMatch?.[1]) {
+        const traceId = decodeURIComponent(disputeMatch[1]);
+        const bundle = await buildBundleStandalone(traceId);
+        if (!bundle) {
+          res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end("Not found");
+          return;
+        }
+        res.writeHead(200, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${traceId}.json"`,
+        });
+        res.end(JSON.stringify(bundle, null, 2));
         return;
       }
 

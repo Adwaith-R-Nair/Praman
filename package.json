@@ -17,6 +17,7 @@
     "eval": "tsx apps/eval/src/cli.ts",
     "approve": "tsx scripts/approve.ts",
     "revoke": "tsx scripts/revoke.ts",
+    "dispute": "tsx scripts/dispute.ts",
     "pending": "tsx scripts/pending.ts",
     "ablation": "tsx apps/eval/src/ablation-cli.ts",
     "receipt-ui": "tsx apps/receipt-ui/src/server.ts"
@@ -41,6 +42,7 @@
   "dependencies": {
     "@praman/control-plane": "workspace:*",
     "@praman/db": "workspace:*",
+    "@praman/dispute": "workspace:*",
     "@praman/ledger": "workspace:*",
     "@praman/mandate": "workspace:*",
     "@praman/razorpay-exec": "workspace:*",
