@@ -1409,3 +1409,50 @@ to `dotenv@17.4.2`'s own source (`TIPS` array in `lib/main.js`) and its
 own CHANGELOG, where the maintainer names it as his own side project.
 Legitimate, not a supply-chain concern, just an unusually forward
 self-promotion baked into a widely-used package.
+
+## Day 9f — 5 Sep 2026 · merchant MCP server
+
+Item 4. New `apps/merchant-mcp` — `list_catalog(category?)`, `get_sku(sku)`,
+`check_stock(sku, qty)`, `get_refund_policy()` over the real MCP SDK's
+stdio transport, scoped to one merchant per server instance (an env var,
+`MERCHANT_MCP_MERCHANT_ID`, defaulting to `MERCH_001`) rather than taking
+a merchant_id per call — a real merchant's own MCP server would only ever
+serve its own catalog, never let a caller browse someone else's.
+
+`check_stock` needed a real quantity, which `listCatalogForAgent` doesn't
+expose (only a stock>0 boolean) — added `checkStock()` to
+`packages/db/src/catalog.ts` rather than querying `catalogItem` directly
+from the app layer, keeping catalog access owned by one package like
+every other query already is.
+
+The server does not sanitise its own output — title/description come
+back exactly as stored, no `wrapUntrusted()`. This is deliberate, not an
+omission (said so in a comment at the top of the file): D-07 already
+puts the wrapping responsibility at the boundary where untrusted text is
+about to enter a prompt, which is `apps/buyer-agent/src/agent.ts`, not
+here. A merchant server that pre-wrapped its own text would be deciding,
+on the caller's behalf, how the caller must treat data the caller hasn't
+received yet — and this server exists specifically so callers OTHER than
+our own buyer-agent can connect to it too.
+
+`pnpm add @modelcontextprotocol/sdk -w` (as given) lands the dependency
+at the workspace root, but this repo's own convention keeps SDK deps in
+the specific package that uses them — `@google/genai` lives in
+`packages/agent-core`, not root. Moved it into `apps/merchant-mcp/package.json`
+instead of leaving it where the install command put it.
+
+Verified live end-to-end, not just by reading the code: wrote a scratch
+MCP client (`apps/merchant-mcp/scratch.ts`, gitignored) using the SDK's
+own `Client`/`StdioClientTransport`, spawned the real server as a
+subprocess, and called all four tools against the real dev database.
+Confirmed: `list_catalog` returns all 9 real catalog items including the
+unicode fixture rendered raw and correct; the category filter narrows to
+food only; `get_sku` returns one item and a real `isError: true` for a
+nonexistent SKU; `check_stock` correctly reports `sufficient: true` for
+2 of 25 available and `sufficient: false` for 999999; `get_refund_policy`
+returns the static text. Typecheck and the full suite (151 tests) both
+still pass.
+
+Not yet done: wiring `agent.ts` to actually consume this server (behind
+`PRAMAN_MCP=1`) and the README client-connection snippet — next two
+commits.

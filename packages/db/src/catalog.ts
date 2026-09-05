@@ -50,3 +50,18 @@ export async function listCatalogForAgent(tx: PrismaTx, merchantId: string) {
     in_stock: r.stockQty > 0,
   }));
 }
+
+/**
+ * The exact available quantity, not just the in_stock boolean listCatalogForAgent
+ * exposes — the merchant MCP server's check_stock(sku, qty) tool needs a real
+ * number to compare against, not a threshold-at-zero flag.
+ */
+export async function checkStock(
+  tx: PrismaTx,
+  merchantId: string,
+  sku: string,
+): Promise<{ readonly available_qty: number; readonly in_stock: boolean } | null> {
+  const row = await tx.catalogItem.findUnique({ where: { merchantId_sku: { merchantId, sku } } });
+  if (!row) return null;
+  return { available_qty: row.stockQty, in_stock: row.stockQty > 0 };
+}

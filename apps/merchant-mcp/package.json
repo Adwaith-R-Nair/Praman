@@ -1,0 +1,15 @@
+{
+  "name": "@praman/merchant-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/server.ts",
+  "exports": { ".": "./src/server.ts" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@praman/db": "workspace:*",
+    "@praman/shared": "workspace:*",
+    "dotenv": "^17.4.2",
+    "zod": "^4.5.4"
+  }
+}
