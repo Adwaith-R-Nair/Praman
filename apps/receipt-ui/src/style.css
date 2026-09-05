@@ -439,7 +439,27 @@ h2 {
 }
 
 /* The verify walk recolours each dot as it's checked, travelling down the
-   spine — motion that shows real work happening, not a flipped badge. */
+   spine — motion that shows real work happening, not a flipped badge. The
+   settle animation gives each dot a small pop as it lands, so the walk
+   reads as a sequence of individual checks landing one by one rather than
+   a color just sweeping down the line. */
+@keyframes dot-settle {
+  0% {
+    transform: scale(0.5);
+  }
+  60% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.entry.entry-confirmed::before,
+.entry.entry-broken::before {
+  animation: dot-settle 220ms ease-out;
+}
+
 .entry.entry-confirmed::before {
   background: var(--verified);
   border-color: var(--verified);
@@ -472,6 +492,22 @@ h2 {
   font-family: var(--sans);
   font-size: var(--size-sm);
   font-weight: 600;
+}
+
+/* A small diamond sitting exactly where the spine's own line gets cut by
+   this marker's background — the gap in the line reads as "the link
+   broke exactly here," not just "something changed somewhere near this
+   point." Same left offset as .entry::before, so it sits on the spine's
+   actual line rather than beside it. */
+.chain-break::before {
+  content: "";
+  position: absolute;
+  left: 0.6rem;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: var(--refused);
 }
 
 .chain-break .data {

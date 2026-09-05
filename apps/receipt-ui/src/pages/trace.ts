@@ -132,7 +132,6 @@ ${
   var stateEl = document.getElementById("verify-state");
   var entries = Array.prototype.slice.call(document.querySelectorAll(".spine .entry"));
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var STAGGER_MS = reduced ? 0 : 80;
 
   function finish(data) {
     btn.disabled = false;
@@ -158,25 +157,47 @@ ${
     afterEl.parentNode.insertBefore(marker, afterEl.nextSibling);
   }
 
+  // Eased rather than a flat per-step stagger — a constant interval reads
+  // as mechanical, and an ease-out (fast start, settling toward the end)
+  // reads more like a real check landing than a metronome. Total duration
+  // scales with how many entries there are to walk, clamped so a very
+  // short chain doesn't feel instant and a very long one doesn't drag.
   function walk(data) {
-    var i = 0;
-    function step() {
-      if (i >= entries.length) return finish(data);
-      var seq = Number(entries[i].getAttribute("data-seq"));
-      var isBroken = !data.traceVerified && data.brokenAtSeq !== null && seq >= data.brokenAtSeq;
-      if (isBroken) {
-        entries[i].classList.add("entry-broken");
-        insertBreakMarker(entries[i], data);
-        for (var j = i + 1; j < entries.length; j++) {
-          entries[j].classList.add("entry-unresolved");
+    var n = entries.length;
+    var brokenIndex = -1;
+    if (!data.traceVerified && data.brokenAtSeq !== null) {
+      for (var k = 0; k < n; k++) {
+        if (Number(entries[k].getAttribute("data-seq")) >= data.brokenAtSeq) {
+          brokenIndex = k;
+          break;
         }
-        return finish(data);
       }
-      entries[i].classList.add("entry-confirmed");
-      i++;
-      setTimeout(step, STAGGER_MS);
     }
-    step();
+    var stopAt = brokenIndex === -1 ? n : brokenIndex + 1;
+    var TOTAL_MS = reduced ? 0 : Math.min(900, Math.max(220, stopAt * 90));
+
+    function easeOutCubic(t) {
+      return 1 - Math.pow(1 - t, 3);
+    }
+
+    for (var i = 0; i < stopAt; i++) {
+      (function (i) {
+        var t = stopAt <= 1 ? 1 : i / (stopAt - 1);
+        var delay = easeOutCubic(t) * TOTAL_MS;
+        setTimeout(function () {
+          if (i === brokenIndex) {
+            entries[i].classList.add("entry-broken");
+            insertBreakMarker(entries[i], data);
+            for (var j = i + 1; j < n; j++) {
+              entries[j].classList.add("entry-unresolved");
+            }
+          } else {
+            entries[i].classList.add("entry-confirmed");
+          }
+          if (i === stopAt - 1) finish(data);
+        }, delay);
+      })(i);
+    }
   }
 
   btn.addEventListener("click", function () {

@@ -1232,3 +1232,30 @@ displacement filter, lower risk of looking broken for a similar effect.
 Verified live: stamp renders as a legible tilted tab, doesn't collide
 with the SKU/price line above it, halo reads as a soft edge rather than a
 render glitch.
+
+Commit 6: spine/verify-walk polish. Replaced the flat 80ms-per-step
+stagger with an eased one (ease-out cubic, total duration scaled to how
+many entries there are, clamped 220-900ms) — a constant interval reads as
+mechanical, an ease-out reads like a real check landing. Rewrote `walk()`
+to schedule all steps with precomputed absolute delays instead of a
+chained `setTimeout` recursion, since eased timing needs to know each
+step's position up front rather than a fixed increment. Added a small
+scale-pop animation to each dot as it lands (respects the existing global
+`prefers-reduced-motion` rule automatically, no separate guard needed).
+Gave the chain-break marker its own small diamond, positioned at the same
+left offset as `.entry::before`, sitting exactly in the gap where the
+marker's paper-colored background already cuts the spine's line — reads
+as "the link broke exactly here" instead of a text banner floating near
+the break.
+
+Verified for real, not just by inspection: wrote a scratch seed (6
+synthetic entries: intent/decision/api_call/outcome/checkpoint/
+agent_transcript, one per real EventType) against `TEST_DATABASE_URL`,
+tampered seq 4 with the same disable-trigger/corrupt/re-enable technique
+used throughout, pointed `receipt-ui` at the test DB temporarily. Watched
+the eased walk correctly stop at seq 4, plant the diamond marker, dim seq
+5-6 as unresolved, and re-ran verify a second time to confirm the reset
+path still clears old state correctly. Then reverted `receipt-ui` to the
+real dev DB and reran the walk on a genuine 101-entry chain to confirm
+the eased timing holds up on a real trace, not just the synthetic
+6-entry one.
