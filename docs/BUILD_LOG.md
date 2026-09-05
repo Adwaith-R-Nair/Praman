@@ -1364,3 +1364,48 @@ real WCAG contrast fix, print stylesheet correctness (including a
 real bug fixed that had been silently broken since commit 4), and this
 final confirmation pass. Combined with the original 9-commit build,
 `receipt-ui` is functionally and visually complete.
+
+## Day 9e — 5 Sep 2026 · revocation CLI
+
+Back to the roadmap items that predate the trace-viewer/design work.
+Item 5 first (Claude Chat's cut order: 6 first if time runs short, then
+5, then 4 — meaning 4 and 5 are the ones to actually finish).
+
+`scripts/revoke.ts <mandate_id> "<reason>"` — confirmed first that the
+hard part was already built: `evaluate()` already checks `state.revoked`
+(`packages/policy/src/evaluate.ts`), `deriveState()` already sets it from
+a `mandate_revoked` event (`packages/ledger/src/derive.ts`), and
+`resolve-approval.test.ts` already exercises revocation for the
+step-up-resolution path. Only a CLI to append the event was missing, and
+only for the *fresh-intent* path — there was no test at all for
+`runIntent()` denying a revoked mandate specifically (`resolve-approval.test.ts`
+covers revocation racing an in-flight approval, not a brand new intent).
+Added `packages/control-plane/test/run-intent.test.ts` to close that gap.
+
+The script itself mirrors `run-intent.ts`'s own pattern exactly: acquire
+`pg_advisory_xact_lock(MANDATE_LOCK_NS, hashtext(mandate_id))` inside the
+same transaction as the `append()`, then `maybeCheckpoint()` — the same
+per-mandate serialisation every other mutation path uses, so a revocation
+racing an in-flight intent commits before that intent's own transaction
+can read stale state.
+
+Verified the full beat live, not just via the test: `pnpm demo` (STEP_UP)
+→ `pnpm revoke mnd_8652dbc1d847 "..."` → `pnpm demo` again → `DENY /
+MANDATE_REVOKED`. Real bug in my own verification process, caught
+immediately rather than after the fact: that mandate was the actual
+`mandate.json` currently in use for demos, and revocation is permanent by
+design (append-only ledger, no un-revoke). Fixed immediately by running
+`pnpm issue-mandate` to replace it and re-confirming `pnpm demo` works
+again — but the lesson stands: revoke a scratch mandate for live testing
+from now on, not the working demo one.
+
+Also hit an unrelated environment snag while testing: `pnpm demo` doesn't
+call `dotenv.config()` itself (unlike the scripts that do), so it depends
+on the shell already having `.env` loaded — normal in an interactive
+shell, not in a fresh non-interactive one. Used `tsx --env-file=.env`
+directly rather than fighting it. Separately, chased down an odd-looking
+console line during this — `⌁ auth for agents [www.vestauth.com]` — back
+to `dotenv@17.4.2`'s own source (`TIPS` array in `lib/main.js`) and its
+own CHANGELOG, where the maintainer names it as his own side project.
+Legitimate, not a supply-chain concern, just an unusually forward
+self-promotion baked into a widely-used package.
