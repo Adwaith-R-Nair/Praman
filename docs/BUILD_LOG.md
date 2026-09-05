@@ -1259,3 +1259,30 @@ path still clears old state correctly. Then reverted `receipt-ui` to the
 real dev DB and reran the walk on a genuine 101-entry chain to confirm
 the eased timing holds up on a real trace, not just the synthetic
 6-entry one.
+
+Commit 7: responsive + accessibility pass. Added a `max-width: 640px`
+breakpoint (matching `.record`'s own max-width — below that the reading
+column already fills the viewport) that shrinks `--size-hero`, stacks the
+masthead and trace-row layout instead of squeezing them, and lets
+`.hero-top`/`.entry-header` wrap instead of overflowing. Couldn't trigger
+this for real in-session: `resize_window` reported success but the tab's
+own `window.innerWidth` stayed at 1920 regardless (this browser
+automation environment doesn't actually resize the tab's rendering
+viewport), so I verified the CSS itself by injecting the same rule block
+unwrapped via a temporary `<style>` tag plus a forced `.record` width,
+which exercises the exact same selectors without needing a real narrow
+viewport. Caught a real overflow this way: "Agent's full transcript
+recorded" (33 chars) alongside "seq 56" would have collided at narrow
+widths without `.entry-header { flex-wrap: wrap; }`, confirmed fixed.
+
+Also ran actual WCAG contrast numbers (relative luminance, not eyeballing)
+for every accent color against `--paper`: verified 5.54:1, refused 5.91:1,
+ink-muted 6.29:1 — all comfortably clear 4.5:1. `--step-up` came out to
+3.54:1, which clears the 3:1 large-text threshold (fine for the trace
+hero's own headline) but fails 4.5:1 for normal text — and it's used at
+small sizes in three places: the index row's "Needs approval" label, the
+stamp, and the untrusted-content note. Added `--step-up-text: #8a5f22`
+(4.92:1, computed the same way) for exactly those three spots, leaving
+every border/background use of `--step-up` and the large hero headline
+untouched. Verified live: "Needs approval" and the stamp both read in the
+darker tone now, same family of color, no other visual change.

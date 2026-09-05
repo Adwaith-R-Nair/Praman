@@ -15,6 +15,13 @@
   --ink-muted: #4b5b55;
   --verified: #2e6b4c;
   --step-up: #a6752e;
+  /* --step-up itself is 3.54:1 against --paper — fine for large text (the
+     trace hero headline, checked at WCAG's 3:1 large-text threshold) but
+     short of the 4.5:1 normal-text threshold. This darker variant (4.92:1)
+     is for the small-text spots: the index row's step-up decision label,
+     the stamp, and the untrusted-content note. Borders/backgrounds keep
+     using --step-up itself — non-text contrast isn't held to 4.5:1. */
+  --step-up-text: #8a5f22;
   --refused: #9e3b2e;
   --hairline: #c7d0c9;
 
@@ -350,7 +357,7 @@ h2 {
   font-family: var(--mono);
   font-size: var(--size-sm);
   font-weight: 600;
-  color: var(--step-up);
+  color: var(--step-up-text);
   background: var(--paper);
   padding: 0.15em 0.6em;
   border: 1.5px solid color-mix(in srgb, var(--step-up) 55%, var(--paper));
@@ -360,7 +367,7 @@ h2 {
 .untrusted-note {
   font-family: var(--sans);
   font-size: var(--size-sm);
-  color: var(--step-up);
+  color: var(--step-up-text);
   margin: 0.4em 0 0.7em;
 }
 
@@ -635,6 +642,13 @@ a:focus-visible {
   white-space: nowrap;
 }
 
+/* At this small size, --step-up itself falls short of WCAG's 4.5:1
+   normal-text threshold (it clears the 3:1 large-text one, which is why
+   the trace hero's own headline keeps using --step-up directly). */
+.trace-row-meta .decision.decision-step-up {
+  color: var(--step-up-text);
+}
+
 .trace-row-meta .data {
   text-align: right;
   white-space: nowrap;
@@ -648,6 +662,48 @@ a:focus-visible {
 
 .print-footer {
   display: none;
+}
+
+/* Below 640px the reading column already fills the viewport (.record's
+   own max-width), so this is the point real content stops fitting on one
+   line: the trace-row's three-column meta grid, the hero headline at its
+   full display size, and the masthead's side-by-side layout all need to
+   give way to stacking instead of shrinking illegibly. */
+@media (max-width: 640px) {
+  :root {
+    --size-hero: 2.4rem;
+  }
+
+  .masthead {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+
+  .masthead-chain {
+    align-items: flex-start;
+  }
+
+  .hero-top {
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  .trace-row-link {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 0.3em;
+  }
+
+  .trace-row-meta {
+    grid-template-columns: 1fr auto auto;
+    width: 100%;
+  }
+
+  .entry-header {
+    flex-wrap: wrap;
+  }
 }
 
 /* A dispute officer prints this. Truncated hashes and an interactive
