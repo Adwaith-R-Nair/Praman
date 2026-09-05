@@ -7,7 +7,7 @@ import { config } from "dotenv";
 config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 
 const { renderTracePage } = await import("./pages/trace.js");
-const { layout } = await import("./layout.js");
+const { renderIndexPage } = await import("./pages/index.js");
 const { verifyTrace } = await import("./verify.js");
 
 const PORT = Number(process.env["RECEIPT_UI_PORT"] ?? 4100);
@@ -35,7 +35,7 @@ const server = createServer((req, res) => {
 
       if (url.pathname === "/") {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(layout("Recent traces", "<p>Index page (coming soon).</p>"));
+        res.end(await renderIndexPage());
         return;
       }
 

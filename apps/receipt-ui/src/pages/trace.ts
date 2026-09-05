@@ -1,6 +1,7 @@
 import { formatINR, paiseFromJSON, type ReasonCode } from "@praman/shared";
 import type { EventType } from "@praman/ledger";
 import { loadTrace } from "../data.js";
+import { decisionClass, decisionLabel } from "../decision-display.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
 import { layout } from "../layout.js";
 import { EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
@@ -8,21 +9,6 @@ import { EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
 /** Free text (goal, rationale, merchant content) may contain a literal ₹. */
 function escFreeText(value: string): string {
   return fixRupeeGlyph(escapeHtml(value));
-}
-
-function decisionClass(kind: string | null): string {
-  if (kind === "ALLOW") return "decision-allow";
-  if (kind === "STEP_UP") return "decision-step-up";
-  if (kind === "DENY") return "decision-deny";
-  return "";
-}
-
-function decisionLabel(kind: string | null, orderStatus: string | null): string {
-  if (kind === "ALLOW" && orderStatus) return `Allowed (${orderStatus})`;
-  if (kind === "ALLOW") return "Allowed";
-  if (kind === "STEP_UP") return "Needs approval";
-  if (kind === "DENY") return "Refused";
-  return "Unknown";
 }
 
 export async function renderTracePage(traceId: string): Promise<{ status: number; html: string }> {

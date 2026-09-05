@@ -142,3 +142,19 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     approvalVerdict: asString(stepUpResolved?.["verdict"]),
   };
 }
+
+/** The most recently active trace_ids, newest first — one row per trace, not per entry. */
+export async function listRecentTraceIds(limit: number): Promise<readonly string[]> {
+  // checkpoint entries carry a synthetic "ckpt_<seq>" trace_id (see
+  // packages/ledger/src/checkpoint.ts) — a maintenance record, not a
+  // purchase a human would want to click into. Every real trace starts
+  // with an "intent" event; checkpoints never have one.
+  const rows = await prisma.$queryRaw<{ trace_id: string }[]>`
+    SELECT trace_id FROM ledger_entry
+    WHERE trace_id IN (SELECT DISTINCT trace_id FROM ledger_entry WHERE event_type = 'intent')
+    GROUP BY trace_id
+    ORDER BY MAX(seq) DESC
+    LIMIT ${limit}
+  `;
+  return rows.map((r) => r.trace_id);
+}

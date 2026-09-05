@@ -406,3 +406,54 @@ a:focus-visible {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* The index — a plain list of records, not a dashboard grid. */
+.trace-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+
+.trace-row {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.trace-row:first-child {
+  border-top: 1px solid var(--hairline);
+}
+
+.trace-row-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.trace-row-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  flex-shrink: 0;
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+}
+
+.trace-row-meta .decision {
+  font-size: var(--size-sm);
+  font-weight: 600;
+  margin: 0;
+}
+
+.trace-row-meta .state {
+  padding: 0.15em 0.5em;
+  margin: 0;
+}

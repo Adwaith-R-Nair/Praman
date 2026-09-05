@@ -1074,3 +1074,19 @@ implied.
   there reading "This entry's contents changed after it was written.
   PAYLOAD_HASH_MISMATCH," and seq 6 dimmed as unresolved. Exactly the
   intended design, working end to end against a genuine corruption.
+- Commit 8: the `/` index page. Extracted `classifyTrace()` out of
+  `verifyTrace()` as a pure function first, so the index can run the
+  expensive global `verifyChain()` walk ONCE and classify every listed
+  trace against that single result, instead of re-walking the whole
+  ledger once per row. Also extracted `decisionClass`/`decisionLabel` out
+  of `trace.ts` into a shared `decision-display.ts`, since the index needs
+  the exact same labels the trace page does.
+- Real bug caught before handing this off: the first row was `ckpt_100`,
+  decision "Unknown" — a checkpoint maintenance record, not a purchase.
+  `checkpoint` events carry a synthetic `ckpt_<seq>` trace_id
+  (`packages/ledger/src/checkpoint.ts`), and my listing query had no
+  reason to exclude it. Fixed by only listing trace_ids that have an
+  `intent` event — every real purchase trace has exactly one, checkpoints
+  never do. Verified live: the checkpoint row is gone, every remaining row
+  shows a real decision, amount, and verification state, and clicking
+  through actually navigates to that trace's own page.
