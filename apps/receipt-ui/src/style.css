@@ -1,0 +1,257 @@
+/* Praman receipt viewer — design tokens.
+   Security-paper reference: the pale blue-green tint on checks and bonds
+   exists specifically to resist tampering — a fitting base for a
+   hash-chained, tamper-evident record. Each accent below is tied to a real
+   decision/verification state, not decorative. */
+
+:root {
+  --paper: #edf1ee;
+  --paper-raised: #e4ebe6;
+  --ink: #172420;
+  --ink-muted: #4b5b55;
+  --verified: #2e6b4c;
+  --step-up: #a6752e;
+  --refused: #9e3b2e;
+  --hairline: #c7d0c9;
+
+  --serif: "PT Serif", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, "Segoe UI", system-ui, sans-serif;
+
+  /* Modular scale, 1.25 ratio, base 17px — a document read carefully, not a display page. */
+  --size-sm: 0.85rem;
+  --size-base: 1.0625rem;
+  --size-md: 1.328rem;
+  --size-lg: 1.66rem;
+  --size-xl: 2.074rem;
+
+  --space-1: 0.5rem;
+  --space-2: 1rem;
+  --space-3: 1.75rem;
+  --space-4: 2.75rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--paper);
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: var(--size-base);
+  line-height: 1.55;
+}
+
+.record {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-2) var(--space-4);
+}
+
+a {
+  color: var(--ink);
+}
+
+/* Anything that IS data — hashes, trace ids, reason codes, amounts —
+   gets mono and tabular figures so columns of digits actually align. */
+code,
+.data {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+}
+
+.nav {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+  margin-bottom: var(--space-3);
+}
+
+.nav a {
+  color: var(--ink-muted);
+  text-decoration: none;
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* Hero: verification state + decision, together, above everything else. */
+.hero {
+  margin-bottom: var(--space-3);
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  font-weight: 600;
+  padding: 0.25em 0.7em;
+  border-radius: 3px;
+  margin-bottom: var(--space-2);
+}
+
+.state.state-verified {
+  background: color-mix(in srgb, var(--verified) 14%, var(--paper));
+  color: var(--verified);
+}
+
+.state.state-unverified {
+  background: color-mix(in srgb, var(--ink-muted) 12%, var(--paper));
+  color: var(--ink-muted);
+}
+
+.state.state-broken {
+  background: color-mix(in srgb, var(--refused) 16%, var(--paper));
+  color: var(--refused);
+}
+
+.decision {
+  font-size: var(--size-xl);
+  font-weight: 700;
+  margin: 0 0 0.15em;
+}
+
+.decision.decision-allow,
+.decision.decision-executed {
+  color: var(--verified);
+}
+
+.decision.decision-step-up {
+  color: var(--step-up);
+}
+
+.decision.decision-deny,
+.decision.decision-refused {
+  color: var(--refused);
+}
+
+.amount {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--size-md);
+  color: var(--ink-muted);
+}
+
+.goal {
+  font-size: var(--size-md);
+  margin: var(--space-2) 0;
+}
+
+.goal-label {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+  display: block;
+  margin-bottom: 0.2em;
+}
+
+/* The reason, in plain language first, machine code beside it. */
+.reason {
+  margin: var(--space-2) 0;
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.reason-plain {
+  margin: 0 0 0.3em;
+}
+
+.reason-code {
+  color: var(--ink-muted);
+}
+
+section {
+  margin: var(--space-3) 0;
+}
+
+h2 {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  font-weight: 600;
+  color: var(--ink-muted);
+  margin: 0 0 var(--space-1);
+}
+
+.rationale {
+  font-style: italic;
+}
+
+/* Untrusted merchant content — the single most important visual signal in
+   the whole page. Ochre dashed border, never mistaken for ordinary body
+   text, so a reviewer can SEE an injection attempt sitting inside a
+   product description rather than take a summary's word for it. */
+.untrusted {
+  border: 1px dashed var(--step-up);
+  padding: var(--space-2);
+  margin: var(--space-2) 0;
+  background: color-mix(in srgb, var(--step-up) 5%, var(--paper));
+  position: relative;
+}
+
+.untrusted::before {
+  content: "untrusted — merchant-authored";
+  display: block;
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  color: var(--step-up);
+  margin-bottom: 0.5em;
+}
+
+/* Chain entries — a placeholder list for now; the continuous spine
+   treatment lands in the next commit. */
+.entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.entry {
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.entry:last-child {
+  border-bottom: none;
+}
+
+.entry-type {
+  font-weight: 600;
+}
+
+.entry-meta {
+  font-family: var(--mono);
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+}
+
+button {
+  font-family: var(--sans);
+  font-size: var(--size-base);
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  padding: 0.6em 1.2em;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--step-up);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -314,6 +314,24 @@ importers:
         specifier: ^17.4.2
         version: 17.4.2
 
+  apps/receipt-ui:
+    dependencies:
+      '@praman/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+      '@praman/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@praman/ledger':
+        specifier: workspace:*
+        version: link:../../packages/ledger
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
+
   packages/agent-core:
     dependencies:
       '@anthropic-ai/sdk':

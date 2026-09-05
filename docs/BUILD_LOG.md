@@ -932,3 +932,30 @@ implied.
   event lands right after `decision` with the untrusted-content wrapping
   intact and no `raw` field, then ran `pnpm verify-ledger` — chain still
   intact, all entries (56) verified including the new one.
+- Added `read(tx, traceId)` to `packages/ledger` — CLAUDE.md itself already
+  described the package as exposing `append()` and `read()`, but `read()`
+  was never actually built; the receipt-ui work this describes is exactly
+  what got cut before it was needed. Tested like every other exported
+  ledger function.
+- Scaffolded `apps/receipt-ui`: a plain `node:http` server (no framework,
+  matching the brief), the design tokens as real CSS (the security-paper
+  palette, PT Serif + IBM Plex Mono), and `/r/:trace_id` reading real
+  ledger data end to end. Caught one thing before ever screenshotting it:
+  I'd referenced IBM Plex Mono and written `@font-face { src: local("PT
+  Serif") }`, but never actually loaded either font — `local()` only
+  resolves if that exact font happens to already be installed on the
+  viewer's machine, so in practice every viewer would have silently seen
+  Georgia/Menlo fallbacks instead of the typefaces the whole design plan
+  was built around. Fixed with a proper Google Fonts link before taking
+  a single screenshot, since reviewing the wrong typography would have
+  been reviewing the wrong page.
+- Viewed live in a real browser (not just curl) against a genuine
+  `pnpm demo` trace: fonts load correctly, the modular type scale reads
+  right, and — confirmed by eye, not just by the code — `decision`'s
+  `prev_hash` genuinely equals `intent`'s `entry_hash` in the raw entry
+  list, proving the data layer is correct before spending any effort on
+  the visual spine treatment in the next commit. The one thing already
+  visibly wrong: the untrusted merchant-content block renders as one
+  dense, undifferentiated wall of text — expected at this stage, and
+  exactly what the "untrusted block as the thesis screenshot" commit
+  fixes.

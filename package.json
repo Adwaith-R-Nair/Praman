@@ -17,7 +17,8 @@
     "eval": "tsx apps/eval/src/cli.ts",
     "approve": "tsx scripts/approve.ts",
     "pending": "tsx scripts/pending.ts",
-    "ablation": "tsx apps/eval/src/ablation-cli.ts"
+    "ablation": "tsx apps/eval/src/ablation-cli.ts",
+    "receipt-ui": "tsx apps/receipt-ui/src/server.ts"
   },
   "packageManager": "pnpm@11.24.0",
   "devEngines": {
