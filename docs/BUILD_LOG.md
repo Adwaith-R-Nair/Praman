@@ -1090,3 +1090,21 @@ implied.
   never do. Verified live: the checkpoint row is gone, every remaining row
   shows a real decision, amount, and verification state, and clicking
   through actually navigates to that trace's own page.
+- Commit 9, the last one for the trace viewer: the print stylesheet. Hides
+  the verify button and the back-link (meaningless on paper), reveals the
+  full 64-character hash via the `data-full` attribute already carried
+  since commit 3 (`font-size: 0` on the truncated text, `content:
+  attr(data-full)` on a `::after`, no JS needed), adds a print-only footer
+  with the page's own URL so a printout can be traced back to its source,
+  and `break-inside: avoid` on entries/merchant items so a page break
+  doesn't split one mid-way.
+- Verified the actual CSS declarations without triggering a real OS print
+  dialog — that's a native UI surface outside the page, the same class of
+  thing as a JS alert() that can block automation if it doesn't behave as
+  expected, not worth the risk to check one stylesheet. Instead: fetched
+  the live rendered HTML, extracted the exact `@media print` block by
+  brace-counting, re-applied those same declarations unconditionally to a
+  scratch copy served from a throwaway local HTTP server, and viewed that.
+  Confirmed: full 64-character hashes render correctly, the footer shows
+  the real page URL, the verify button disappears, layout stays clean.
+  Same CSS, same result a real print preview would show, without the risk.

@@ -457,3 +457,53 @@ a:focus-visible {
   padding: 0.15em 0.5em;
   margin: 0;
 }
+
+.print-footer {
+  display: none;
+}
+
+/* A dispute officer prints this. Truncated hashes and an interactive
+   button don't belong on paper; the full hash and the page's own URL do —
+   a printout with no way back to its source record is nearly useless. */
+@media print {
+  body {
+    background: #fff;
+  }
+
+  .nav,
+  #verify-btn {
+    display: none;
+  }
+
+  .hero-top {
+    justify-content: flex-start;
+  }
+
+  /* Reveal the full hash via the value already carried in data-full
+     (commit 3) rather than the on-screen 8-character prefix. Shrinking the
+     original text to nothing, instead of hiding it, keeps this to a CSS
+     rule with no JS needed for print specifically. */
+  .hash-value {
+    font-size: 0;
+  }
+
+  .hash-value::after {
+    content: attr(data-full);
+    font-size: var(--size-sm);
+  }
+
+  .entry,
+  .merchant-item {
+    break-inside: avoid;
+  }
+
+  .print-footer {
+    display: block;
+    margin-top: var(--space-3);
+    padding-top: var(--space-1);
+    border-top: 1px solid var(--hairline);
+    font-family: var(--mono);
+    font-size: var(--size-sm);
+    color: var(--ink-muted);
+  }
+}

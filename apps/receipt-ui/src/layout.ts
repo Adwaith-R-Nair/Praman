@@ -19,7 +19,9 @@ export function layout(title: string, body: string): string {
 <div class="record">
 <nav class="nav"><a href="/">← all traces</a></nav>
 ${body}
+<footer class="print-footer"></footer>
 </div>
+<script>document.querySelector(".print-footer").textContent = window.location.href;</script>
 </body>
 </html>`;
 }
