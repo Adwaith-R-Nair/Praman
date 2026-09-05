@@ -1,8 +1,14 @@
 import { formatINR, paiseFromJSON, type ReasonCode } from "@praman/shared";
+import type { EventType } from "@praman/ledger";
 import { loadTrace } from "../data.js";
-import { escapeHtml } from "../html.js";
+import { escapeHtml, fixRupeeGlyph } from "../html.js";
+
+/** Free text (goal, rationale, merchant content) may contain a literal ₹. */
+function escFreeText(value: string): string {
+  return fixRupeeGlyph(escapeHtml(value));
+}
 import { layout } from "../layout.js";
-import { REASON_CODE_PLAIN } from "../reason-codes.js";
+import { EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
 
 function decisionClass(kind: string | null): string {
   if (kind === "ALLOW") return "decision-allow";
@@ -37,14 +43,25 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
   const amount = trace.amountPaise ? formatINR(paiseFromJSON(trace.amountPaise)) : null;
 
   const merchantReadsHtml = trace.merchantReads
-    .map((r) => `<div class="untrusted">${escapeHtml(r)}</div>`)
+    .map((r) => `<div class="untrusted">${escFreeText(r)}</div>`)
     .join("\n");
+
+  // Truncated to the same fixed prefix length on both sides of the join —
+  // that consistency is what makes "same characters, same position" a
+  // comparison the eye can actually do. Full value kept in data-full for
+  // the print stylesheet (commit 9), where truncation stops being right.
+  const hashRow = (label: string, value: string) =>
+    `<div class="entry-hash"><span class="hash-label">${label}</span> <span class="hash-value" data-full="${escapeHtml(value)}">${escapeHtml(value.slice(0, 8))}…</span></div>`;
 
   const entriesHtml = trace.entries
     .map(
-      (e) => `<li class="entry">
-        <span class="entry-type">${escapeHtml(e.eventType)}</span>
-        <div class="entry-meta">seq ${e.seq.toString()} · entry_hash ${e.entryHash.slice(0, 12)}… · prev_hash ${e.prevHash.slice(0, 12)}…</div>
+      (e, i) => `<li class="entry">
+        ${i > 0 ? hashRow("prev_hash", e.prevHash) : ""}
+        <div class="entry-header">
+          <span class="entry-type">${escapeHtml(EVENT_TYPE_PLAIN[e.eventType as EventType] ?? e.eventType)}</span>
+          <span class="entry-seq">seq ${e.seq.toString()}</span>
+        </div>
+        ${hashRow("entry_hash", e.entryHash)}
       </li>`,
     )
     .join("\n");
@@ -58,7 +75,7 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
 
 ${
   trace.goal
-    ? `<section><h2>Goal given to the agent</h2><p class="goal">${escapeHtml(trace.goal)}</p></section>`
+    ? `<section><h2>Goal given to the agent</h2><p class="goal">${escFreeText(trace.goal)}</p></section>`
     : ""
 }
 
@@ -73,7 +90,7 @@ ${
 
 ${
   trace.rationale
-    ? `<section><h2>Agent's rationale</h2><p class="rationale">${escapeHtml(trace.rationale)}</p></section>`
+    ? `<section><h2>Agent's rationale</h2><p class="rationale">${escFreeText(trace.rationale)}</p></section>`
     : ""
 }
 
@@ -85,7 +102,7 @@ ${
 
 <section>
   <h2>Ledger entries</h2>
-  <ul class="entries">${entriesHtml}</ul>
+  <ul class="spine">${entriesHtml}</ul>
 </section>
 
 <section>

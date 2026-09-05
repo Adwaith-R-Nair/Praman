@@ -1,4 +1,16 @@
 import type { ReasonCode } from "@praman/shared";
+import type { EventType } from "@praman/ledger";
+
+export const EVENT_TYPE_PLAIN: Record<EventType, string> = {
+  intent: "Agent proposed a purchase",
+  decision: "Policy engine decided",
+  step_up_resolved: "Human reviewed the step-up",
+  api_call: "Payment provider called",
+  outcome: "Payment result recorded",
+  mandate_revoked: "Mandate revoked",
+  checkpoint: "Chain checkpoint",
+  agent_transcript: "Agent's full transcript recorded",
+};
 
 /**
  * "Refused: the cart's category isn't covered by this mandate" beats

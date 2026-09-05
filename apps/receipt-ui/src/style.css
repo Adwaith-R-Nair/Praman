@@ -14,7 +14,12 @@
   --refused: #9e3b2e;
   --hairline: #c7d0c9;
 
-  --serif: "PT Serif", Georgia, "Times New Roman", serif;
+  /* Noto Serif as a fallback before the generic keyword, not after PT
+     Serif directly — PT Serif (and Georgia/Times) render the Indian
+     Rupee sign (U+20B9) as a wrong glyph on some systems rather than
+     falling back per-character; Noto Serif has full coverage and only
+     gets used for the characters PT Serif actually lacks. */
+  --serif: "PT Serif", Georgia, "Times New Roman", "Noto Serif", serif;
   --mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, "Segoe UI", system-ui, sans-serif;
 
@@ -65,6 +70,10 @@ code,
   font-family: var(--mono);
   font-size: 0.9em;
   font-variant-numeric: tabular-nums;
+}
+
+.rupee {
+  font-family: var(--mono);
 }
 
 .nav {
@@ -205,31 +214,83 @@ h2 {
   margin-bottom: 0.5em;
 }
 
-/* Chain entries — a placeholder list for now; the continuous spine
-   treatment lands in the next commit. */
-.entries {
+/* The chain, drawn as a single continuous spine rather than a list with
+   connectors between items. Each entry hangs off one unbroken rule; where
+   the chain is intact the rule never breaks, so a break (D-25/commit 7)
+   reads as a real severing, not a missing decoration. */
+.spine {
+  position: relative;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 0 0 2rem;
+}
+
+.spine::before {
+  content: "";
+  position: absolute;
+  left: 0.6rem;
+  top: 0.6rem;
+  bottom: 0.6rem;
+  width: 2px;
+  background: var(--hairline);
 }
 
 .entry {
-  padding: var(--space-1) 0;
-  border-bottom: 1px solid var(--hairline);
+  position: relative;
+  padding: 0 0 var(--space-2);
 }
 
 .entry:last-child {
-  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.entry::before {
+  content: "";
+  position: absolute;
+  left: -1.4rem;
+  top: 0.35em;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 2px solid var(--ink-muted);
+}
+
+.entry-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
 }
 
 .entry-type {
   font-weight: 600;
 }
 
-.entry-meta {
+.entry-seq {
   font-family: var(--mono);
   font-size: var(--size-sm);
   color: var(--ink-muted);
+}
+
+/* The one deliberate repetition: this entry's entry_hash and the next
+   entry's prev_hash render at the same indent, same size, directly
+   adjacent — read one after the other, they're either visibly the same
+   string, or visibly not. That comparison IS the continuity check. */
+.entry-hash {
+  font-family: var(--mono);
+  font-size: var(--size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
+  margin: 0.15em 0;
+}
+
+.entry-hash .hash-label {
+  color: var(--ink-muted);
+  opacity: 0.7;
+}
+
+.entry-hash .hash-value {
+  color: var(--ink);
 }
 
 button {

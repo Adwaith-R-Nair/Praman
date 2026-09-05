@@ -972,3 +972,31 @@ implied.
   formal-reason-code) refusal string, and an approved verdict whose
   re-evaluation still refused (D-24) surfaces that decision's real reason
   code. Re-verified against the exact trace the user was looking at.
+- Rendered the chain as a continuous spine rather than a plain list, per
+  the brief: one unbroken vertical rule (`.spine::before`), each entry a
+  node hanging off it. The one deliberate repetition — an entry's own
+  `entry_hash` and the next entry's own `prev_hash`, truncated to the
+  same 8-character prefix, rendered directly adjacent at the same indent
+  — so continuity is a direct visual comparison, not an assertion. Full
+  hash value kept in `data-full` for the print stylesheet later, where
+  truncation stops being appropriate. Also added plain-language labels for
+  event types (`EVENT_TYPE_PLAIN`) — "Human reviewed the step-up" instead
+  of `step_up_resolved`, same reasoning as the reason-code table.
+- Couldn't screenshot this one myself at first — the Chrome extension
+  wasn't connected — so asked the user to check visually. Real bug in the
+  screenshots they sent back: "order lunch for two under ₹700" rendered
+  the rupee sign as something closer to a Ruble sign, in both the goal and
+  the rationale (serif body text), while the hero's mono "₹520.00"
+  displayed correctly. Confirmed the raw HTTP response bytes were the
+  correct codepoint (U+20B9) via `cat -A` — not a data bug — and zoomed
+  into the rendered glyph to see it precisely: a "P with one bar," not ₹.
+  Adding `Noto Serif` as a font fallback (theoretically full Unicode
+  coverage) did NOT fix it, which is itself informative — it means
+  PT Serif/Georgia aren't reporting a *missing* glyph CSS fallback would
+  catch, they're rendering a *wrong* one for a slot that technically
+  exists, on at least one real Linux system. Fixed by not trusting the
+  serif stack for this one character at all: `fixRupeeGlyph()` wraps any
+  literal ₹ in free text with a span forcing IBM Plex Mono, the font
+  already proven correct from the hero. Reconnected the browser tool
+  afterward and verified directly — zoomed screenshot confirms the actual
+  ₹ glyph now, in both the goal and the rationale.
