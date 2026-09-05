@@ -143,6 +143,14 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
   };
 }
 
+/** Total number of real purchase traces ever recorded — not capped by listRecentTraceIds' limit. */
+export async function countTraces(): Promise<number> {
+  const rows = await prisma.$queryRaw<{ count: bigint }[]>`
+    SELECT COUNT(DISTINCT trace_id)::bigint AS count FROM ledger_entry WHERE event_type = 'intent'
+  `;
+  return Number(rows[0]?.count ?? 0n);
+}
+
 /** The most recently active trace_ids, newest first — one row per trace, not per entry. */
 export async function listRecentTraceIds(limit: number): Promise<readonly string[]> {
   // checkpoint entries carry a synthetic "ckpt_<seq>" trace_id (see

@@ -103,6 +103,55 @@ code,
   border-bottom: 1px solid var(--hairline);
 }
 
+/* The index masthead — the one hero moment on this page, styled like the
+   ornamental header on a bank draft: a serial-number-style count and the
+   chain's own integrity status, hairline-bounded, nothing else competing
+   with it. Both numbers are real, read off the same data the row badges
+   below already use — not decorative. */
+.masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0 var(--space-3);
+  margin-bottom: var(--space-2);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.masthead-count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+}
+
+.masthead-number {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--size-hero);
+  font-weight: 500;
+  color: var(--ink-hero);
+  line-height: 1;
+}
+
+.masthead-label {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+}
+
+.masthead-chain {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35em;
+}
+
+.masthead-chain-detail {
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+}
+
 /* Hero: verification state + decision, together, above everything else. */
 .hero {
   margin-bottom: var(--space-3);

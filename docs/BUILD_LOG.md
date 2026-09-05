@@ -1150,3 +1150,19 @@ mid-check: `layout.ts` reads `style.css` via `readFileSync` once at
 module load, so a CSS edit doesn't take effect against an already-running
 process — same category of gotcha as the two earlier `EADDRINUSE`
 incidents, just a caching one instead of a port one.
+
+Commit 2: the index masthead. Added `countTraces()` to `data.ts` (a real
+total, not capped by `listRecentTraceIds`' 25-row limit) and a
+`chainSummary()` helper that reads the masthead's chain-status line off
+the exact same `VerifyResult` every row badge already gets classified
+against — one extra COUNT query, zero extra chain walks. Rendered as a
+hairline-bounded header: the trace count at `--size-hero`/`--ink-hero` on
+the left, chain integrity state and entry count on the right, mirroring
+the same left/right hero pattern the trace page's own hero-top already
+uses. Counted up from 0 on load via `requestAnimationFrame` (700ms,
+skipped entirely under `prefers-reduced-motion: reduce`) — the one
+content-driven motion moment for this page, same discipline as the
+existing verify-walk animation on trace pages. Verified live: masthead
+showed "22 traces recorded" / "chain intact / 101 ledger entries
+verified," both numbers real and matching what the row list below
+already implied, count-up animation confirmed mid-flight and at rest.
