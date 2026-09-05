@@ -959,3 +959,16 @@ implied.
   dense, undifferentiated wall of text — expected at this stage, and
   exactly what the "untrusted block as the thesis screenshot" commit
   fixes.
+- Real bug the user caught by actually clicking through, not by me
+  screenshotting one example trace: a fully approved-and-executed trace
+  (step_up_resolved + api_call + outcome all present) still showed "Needs
+  approval / STEP_UP_THRESHOLD" — stale, wrong. `loadTrace()` read only
+  the very first `decision` event, but `resolveApproval()` never writes a
+  second one; approving a step-up produces `step_up_resolved` +
+  `api_call` + `outcome`, not a fresh `decision`. Fixed by deriving the
+  final state from whichever of these actually happened: an `outcome`
+  present means ALLOW regardless of the original decision, a `reject`/
+  `expired` verdict with no outcome means DENY with a plain (not
+  formal-reason-code) refusal string, and an approved verdict whose
+  re-evaluation still refused (D-24) surfaces that decision's real reason
+  code. Re-verified against the exact trace the user was looking at.

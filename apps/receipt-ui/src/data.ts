@@ -7,6 +7,8 @@ export interface TraceView {
   readonly entries: readonly LedgerEntryRecord[];
   readonly decisionKind: string | null;
   readonly reasonCode: string | null;
+  /** Set instead of reasonCode when the final state isn't a formal ReasonCode — an approval rejected or left to expire. */
+  readonly refusalReason: string | null;
   readonly amountPaise: string | null;
   readonly goal: string | null;
   readonly merchantId: string | null;
@@ -51,12 +53,43 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     }
   }
 
+  // The "decision" event only ever records the ORIGINAL call — a STEP_UP
+  // that was later approved and executed never gets a second "decision"
+  // event, only step_up_resolved + api_call + outcome. Showing the original
+  // STEP_UP forever would misrepresent a trace that actually executed. The
+  // final state has to be read off whichever of these actually happened
+  // last, not just the first "decision" event found.
+  let decisionKind = asString(decision?.["kind"]);
+  let reasonCode = asString(decision?.["reason_code"]);
+  let refusalReason: string | null = null;
+
+  if (outcome) {
+    // Money was actually attempted — this supersedes any earlier STEP_UP.
+    decisionKind = "ALLOW";
+    reasonCode = "OK";
+  } else if (stepUpResolved) {
+    const verdict = asString(stepUpResolved["verdict"]);
+    if (verdict === "reject") {
+      decisionKind = "DENY";
+      refusalReason =
+        asString(stepUpResolved["reason"]) === "expired"
+          ? "The approval window closed (15 minutes) before anyone acted on it."
+          : "The human reviewer rejected this purchase.";
+    } else if (verdict === "approve" && asString(stepUpResolved["revalidated_kind"]) === "DENY") {
+      // Approved, but re-evaluation at resolution time refused it anyway
+      // (expired/revoked/repriced since the step-up — D-24).
+      decisionKind = "DENY";
+      reasonCode = asString(stepUpResolved["revalidated_reason"]);
+    }
+  }
+
   return {
     traceId,
     entries,
-    decisionKind: asString(decision?.["kind"]),
-    reasonCode: asString(decision?.["reason_code"]) ?? asString(stepUpResolved?.["revalidated_reason"]),
-    amountPaise: asString(decision?.["amount_paise"]),
+    decisionKind,
+    reasonCode,
+    refusalReason,
+    amountPaise: asString(outcome?.["amount_paise"]) ?? asString(decision?.["amount_paise"]),
     goal,
     merchantId: asString(intent?.["merchant_id"]),
     rationale: asString(intent?.["agent_rationale"]),

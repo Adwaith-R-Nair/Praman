@@ -33,7 +33,7 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
     };
   }
 
-  const reasonPlain = trace.reasonCode ? (REASON_CODE_PLAIN[trace.reasonCode as ReasonCode] ?? trace.reasonCode) : null;
+  const reasonPlain = trace.refusalReason ?? (trace.reasonCode ? (REASON_CODE_PLAIN[trace.reasonCode as ReasonCode] ?? trace.reasonCode) : null);
   const amount = trace.amountPaise ? formatINR(paiseFromJSON(trace.amountPaise)) : null;
 
   const merchantReadsHtml = trace.merchantReads
@@ -66,7 +66,7 @@ ${
   reasonPlain
     ? `<section class="reason">
          <p class="reason-plain">${escapeHtml(reasonPlain)}</p>
-         <span class="reason-code data">${escapeHtml(trace.reasonCode ?? "")}</span>
+         ${trace.reasonCode ? `<span class="reason-code data">${escapeHtml(trace.reasonCode)}</span>` : ""}
        </section>`
     : ""
 }
