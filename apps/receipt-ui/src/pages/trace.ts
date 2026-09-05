@@ -75,7 +75,7 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
 
   const entriesHtml = trace.entries
     .map(
-      (e, i) => `<li class="entry">
+      (e, i) => `<li class="entry" data-seq="${e.seq.toString()}">
         ${i > 0 ? hashRow("prev_hash", e.prevHash) : ""}
         <div class="entry-header">
           <span class="entry-type">${escapeHtml(EVENT_TYPE_PLAIN[e.eventType as EventType] ?? e.eventType)}</span>
@@ -86,9 +86,17 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
     )
     .join("\n");
 
+  // JSON.stringify produces a safe JS string literal; the extra replace
+  // guards against a trace_id that happened to contain "</script>" (never
+  // true for our own trc_ format, but this value still came from a URL).
+  const traceIdJs = JSON.stringify(traceId).replace(/</g, "\\u003c");
+
   const body = `
 <section class="hero">
-  <span class="state state-unverified">not yet verified this session</span>
+  <div class="hero-top">
+    <span id="verify-state" class="state state-unverified">not yet verified this session</span>
+    <button id="verify-btn" type="button">Verify this chain</button>
+  </div>
   <h1 class="decision ${decisionClass(trace.decisionKind)}">${escapeHtml(decisionLabel(trace.decisionKind, trace.orderStatus))}</h1>
   ${amount ? `<div class="amount">${amount}</div>` : ""}
 </section>
@@ -128,6 +136,60 @@ ${
 <section>
   <p class="nav data">trace_id ${escapeHtml(traceId)}</p>
 </section>
+
+<script>
+(function () {
+  var TRACE_ID = ${traceIdJs};
+  var btn = document.getElementById("verify-btn");
+  var stateEl = document.getElementById("verify-state");
+  var entries = Array.prototype.slice.call(document.querySelectorAll(".spine .entry"));
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var STAGGER_MS = reduced ? 0 : 80;
+
+  function finish(data) {
+    btn.disabled = false;
+    btn.textContent = "Verify this chain";
+    if (data.traceVerified) {
+      stateEl.textContent = "chain verified through " + data.checked + " entries";
+      stateEl.className = "state state-verified";
+    } else {
+      stateEl.textContent = "chain broken at seq " + data.brokenAtSeq + " (" + data.breakReason + ")";
+      stateEl.className = "state state-broken";
+    }
+  }
+
+  function walk(data) {
+    var i = 0;
+    function step() {
+      if (i >= entries.length) return finish(data);
+      var seq = Number(entries[i].getAttribute("data-seq"));
+      var isBroken = !data.traceVerified && data.brokenAtSeq !== null && seq >= data.brokenAtSeq;
+      entries[i].classList.add(isBroken ? "entry-broken" : "entry-confirmed");
+      if (isBroken) return finish(data);
+      i++;
+      setTimeout(step, STAGGER_MS);
+    }
+    step();
+  }
+
+  btn.addEventListener("click", function () {
+    btn.disabled = true;
+    btn.textContent = "Verifying...";
+    entries.forEach(function (el) {
+      el.classList.remove("entry-confirmed", "entry-broken");
+    });
+
+    fetch("/verify/" + encodeURIComponent(TRACE_ID))
+      .then(function (r) { return r.json(); })
+      .then(walk)
+      .catch(function () {
+        stateEl.textContent = "verification failed to run";
+        btn.disabled = false;
+        btn.textContent = "Verify this chain";
+      });
+  });
+})();
+</script>
 `;
 
   return { status: 200, html: layout(`Trace ${traceId}`, body) };

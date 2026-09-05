@@ -94,6 +94,14 @@ code,
   margin-bottom: var(--space-3);
 }
 
+.hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
 .state {
   display: inline-flex;
   align-items: center;
@@ -103,7 +111,16 @@ code,
   font-weight: 600;
   padding: 0.25em 0.7em;
   border-radius: 3px;
-  margin-bottom: var(--space-2);
+}
+
+#verify-btn {
+  font-size: var(--size-sm);
+  padding: 0.4em 0.9em;
+}
+
+#verify-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .state.state-verified {
@@ -285,6 +302,19 @@ h2 {
   border-radius: 50%;
   background: var(--paper);
   border: 2px solid var(--ink-muted);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+/* The verify walk recolours each dot as it's checked, travelling down the
+   spine — motion that shows real work happening, not a flipped badge. */
+.entry.entry-confirmed::before {
+  background: var(--verified);
+  border-color: var(--verified);
+}
+
+.entry.entry-broken::before {
+  background: var(--refused);
+  border-color: var(--refused);
 }
 
 .entry-header {

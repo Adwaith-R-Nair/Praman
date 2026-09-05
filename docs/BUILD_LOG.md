@@ -1033,3 +1033,21 @@ implied.
   (now split into two sentences), and the index page's placeholder text.
   Left every em dash inside code comments and JSDoc untouched — those
   aren't part of what a viewer of the page ever sees.
+- Commit 6: `/verify/:trace_id` and the animated chain-walk. Confirmed
+  the earlier architectural finding in code: `verifyTrace()` runs the full
+  `verifyChain()` (same one `pnpm verify-ledger` uses — no per-trace
+  slice exists) and separately checks whether this trace's own max seq is
+  below wherever the break happened, so "verified" means what it actually
+  means instead of implying a narrower per-trace check that isn't what's
+  running. Client-side vanilla JS (no library) walks the rendered `.entry`
+  elements in order, recolouring each dot 80ms apart as it "confirms" —
+  respects `prefers-reduced-motion` by dropping the stagger to 0. Verified
+  live, actually clicking the button in a real browser: badge went from
+  "not yet verified this session" to "chain verified through 94 entries,"
+  and every dot on the spine turned green in sequence.
+- Did NOT test the broken-chain path yet, on purpose — that needs a real
+  corrupted chain to verify against, and designing what that state looks
+  like is commit 7's explicit job. Building and verifying both together
+  there (safely against the test database, never the real one), rather
+  than testing broken-path plumbing now against a state nothing has been
+  designed for yet.
