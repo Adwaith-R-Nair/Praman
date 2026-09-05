@@ -8,6 +8,10 @@
   --paper: #edf1ee;
   --paper-raised: #e4ebe6;
   --ink: #172420;
+  /* Reserved for the one or two hero moments per page (the index masthead
+     count, a trace's decision headline) — deeper than --ink so those two
+     spots carry real weight instead of the scale doing all the work. */
+  --ink-hero: #0d1613;
   --ink-muted: #4b5b55;
   --verified: #2e6b4c;
   --step-up: #a6752e;
@@ -29,6 +33,9 @@
   --size-md: 1.328rem;
   --size-lg: 1.66rem;
   --size-xl: 2.074rem;
+  /* A deliberate jump past the modular scale, not another step of it —
+     spent in exactly two places so it stays a hero, not a bigger default. */
+  --size-hero: 3.4rem;
 
   --space-1: 0.5rem;
   --space-2: 1rem;
@@ -46,7 +53,14 @@ html {
 
 body {
   margin: 0;
-  background: var(--paper);
+  /* The security-paper tint made tactile: a faint turbulence grain, the
+     same idea as the watermark fibres in a real check or bond, generated
+     inline so there's no image asset to ship. Low enough opacity (0.035
+     baked into the SVG's own fill-opacity) that it reads as texture, not
+     noise. */
+  background: var(--paper)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' fill-opacity='0.035'/%3E%3C/svg%3E")
+    repeat;
   color: var(--ink);
   font-family: var(--serif);
   font-size: var(--size-base);
@@ -468,6 +482,7 @@ a:focus-visible {
 @media print {
   body {
     background: #fff;
+    background-image: none;
   }
 
   .nav,
