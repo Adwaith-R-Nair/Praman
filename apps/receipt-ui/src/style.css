@@ -55,11 +55,11 @@ body {
   margin: 0;
   /* The security-paper tint made tactile: a faint turbulence grain, the
      same idea as the watermark fibres in a real check or bond, generated
-     inline so there's no image asset to ship. Low enough opacity (0.035
-     baked into the SVG's own fill-opacity) that it reads as texture, not
-     noise. */
+     inline so there's no image asset to ship. The feColorMatrix strips
+     colour from the turbulence (raw feTurbulence is RGB static, not a
+     neutral grain), and fill-opacity keeps it at texture strength. */
   background: var(--paper)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' fill-opacity='0.035'/%3E%3C/svg%3E")
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' fill-opacity='0.02'/%3E%3C/svg%3E")
     repeat;
   color: var(--ink);
   font-family: var(--serif);

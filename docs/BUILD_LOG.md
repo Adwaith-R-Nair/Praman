@@ -1108,3 +1108,45 @@ implied.
   Confirmed: full 64-character hashes render correctly, the footer shows
   the real page URL, the verify button disappears, layout stays clean.
   Same CSS, same result a real print preview would show, without the risk.
+
+## Day 9d — 5 Sep 2026 · design pass, commit 1 of 9
+
+All 9 trace-viewer commits done, functionality complete. Decided to spend
+remaining time on a second design pass over `receipt-ui` — not a different
+visual language, just more craft spent on the one already chosen
+(security paper, PT Serif/IBM Plex Mono, the spine-as-literal-continuity
+idea), since that direction was already deliberately picked to avoid the
+generic AI-page tells. Wrote a design brief first (palette additions,
+type scale, layout concept, principles) and reviewed it against those
+tells before touching code — same discipline as the original build.
+
+New 9-commit checklist: (1) tokens — paper grain texture, `--ink-hero`,
+`--size-hero`; (2) index masthead with live stats; (3) index row
+refinement; (4) trace hero at scale with a decision-tinted wash; (5)
+merchant-content stamp redesign, replacing the dashed-border callout; (6)
+spine/verify-walk polish; (7) responsive + accessibility pass; (8) print
+stylesheet touch-ups for the new elements; (9) final craft pass across
+every decision state.
+
+Commit 1: `--ink-hero` (a deeper near-black-green, reserved for exactly
+two hero spots so it stays a hero and not a bigger default) and
+`--size-hero` (3.4rem, a deliberate jump past the modular scale rather
+than another step of it). Also a paper-grain texture on the body
+background — inline SVG `feTurbulence`, no image asset — the same idea as
+watermark fibres in a real check or bond.
+
+Real bug caught live, before handoff: the first version rendered as
+full-color static, not a neutral grain — `feTurbulence` outputs RGB noise
+per pixel, and the `feColorMatrix type="saturate" values="0"` step that
+was supposed to strip color into it never actually made it into the SVG
+markup I wrote, only into my own description of the plan. Screenshot at
+normal scale showed visible colored speckle; zoomed screenshot confirmed
+it wasn't a JPEG compression artifact. Fixed by actually adding the
+`feColorMatrix` primitive and dropping `fill-opacity` from 0.035 to 0.02.
+Reverified at both normal scale (reads as faint grey paper texture,
+correct) and zoomed (still visible grain up close, expected — zoom
+exaggerates by design). Also had to restart the `receipt-ui` server
+mid-check: `layout.ts` reads `style.css` via `readFileSync` once at
+module load, so a CSS edit doesn't take effect against an already-running
+process — same category of gotcha as the two earlier `EADDRINUSE`
+incidents, just a caching one instead of a port one.
