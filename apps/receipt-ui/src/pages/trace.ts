@@ -78,7 +78,7 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
   const traceIdJs = JSON.stringify(traceId).replace(/</g, "\\u003c");
 
   const body = `
-<section class="hero">
+<section class="hero ${decisionClass(trace.decisionKind)}">
   <div class="hero-top">
     <span id="verify-state" class="state state-unverified">not yet verified this session</span>
     <button id="verify-btn" type="button">Verify this chain</button>

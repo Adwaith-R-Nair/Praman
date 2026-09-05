@@ -152,9 +152,38 @@ code,
   color: var(--ink-muted);
 }
 
-/* Hero: verification state + decision, together, above everything else. */
+/* Hero: verification state + decision, together, above everything else.
+   The negative horizontal margin exactly cancels .record's own padding,
+   so the tint reaches the true left/right edge of the reading column — a
+   letterhead band across the page, not a boxed card floating inside it
+   (no border-radius, no shadow — that's the tell this is deliberately
+   avoiding). */
 .hero {
-  margin-bottom: var(--space-3);
+  margin: 0 calc(-1 * var(--space-2)) var(--space-3);
+  padding: var(--space-2);
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+}
+
+/* A flat tint with no edge of its own reads as an accidental smudge, not
+   a deliberate panel — the same problem the chain-break marker (D-25)
+   already solved by pairing its background with colored top/bottom
+   rules. Reusing that exact device here instead of inventing a new one:
+   low-strength fill (6-7%) plus a hairline in the same color, so the
+   band's boundary is drawn on purpose. */
+.hero.decision-allow {
+  background: color-mix(in srgb, var(--verified) 6%, var(--paper));
+  border-color: color-mix(in srgb, var(--verified) 32%, var(--paper));
+}
+
+.hero.decision-step-up {
+  background: color-mix(in srgb, var(--step-up) 7%, var(--paper));
+  border-color: color-mix(in srgb, var(--step-up) 32%, var(--paper));
+}
+
+.hero.decision-deny {
+  background: color-mix(in srgb, var(--refused) 6%, var(--paper));
+  border-color: color-mix(in srgb, var(--refused) 32%, var(--paper));
 }
 
 .hero-top {
@@ -216,6 +245,16 @@ code,
   font-size: var(--size-xl);
   font-weight: 700;
   margin: 0 0 0.15em;
+}
+
+/* The trace hero's own decision line gets the reserved hero scale — the
+   one other spot besides the index masthead number that's meant to read
+   at a glance. Only the size changes here; color still comes from the
+   decision-allow/step-up/deny rules below, since a neutral hero-ink
+   would erase the one signal that actually matters on this page. */
+.hero .decision {
+  font-size: var(--size-hero);
+  line-height: 1.05;
 }
 
 .decision.decision-allow,
@@ -567,6 +606,13 @@ a:focus-visible {
   .nav,
   #verify-btn {
     display: none;
+  }
+
+  .hero {
+    background: none;
+    border: none;
+    margin: 0 0 var(--space-2);
+    padding: 0;
   }
 
   .hero-top {

@@ -1184,3 +1184,32 @@ the masthead's chain-status chip picked up the same treatment
 automatically. Verified live: columns align across rows of differing
 decision-label length, hover highlights correctly, click-through to a
 trace still works.
+
+Commit 4: trace page hero. `.hero .decision` gets `--size-hero` (only the
+size changes — the headline's color still comes from the existing
+decision-allow/step-up/deny rules, since a neutral hero-ink would erase
+the one signal that actually matters here). Added the decision class to
+the `.hero` section itself, not just the `<h1>`, so a low-strength (6-7%)
+color-mix tint can wash the whole hero block — a letterhead band across
+the reading column via a negative margin that exactly cancels `.record`'s
+own padding, not a boxed card (no border-radius, no shadow, deliberately
+avoiding that tell). Also added a `@media print` override for it now
+rather than waiting for commit 8, since shipping a colored band that
+prints as a wash of ink on a dispute officer's printout would be a real
+regression, not just an unfinished feature. Verified live across all
+three real decision states — ALLOW (green wash, "Allowed (captured)"),
+DENY (red wash, "Refused"), STEP_UP (ochre wash, "Needs approval") — each
+readable at a glance, no legibility issues with the tint against the
+serif headline or the mono amount beneath it.
+
+Caught from the user's own screenshot (S7), not by me: the hero panel
+looked bad in practice — a flat color-mix fill with no edge of its own
+reads as an accidental smudge, not a deliberate design element, and the
+asymmetric padding (`--space-3` on the bottom only) left a slab of dead
+empty space under the amount before the box ended. Fixed by reusing the
+exact device the chain-break marker (D-25) already proved works: pair
+the tint with a hairline top/bottom border in the same color, so the
+band's boundary is drawn on purpose instead of implied by a color change
+alone. Also switched to uniform `--space-2` padding so the box hugs its
+content. Re-verified live across all three decision states — visibly
+better framed, no more dead space.
