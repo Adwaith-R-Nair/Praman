@@ -1578,3 +1578,98 @@ All three remaining roadmap items (4, 5, 6) are now done. What's left
 per Claude Chat's plan: README (limitations section, metrics
 presentation — explicitly to be done together, not written cold),
 architecture diagrams, form answers, and the video.
+
+## Day 9j — 5 Sep 2026 · README rewrite, verified against a clean clone
+
+Claude Chat wrote the new README as a submission, not a setup guide —
+results before installation, "how to read these numbers" directly under
+the numbers, a top-level "what broke" section. Asked me to verify the
+reason-code count, decision-record count, every script name, and to
+actually run the quickstart on a genuinely clean clone rather than trust
+an environment that already had state — explicitly citing the CI lesson
+(verifying in the environment you're already in proves nothing about the
+environment you're claiming).
+
+**Confirmed accurate by direct count, not by trust:** 19 reason codes
+(`packages/shared/src/reason-codes.ts`), 24 decision records (D-01
+through D-24 in `DECISIONS.md`), and every single eval number in the
+README (32 Layer 1 cases, 12 benign, 16/32 held-out matching the
+report's own "50/50 split," 21/21 ablation runs, 2 influenced, the
+29.92% hash-bias check) cross-checked exactly against the real,
+committed `eval/report.md`.
+
+**Found and fixed, all real:**
+- The catalog SKU count was wrong at 25 — actual count is 27. My own
+  first check (`grep -c '{ sku:'`) undercounted because two items in
+  `scripts/seed-catalog.ts` are formatted as multi-line object literals
+  (opening `{` on its own line), which that pattern doesn't match. Caught
+  because the live `pnpm seed-catalog` output said "Seeded 27," not from
+  re-reading the source more carefully — the discrepancy between a static
+  grep and a live run is exactly the kind of thing this whole session has
+  been built around catching.
+- `pnpm receipt-ui # trace viewer on :3000` — actual default port is
+  4100, confirmed from `server.ts` directly.
+- `.env.example` carried a stale `ANTHROPIC_API_KEY` line nothing in the
+  codebase reads (grepped for it — zero matches), a leftover from before
+  the switch to Gemini. Removed.
+- Added the CI badge (verified the exact badge URL resolves live, 200)
+  and folded the author's name into the existing byline line.
+
+**The real bug, found by actually cloning fresh into `/tmp` rather than
+trusting this dev environment:** the documented Quickstart doesn't work
+as written. Two gaps, both already silently solved by `.github/workflows/ci.yml`
+(which had to solve them for the same reason — a fresh checkout has none
+of this state):
+1. `pnpm --filter @praman/db migrate` does not reliably trigger Prisma's
+   client generation on a truly fresh checkout — `pnpm test` immediately
+   failed with `Cannot find module './generated/prisma/client.js'`. CI
+   already runs `generate` as an explicit separate step, with a comment
+   explaining exactly this. Added it to the Quickstart.
+2. Nothing creates the `praman_test` database at all — `docker-compose.yml`
+   only provisions one database (`praman`), and `TEST_DATABASE_URL` points
+   at a second one that never gets created or migrated. CI already runs
+   `CREATE DATABASE praman_test` plus a second `migrate deploy` against
+   it. Added both to the Quickstart, verified the exact sequence against
+   a real fresh Postgres container.
+
+Also found, along the way, a **separate, unrelated environment quirk**:
+this sandbox's own dev setup runs a native PostgreSQL 18 service on port
+5433 (not part of this project's own configuration — just how this
+particular agent environment happens to be provisioned), which is why
+`.env` here points at 5433 while `docker-compose.yml`/`.env.example`
+both say 5432. Not a project bug, just worth knowing — it's why running
+`docker compose up -d` in this exact sandbox harmlessly coexists with an
+unrelated Postgres instance rather than conflicting with it.
+
+**A third real bug, found while running the quickstart's later commands
+end to end, not just install+test:** `pnpm demo`, `pnpm seed-catalog`,
+and `pnpm issue-mandate` all read `process.env` directly without ever
+calling `dotenv.config()` themselves — unlike `approve.ts`, `pending.ts`,
+`revoke.ts`, `dispute.ts`, and `verify-ledger.ts`, which all already do.
+This is the exact "DATABASE_URL is not set" failure I personally hit and
+worked around with `--env-file=.env` multiple times earlier this same
+session, without then asking why it was necessary at all — a real miss,
+caught only now under Claude Chat's explicit instruction to test a
+genuinely fresh environment rather than one already carrying state.
+Fixed by adding the same `dotenv.config()` pattern the other scripts
+already use. `demo.ts` needed more care than the others: its imports of
+`@praman/control-plane` and `@praman/razorpay-exec` were static, and a
+static import is hoisted and evaluated before any of a module's own
+top-level code — including a `config()` call placed after it — so
+`@praman/db` was throwing before dotenv ever got a chance to run.
+Converted those specific imports to dynamic (`await import(...)`),
+matching the pattern the CLI scripts already use, and left the type-only
+imports (`SignedMandate`, `PurchaseIntent`) static since those are erased
+at compile time and never actually execute.
+
+Verified the complete, corrected Quickstart end to end on a genuinely
+fresh `git clone` into `/tmp`, exactly as a reviewer would run it:
+install, docker compose, migrate, generate, create+migrate the test
+database, `pnpm test` (154/154), `pnpm demo` (real Gemini call — its own
+rationale even mentioned ignoring the injection fixture's embedded
+instructions, an unplanned live confirmation the defense works),
+`pnpm approve`, `pnpm verify-ledger`, `pnpm revoke`, `pnpm dispute`,
+`pnpm eval --layer1` (32/32), and `pnpm receipt-ui` (confirmed listening
+on :4100). Every command in the documented Quickstart now actually works,
+in order, from nothing. Tore down the clean clone's own Docker container
+afterward and confirmed the real dev database was never touched.
