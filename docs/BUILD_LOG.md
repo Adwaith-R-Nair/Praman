@@ -1328,3 +1328,39 @@ its own color, only the background/border strip), stamp and untrusted
 box render as plain bordered ink, full 64-character hashes and the
 print footer still work exactly as before, chain-break diamond and
 border still visible.
+
+Commit 9, the last one for this design pass: a final review across every
+decision state with fresh eyes, rather than a scripted set of changes.
+Checked the index masthead/rows, ALLOW, DENY, and STEP_UP traces, the
+SKU_FOOD_006 unicode/emoji fixture (café, naïve, 東京, 🍰 all render
+correctly, confirming the round trip through catalog → ledger → page
+still works after 8 commits of CSS changes), hover states, and the
+broken-chain state (reseeded — `pnpm test` truncates
+`TEST_DATABASE_URL` as a side effect of the ledger package's own
+`beforeEach`, which had wiped the scratch trace since commit 8). Nothing
+new to fix turned up; the outcome of this pass is confirmation, not a
+diff.
+
+Tried to check keyboard focus rings (`button:focus-visible,
+a:focus-visible { outline: 2px solid var(--step-up); ... }`) live and
+initially got a false alarm: tabbing to a link showed no visible outline,
+and `document.activeElement` was correct but `el.matches(':focus')` was
+false even after calling `.focus()` directly from the page's own JS.
+Traced it to `document.hasFocus()` returning false — this automation
+session's browser tab doesn't hold real OS-level window focus, which
+Chrome requires for `:focus`/`:focus-visible` to match at all, regardless
+of `activeElement` or page CSS. Confirmed the rule itself is fine by
+inspection (no conflicting `outline: none` anywhere in the stylesheet),
+same class of environment limitation as `resize_window` not affecting
+`window.innerWidth` in commit 7 — asked the user to confirm the real
+thing by tabbing through the page themselves, rather than reporting a
+bug I couldn't actually substantiate.
+
+All 9 commits of the design pass are done: paper-grain texture and hero
+type scale, the index masthead, aligned/hoverable index rows, the
+scaled-up decision-tinted trace hero, the merchant-content stamp, eased
+verify-walk timing with a sharper break marker, a mobile breakpoint and a
+real WCAG contrast fix, print stylesheet correctness (including a
+real bug fixed that had been silently broken since commit 4), and this
+final confirmation pass. Combined with the original 9-commit build,
+`receipt-ui` is functionally and visually complete.
