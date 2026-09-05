@@ -1530,3 +1530,51 @@ agent wired through it behind `PRAMAN_MCP=1`, and this doc. Item 5
 (revocation CLI) was done first (Day 9e). Item 6 (dispute evidence
 bundle) is what's left of the original 22-hour plan, lowest priority
 by Claude Chat's own stated cut order — next, time permitting.
+
+## Day 9i — 5 Sep 2026 · dispute evidence bundle
+
+Item 6, the last of the original 22-hour plan. New `packages/dispute`,
+`buildBundle(tx, traceId)` — the trace's own ledger entries plus a live
+`verifyChain()`, the agent's full transcript (goal, rationale, every
+tool call paired with its result by id), every merchant SKU description
+the agent actually read, and the mandate/authorisation/execution facts.
+`scripts/dispute.ts <trace_id>` writes `disputes/<trace_id>.json`; a
+`/dispute/:trace_id` route on `receipt-ui` serves the same bundle as a
+download, linked from the bottom of each trace page.
+
+Real constraint found while designing the shape, not assumed: Claude
+Chat's sketch wanted `mandate.issuer`, but nothing in this system
+durably records it. The ledger's intent/decision events only ever store
+`mandate_id` (checked `run-intent.ts`'s actual `append()` calls), and the
+`mandate` DB table has an `issuerId` column but no code path anywhere
+writes to it — `mandate.json` is the only place issuer identity lives,
+and it's a mutable local file already overwritten multiple times this
+session. Rather than fabricate an issuer from a file that may no longer
+correspond to an old trace's actual mandate, `mandate.issuer` is `null`
+with a comment explaining why, and `signature_verified` is derived
+honestly from the ledger instead — true unless this specific trace was
+denied for `MANDATE_SIGNATURE_INVALID`, which is a fact the ledger
+actually attests to (any other outcome could only exist if verification
+had already passed).
+
+Duplicated `parseMerchantReads()` from `apps/receipt-ui/src/data.ts`
+rather than extracting it to a shared location — a deliberate tradeoff
+for time under Claude Chat's 3-hour cutoff, not an oversight. Both
+copies need updating together if the tool-output format
+(`apps/buyer-agent/src/agent.ts`'s `runTool()`) ever changes.
+
+Verified thoroughly, not just structurally: wrote 3 tests
+(`packages/dispute/test/bundle.test.ts` — unknown trace returns null, a
+full executed-purchase bundle has every field populated correctly, a
+signature-denied trace correctly gets `signature_verified: false`), then
+ran the real CLI against a genuine dev-database trace and independently
+recomputed one entry's `payload_hash`/`entry_hash` from the bundle's own
+exported fields using `computePayloadHash`/`computeEntryHash` — both
+matched, confirming the self-attestation claim is actually true, not
+just present in the JSON shape. Confirmed the receipt-ui download route
+too: real 200, real JSON, correct trace data, linked from the trace page.
+
+All three remaining roadmap items (4, 5, 6) are now done. What's left
+per Claude Chat's plan: README (limitations section, metrics
+presentation — explicitly to be done together, not written cold),
+architecture diagrams, form answers, and the video.

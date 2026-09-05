@@ -213,6 +213,9 @@ importers:
       '@praman/db':
         specifier: workspace:*
         version: link:packages/db
+      '@praman/dispute':
+        specifier: workspace:*
+        version: link:packages/dispute
       '@praman/ledger':
         specifier: workspace:*
         version: link:packages/ledger
@@ -343,6 +346,9 @@ importers:
       '@praman/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@praman/dispute':
+        specifier: workspace:*
+        version: link:../../packages/dispute
       '@praman/ledger':
         specifier: workspace:*
         version: link:../../packages/ledger
@@ -394,6 +400,18 @@ importers:
       '@prisma/client':
         specifier: 7.10.0
         version: 7.10.0(prisma@7.10.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@7.0.2))(typescript@7.0.2)
+
+  packages/dispute:
+    dependencies:
+      '@praman/db':
+        specifier: workspace:*
+        version: link:../db
+      '@praman/ledger':
+        specifier: workspace:*
+        version: link:../ledger
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/ledger:
     dependencies:
