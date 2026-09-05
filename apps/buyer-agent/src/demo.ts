@@ -9,6 +9,7 @@ import type { PurchaseIntent } from "@praman/policy";
 import { formatINR } from "@praman/shared";
 import { GeminiProvider } from "@praman/agent-core";
 import { runAgent } from "./agent.js";
+import { recordAgentTranscript } from "./record-transcript.js";
 
 const baseGoal = process.argv[2] ?? "order lunch for two under ₹700";
 const merchantId = env["DEMO_MERCHANT_ID"] ?? "MERCH_001";
@@ -78,6 +79,9 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     : new SimulatedExecutor(failWith);
 
   const result = await runIntent(intent, signed, publicKeyPem, executor, new Date(), agent.modelId);
+  // For the receipt viewer: the merchant text the agent read and its
+  // verbatim tool call, not just the final decided intent.
+  await recordAgentTranscript(result.trace_id, agent.transcript);
 
   if (result.kind === "IN_FLIGHT") {
     console.log(`▸ IN FLIGHT — ${result.detail}`);

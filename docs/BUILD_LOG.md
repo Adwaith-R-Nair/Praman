@@ -897,3 +897,38 @@ implied.
   have meant the next `pnpm eval --layer1 --layer2` silently dropped the
   section, since the generator wouldn't know it existed — the same
   "never hand-typed" discipline the badge has held to all along.
+
+## Day 9c — 5 Sep 2026 · trace viewer, starting with the data it needs
+
+- Design brief reviewed (Claude Chat, via Opus): keep the stack exactly as
+  specified — server-rendered HTML, one CSS file, no framework, no build
+  step, vanilla JS only for the verify button and an expand — and push
+  visual quality through typography/colour/one strong idea instead of a
+  library. Six concrete techniques given: the hash chain as a literal
+  continuous spine (not connectors), a real modular type scale with
+  tabular-nums on hashes/amounts, the verify button animating a chain-walk
+  rather than flipping a badge, a deliberately designed broken-chain state,
+  the untrusted-content block as the thesis screenshot, a print stylesheet.
+- Found while checking `verify.ts` before building anything against it:
+  `verifyChain()` walks the WHOLE ledger from genesis — there is no
+  per-trace slice to check, because the hash chain is one global sequence
+  interleaving every trace's entries. `/verify/:trace_id` has to run the
+  full check and then report whether *this trace's own entries* fall
+  within the verified range, not imply a narrower, isolated check that
+  isn't actually what's happening.
+- Prerequisite landed: `recordAgentTranscript()` appends a new
+  `agent_transcript` ledger event (added to the closed `EventType` union)
+  right after `intent`/`decision`, called from `demo.ts` once `runIntent()`
+  returns. Deliberately NOT wired through control-plane — `runIntent()`
+  still knows nothing about `ConversationItem`, keeping D-02's boundary
+  (no LLM in the authorisation path) from leaking into an agent-conversation
+  type dependency. The provider's raw turn-replay data is stripped before
+  storage: `canonical()`/`assertLedgerPayload` reject anything that isn't
+  plain JSON, and an opaque SDK response object is exactly the kind of
+  thing that would throw mid-transaction — not needed for human review
+  anyway. Marked `evidence_only: true` in the payload: this is evidence for
+  a reviewer, never context re-fed into a future prompt.
+- Verified live: real `pnpm demo` run, confirmed the `agent_transcript`
+  event lands right after `decision` with the untrusted-content wrapping
+  intact and no `raw` field, then ran `pnpm verify-ledger` — chain still
+  intact, all entries (56) verified including the new one.
