@@ -1456,3 +1456,44 @@ still pass.
 Not yet done: wiring `agent.ts` to actually consume this server (behind
 `PRAMAN_MCP=1`) and the README client-connection snippet — next two
 commits.
+
+## Day 9g — 5 Sep 2026 · buyer agent through MCP, behind a flag
+
+Item 4, commit 2. Introduced `CatalogClient` (`apps/buyer-agent/src/
+catalog-client.ts`) so `runTool()`'s wrapMerchantText()/text-formatting
+logic exists exactly once, applied at the boundary where untrusted text
+enters the prompt, regardless of which implementation actually fetched
+the data. `DirectCatalogClient` is the old `listCatalogForAgent()` call
+verbatim; `McpCatalogClient` spawns `apps/merchant-mcp/src/server.ts` as
+a real subprocess over stdio (via the SDK's own `Client`/
+`StdioClientTransport`) and calls its tools. `createCatalogClient()`
+picks between them on `PRAMAN_MCP=1`, unset by default. One client per
+`runAgent()` call, not per tool call — under MCP that's one subprocess
+per agent run, not one per `list_catalog`/`get_sku` — wrapped in
+try/finally so it closes on every exit path (NO_PROPOSAL, PROPOSED, and
+TURN_LIMIT all return from inside the loop).
+
+`callTool()`'s return type turned out to be a union — the plain
+`{content: [...], isError?}` shape this code expects, or an experimental
+task-based `{toolResult: ...}` shape it never requests. Typecheck caught
+this immediately (`exactOptionalPropertyTypes` first, then a missing
+`content` property once the first fix was in) — narrowed explicitly with
+`"content" in result`/`"isError" in result` rather than asserting past
+it, since a server sending back a shape this client doesn't handle should
+fail loudly.
+
+Verified live, both paths, real Gemini calls: `pnpm demo` unset (direct)
+and `PRAMAN_MCP=1 pnpm demo` both proposed the identical cart (2×
+SKU_FOOD_002) and reached the identical decision
+(STEP_UP_FIRST_MERCHANT, ₹520) — different rationale wording since it's
+a fresh model call each time, same underlying catalog data and same
+outcome either way. Also reran Layer 1 (32/32, no live model) as a quick
+regression check — though Layer 1 doesn't touch `runAgent` at all, so the
+two live demo runs are the real evidence for this specific change, not
+that. Layer 2 exercises `runAgent` with real model calls but wasn't
+rerun in full given the time budget; scoped down deliberately, noted
+here rather than silently skipped. Caught and fixed one thing before
+committing: running eval directly (`--layer1`) had overwritten the
+repo's real 40/40 `eval/report.md`/`report.json` with a partial 32/32
+one — reverted those two generated files rather than commit an
+accidental regression of the actual submission's eval report.

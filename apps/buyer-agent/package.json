@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@praman/agent-core": "workspace:*",
     "@praman/control-plane": "workspace:*",
     "@praman/db": "workspace:*",
