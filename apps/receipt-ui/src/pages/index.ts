@@ -50,12 +50,16 @@ export async function renderIndexPage(): Promise<string> {
       const amount = trace.amountPaise ? formatINR(paiseFromJSON(trace.amountPaise)) : "";
       const stateClass = verification.traceVerified ? "state-verified" : "state-broken";
       const stateLabel = verification.traceVerified ? "verified" : "broken";
+      // The amount span is always rendered, even empty (a refused purchase
+      // has none) — every row's meta block needs the same three grid
+      // slots, or a missing one shifts everything after it left and the
+      // decision/amount/state columns stop lining up across rows.
       return `<li class="trace-row">
         <a class="trace-row-link" href="/r/${escapeHtml(traceId)}">
           <span class="trace-row-summary">${fixRupeeGlyph(escapeHtml(summary))}</span>
           <span class="trace-row-meta">
             <span class="decision ${decisionClass(trace.decisionKind)}">${escapeHtml(decisionLabel(trace.decisionKind, trace.orderStatus))}</span>
-            ${amount ? `<span class="data">${amount}</span>` : ""}
+            <span class="data">${amount}</span>
             <span class="state ${stateClass}">${stateLabel}</span>
           </span>
         </a>

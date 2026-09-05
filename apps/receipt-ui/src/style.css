@@ -186,19 +186,30 @@ code,
   cursor: default;
 }
 
+/* A hairline border in the state's own color, not just a tinted fill — an
+   outlined chip reads more like a stamped mark on paper, and holds up
+   better in a dense list where a dozen soft fills side by side would blur
+   together. */
+.state {
+  border: 1px solid transparent;
+}
+
 .state.state-verified {
-  background: color-mix(in srgb, var(--verified) 14%, var(--paper));
+  background: color-mix(in srgb, var(--verified) 10%, var(--paper));
   color: var(--verified);
+  border-color: color-mix(in srgb, var(--verified) 40%, var(--paper));
 }
 
 .state.state-unverified {
-  background: color-mix(in srgb, var(--ink-muted) 12%, var(--paper));
+  background: color-mix(in srgb, var(--ink-muted) 9%, var(--paper));
   color: var(--ink-muted);
+  border-color: color-mix(in srgb, var(--ink-muted) 35%, var(--paper));
 }
 
 .state.state-broken {
-  background: color-mix(in srgb, var(--refused) 16%, var(--paper));
+  background: color-mix(in srgb, var(--refused) 12%, var(--paper));
   color: var(--refused);
+  border-color: color-mix(in srgb, var(--refused) 45%, var(--paper));
 }
 
 .decision {
@@ -490,9 +501,16 @@ a:focus-visible {
   justify-content: space-between;
   align-items: baseline;
   gap: var(--space-2);
-  padding: var(--space-1) 0;
+  padding: 0.65em 0.6em;
+  margin: 0 -0.6em;
   text-decoration: none;
   color: var(--ink);
+  border-radius: 3px;
+  transition: background-color 120ms ease;
+}
+
+.trace-row-link:hover {
+  background: var(--paper-raised);
 }
 
 .trace-row-summary {
@@ -501,10 +519,15 @@ a:focus-visible {
   white-space: nowrap;
 }
 
+/* Fixed-width columns, not a loose flex row — this is a ledger, and a
+   ledger's numbers line up whether or not the row next to them has a
+   longer decision label. The amount span is always present (even empty)
+   so the column count never changes row to row. */
 .trace-row-meta {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(8.5rem, auto) minmax(4.5rem, auto) minmax(4.5rem, auto);
   align-items: center;
-  gap: 0.8em;
+  column-gap: var(--space-2);
   flex-shrink: 0;
   font-family: var(--sans);
   font-size: var(--size-sm);
@@ -514,11 +537,18 @@ a:focus-visible {
   font-size: var(--size-sm);
   font-weight: 600;
   margin: 0;
+  white-space: nowrap;
+}
+
+.trace-row-meta .data {
+  text-align: right;
+  white-space: nowrap;
 }
 
 .trace-row-meta .state {
   padding: 0.15em 0.5em;
   margin: 0;
+  justify-self: end;
 }
 
 .print-footer {

@@ -1166,3 +1166,21 @@ existing verify-walk animation on trace pages. Verified live: masthead
 showed "22 traces recorded" / "chain intact / 101 ledger entries
 verified," both numbers real and matching what the row list below
 already implied, count-up animation confirmed mid-flight and at rest.
+
+Commit 3: index row refinement. Switched `.trace-row-meta` from flex to a
+three-column grid (decision / amount / state), so those columns line up
+down the whole list regardless of how long one row's decision label is —
+a real ledger column, not a decorative one. That only works if every row
+has the same number of grid children, so the amount span is now always
+rendered even when empty (a refused purchase has no amount) instead of
+being omitted — omitting it was silently shifting every column after it
+left for exactly those rows, a real bug this refactor forced into the
+open rather than one caught separately. Added a hover state (a
+raised-paper background tint, no layout shift) and gave every `.state`
+chip a hairline border in its own color instead of relying on the tinted
+fill alone, so it reads as a stamped mark rather than a soft SaaS pill —
+this is a shared class, so the trace page's own verify-state badge and
+the masthead's chain-status chip picked up the same treatment
+automatically. Verified live: columns align across rows of differing
+decision-label length, hover highlights correctly, click-through to a
+trace still works.
