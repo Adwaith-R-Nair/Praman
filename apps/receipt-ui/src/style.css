@@ -206,12 +206,43 @@ h2 {
 }
 
 .untrusted::before {
-  content: "untrusted — merchant-authored";
+  content: "Merchant-authored. Treated as data, never as instructions.";
   display: block;
   font-family: var(--sans);
   font-size: var(--size-sm);
   color: var(--step-up);
   margin-bottom: 0.5em;
+}
+
+/* One product per card — a reviewer can read each item's own description
+   on its own, rather than six items' worth of text run together. */
+.merchant-item {
+  margin: var(--space-2) 0;
+}
+
+.merchant-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1em;
+}
+
+.merchant-item-title {
+  font-weight: 700;
+}
+
+.merchant-item-price {
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.merchant-item-sku {
+  color: var(--ink-muted);
+  font-size: var(--size-sm);
+}
+
+.merchant-item .untrusted p {
+  margin: 0;
 }
 
 /* The chain, drawn as a single continuous spine rather than a list with

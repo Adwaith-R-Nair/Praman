@@ -47,8 +47,23 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
     (trace.reasonCode && trace.reasonCode !== "OK" ? (REASON_CODE_PLAIN[trace.reasonCode as ReasonCode] ?? trace.reasonCode) : null);
   const amount = trace.amountPaise ? formatINR(paiseFromJSON(trace.amountPaise)) : null;
 
+  // One card per item, not one undifferentiated wall of text — the whole
+  // point is that a reviewer can actually read each product on its own,
+  // so an injected line sitting inside one description is something they
+  // can notice, not something buried in a paragraph of six items at once.
   const merchantReadsHtml = trace.merchantReads
-    .map((r) => `<div class="untrusted">${escFreeText(r)}</div>`)
+    .map(
+      (item) => `<div class="merchant-item">
+        <div class="merchant-item-header">
+          <span class="merchant-item-title">${escFreeText(item.title)}</span>
+          <span class="merchant-item-price data">${formatINR(paiseFromJSON(item.pricePaise))}</span>
+        </div>
+        <div class="merchant-item-sku data">${escapeHtml(item.sku)}</div>
+        <div class="untrusted">
+          <p>${escFreeText(item.description)}</p>
+        </div>
+      </div>`,
+    )
     .join("\n");
 
   // Truncated to the same fixed prefix length on both sides of the join —

@@ -1012,3 +1012,17 @@ implied.
   contrived) — reads as "Refused / This is over the mandate's
   per-purchase limit. / MANDATE_AMOUNT_EXCEEDED", no repetition, and
   confirmed the earlier ALLOW trace no longer shows the redundant OK line.
+- Untrusted-content block, commit 5 — the "thesis screenshot." Parsed
+  `runTool()`'s raw joined catalog string (agent.ts) back into one card
+  per SKU (title, price, description) instead of rendering it as a single
+  undifferentiated wall, deduped by SKU so a `get_sku` call doesn't
+  produce a second copy of an item `list_catalog` already showed. Also
+  fixed an existing tell while working on this exact block: the
+  `.untrusted::before` label read "untrusted — merchant-authored," the
+  precise "WORD — fragment, spaced em dash" pattern the design brief
+  calls out to avoid — reworded to "Merchant-authored. Treated as data,
+  never as instructions." Avoided introducing the same class of tell in
+  the new per-item price/SKU layout too: no middle-dot-joined meta
+  strings, just flex layout doing the separation. Verified live against a
+  real `pnpm demo` trace — six real catalog items, each its own clean
+  card, correctly priced, no duplicates.

@@ -2,6 +2,15 @@ import { prisma } from "@praman/db";
 import { read, type LedgerEntryRecord } from "@praman/ledger";
 import type { ConversationItem } from "@praman/agent-core";
 
+export interface MerchantItemRead {
+  readonly sku: string;
+  readonly category: string;
+  readonly pricePaise: string;
+  readonly inStock: boolean;
+  readonly title: string;
+  readonly description: string;
+}
+
 export interface TraceView {
   readonly traceId: string;
   readonly entries: readonly LedgerEntryRecord[];
@@ -13,10 +22,44 @@ export interface TraceView {
   readonly goal: string | null;
   readonly merchantId: string | null;
   readonly rationale: string | null;
-  readonly merchantReads: readonly string[];
+  readonly merchantReads: readonly MerchantItemRead[];
   readonly orderId: string | null;
   readonly orderStatus: string | null;
   readonly approvalVerdict: string | null;
+}
+
+/**
+ * Parses runTool()'s list_catalog/get_sku output (apps/buyer-agent/src/agent.ts)
+ * back into one card per item, instead of showing the raw joined string as
+ * one undifferentiated block. This is coupled to that function's exact
+ * format by necessity — there's no structured version of "what the agent
+ * read" to parse instead, only the text it was actually shown.
+ */
+function parseMerchantReads(raw: readonly string[]): MerchantItemRead[] {
+  const pattern =
+    /sku=(\S+)\s+category=(\S+)\s+price_paise=(\S+)\s+in_stock=(\S+)\s*\n<untrusted_merchant_content>\n([\s\S]*?)\n<\/untrusted_merchant_content>/g;
+  const seen = new Set<string>();
+  const items: MerchantItemRead[] = [];
+
+  for (const block of raw) {
+    for (const m of block.matchAll(pattern)) {
+      const [, sku, category, pricePaise, inStock, titleAndDesc] = m;
+      if (!sku || seen.has(sku)) continue;
+      seen.add(sku);
+      const newlineIdx = (titleAndDesc ?? "").indexOf("\n");
+      const title = newlineIdx === -1 ? (titleAndDesc ?? "") : (titleAndDesc ?? "").slice(0, newlineIdx);
+      const description = newlineIdx === -1 ? "" : (titleAndDesc ?? "").slice(newlineIdx + 1);
+      items.push({
+        sku,
+        category: category ?? "",
+        pricePaise: pricePaise ?? "0",
+        inStock: inStock === "true",
+        title,
+        description,
+      });
+    }
+  }
+  return items;
 }
 
 function firstPayload(entries: readonly LedgerEntryRecord[], eventType: string): Record<string, unknown> | null {
@@ -93,7 +136,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     goal,
     merchantId: asString(intent?.["merchant_id"]),
     rationale: asString(intent?.["agent_rationale"]),
-    merchantReads,
+    merchantReads: parseMerchantReads(merchantReads),
     orderId: asString(outcome?.["order_id"]),
     orderStatus: asString(outcome?.["status"]),
     approvalVerdict: asString(stepUpResolved?.["verdict"]),
