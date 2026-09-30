@@ -80,13 +80,16 @@ Emitted by the agent as a tool call. Structured only — never prose.
 This is the file you write by hand. Signature:
 
 ```ts
-export function evaluate(
-  intent: PurchaseIntent,
-  mandate: VerifiedMandate,
-  state: LedgerDerivedState,   // { spent_paise, txn_timestamps[], revoked }
-  catalog: CatalogSnapshot,    // trusted, server-side
-  now: Date
-): Decision;
+export function evaluate(input: EvaluateInput): Decision;
+
+export interface EvaluateInput {
+  intent: PurchaseIntent;
+  mandate: VerifiedMandate;      // signature already verified — see below
+  state: LedgerDerivedState;     // { spent_paise, txn_timestamps, revoked, merchants_transacted, seen_idempotency_keys, denied_attempts }
+  catalog: CatalogSnapshot;      // trusted, server-side
+  now: Date;
+  idempotency_key: string;
+}
 
 export type Decision =
   | { kind: "ALLOW";   amount_paise: bigint; reason_code: "OK"; remaining_paise: bigint }
@@ -96,24 +99,29 @@ export type Decision =
 
 `approval_id` is not part of `Decision` — `evaluate()` is pure and knows nothing about approvals. It's assigned by `run-intent.ts` after a `STEP_UP`, and lives on `RunResult`, one level up from the agent-visible decision (D-24).
 
-**Evaluation order matters and must be documented.** Cheapest and most fatal checks first:
+**`MANDATE_SIGNATURE_INVALID` is not one of `evaluate()`'s checks.** It's decided by `run-intent.ts` before `evaluate()` is ever called — an unverified mandate has no `VerifiedMandate` to pass in at all, so there is nothing yet for `evaluate()` to evaluate. The idempotency short-circuit is similar but split in two: `run-intent.ts` checks its own `idempotency_record` table first (a settled or in-flight call for this exact key, independent of any mandate), and only once that's clear does `evaluate()` run its own check below against `state.seen_idempotency_keys` (keys the *ledger* has seen for this mandate specifically).
 
-1. mandate signature valid → else `MANDATE_SIGNATURE_INVALID`
+**Evaluation order matters and must be documented.** Cheapest and most fatal checks first — this list is `evaluate()` itself, read top to bottom:
+
+1. idempotency key not already seen on this mandate's ledger → else `DUPLICATE_INTENT`
 2. mandate not revoked → else `MANDATE_REVOKED`
 2b. denials in `window_seconds` < `max_denials_per_window` → else `DENIAL_RATE_EXCEEDED` *(closes D-20's probe oracle — a locked mandate must cost nothing to reject, so this runs early, but after revocation so revocation still wins)*
-3. `now` within validity window → else `MANDATE_EXPIRED` / `MANDATE_NOT_YET_VALID`
-4. `intent.mandate_id === mandate.mandate_id` → else `MANDATE_SUBJECT_MISMATCH`
-5. merchant in scope → else `MERCHANT_OUT_OF_SCOPE`
-6. every SKU exists in catalog → else `SKU_UNKNOWN` *(catches hallucinated SKUs)*
-7. every SKU's category in scope → else `CATEGORY_OUT_OF_SCOPE`
-8. every SKU in stock for qty → else `INSUFFICIENT_STOCK`
-9. **resolve amount from catalog** — `amount_paise = Σ(catalog[sku].price_paise × qty)`
-10. `amount_paise > 0` and within sane bounds → else `AMOUNT_INVALID`
-11. `amount_paise ≤ max_per_txn_paise` → else `MANDATE_AMOUNT_EXCEEDED`
-12. `state.spent_paise + amount_paise ≤ max_total_paise` → else `MANDATE_BUDGET_EXHAUSTED`
-13. txns in `window_seconds` < `max_txns_per_window` → else `VELOCITY_EXCEEDED`
-14. `amount_paise ≥ step_up.threshold_paise` → `STEP_UP` with `STEP_UP_THRESHOLD`
-15. otherwise `ALLOW`
+3. `now` ≥ validity.not_before → else `MANDATE_NOT_YET_VALID`
+4. `now` ≤ validity.not_after → else `MANDATE_EXPIRED`
+5. `intent.mandate_id === mandate.mandate_id` → else `MANDATE_SUBJECT_MISMATCH`
+5b. `mandate.scope.currency === "INR"` → else `AMOUNT_INVALID` *(defensive — the type guarantees this for callers that went through it, but a mandate hydrated from an untyped boundary might not have)*
+6. merchant in scope → else `MERCHANT_OUT_OF_SCOPE`
+7. catalog's own `merchant_id` matches the intent's → else `MERCHANT_OUT_OF_SCOPE` *(a second, distinct check from #6 — the caller could pass a catalog snapshot for the wrong merchant even when the intent itself is in scope)*
+8. cart is non-empty and every line item has a positive integer qty → else `AMOUNT_INVALID`
+9. quantities aggregated per SKU (a SKU split across two line items is one demand on stock, not two independent checks)
+10–12. for each distinct SKU, sorted (so reason codes never depend on line-item order): exists in catalog → else `SKU_UNKNOWN`; category in scope → else `CATEGORY_OUT_OF_SCOPE`; qty ≤ stock → else `INSUFFICIENT_STOCK`; then **resolve amount** — `amount_paise = Σ(catalog[sku].price_paise × qty)`
+13. `amount_paise > 0` → else `AMOUNT_INVALID`
+14. `amount_paise ≤ max_per_txn_paise` → else `MANDATE_AMOUNT_EXCEEDED`
+15. `state.spent_paise + amount_paise ≤ max_total_paise` → else `MANDATE_BUDGET_EXHAUSTED`
+16. txns in `window_seconds` < `max_txns_per_window` → else `VELOCITY_EXCEEDED`
+17. merchant not yet transacted under this mandate → `STEP_UP` with `STEP_UP_FIRST_MERCHANT` *(a mandate's first purchase at any given merchant always requires a human look, regardless of amount)*
+18. `amount_paise ≥ step_up.threshold_paise` → `STEP_UP` with `STEP_UP_THRESHOLD`
+19. otherwise `ALLOW`
 
 **Properties this function must have, and that your tests must assert:**
 
