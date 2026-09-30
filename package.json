@@ -21,7 +21,8 @@
     "pending": "tsx scripts/pending.ts",
     "ablation": "tsx apps/eval/src/ablation-cli.ts",
     "receipt-ui": "tsx apps/receipt-ui/src/server.ts",
-    "eval:check-coverage": "tsx apps/eval/src/check-coverage.ts"
+    "eval:check-coverage": "tsx apps/eval/src/check-coverage.ts",
+    "lint:boundary": "tsx scripts/check-import-boundary.ts"
   },
   "packageManager": "pnpm@11.24.0",
   "devEngines": {

@@ -67,6 +67,8 @@ jobs:
           DATABASE_URL: postgresql://postgres:praman@localhost:5432/praman_test
 
       - run: pnpm typecheck
+      - run: pnpm --filter @praman/shared run lint:casts
+      - run: pnpm lint:boundary
       - run: pnpm eval:check-coverage
       - run: pnpm test
       - run: pnpm verify-ledger
