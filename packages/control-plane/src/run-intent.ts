@@ -74,12 +74,15 @@ export async function runIntent(
     const verified = verifyMandate(signed, publicKeyPem);
     if (!verified.ok) {
       const decision = { kind: "DENY", reason_code: "MANDATE_SIGNATURE_INVALID", detail: verified.reason } as const;
+      // claimed_mandate_id, not mandate_id — the signature never proved the
+      // caller owns intent.mandate_id, so this entry must not be queryable as
+      // belonging to that mandate. See D-xx.
       await append(tx, {
         traceId,
         ts: now,
         actor: "praman",
         eventType: "decision",
-        payload: { mandate_id: intent.mandate_id, kind: "DENY", reason_code: decision.reason_code, detail: decision.detail },
+        payload: { claimed_mandate_id: intent.mandate_id, kind: "DENY", reason_code: decision.reason_code, detail: decision.detail },
       });
       return {
         go: false as const,
