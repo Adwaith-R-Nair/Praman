@@ -125,3 +125,21 @@ Order of work on Day 6:
 2. Write the runner against benign only. Get it green.
 3. Then write `adversarial.json` family by family, hardest first (`prompt_injection`, `mandate_evasion`).
 4. Compute the held-out split **before** you start fixing failures, and commit `.heldout` at that point so the git history proves the split predates the tuning. That timestamp is your credibility.
+
+---
+
+## 9. As built
+
+Everything above is the original plan, kept as written — the gap between it and what shipped is itself informative, so this section states it plainly rather than quietly editing the plan to match reality.
+
+**Corpus size and file layout.** 35 cases, not 100. One combined file per layer, not `adversarial.json` + `benign.json`: `apps/eval/corpus/layer1.json` (35 cases, deterministic policy path, benign and adversarial mixed together and distinguished by `family: "benign"`) and `apps/eval/corpus/layer2.json` (8 cases, live-model injection only). The two-layer split itself — a fast, no-LLM policy layer plus a small, slow, live-model susceptibility layer — wasn't part of the original design at all; see D-23.
+
+**Held-out split.** No committed `.heldout` file. `apps/eval/src/split.ts` hash-partitions by `case_id` (SHA-256, no stored seed) at read time — a case's bucket is a pure function of its own id, never written down anywhere. The "committed before tuning" property this was meant to guarantee still holds, verifiably: `split.ts` is in git history from before any corpus case was added or fixed, so the partition function predates every result it partitions.
+
+**Families actually built.** Layer 1: `benign`, `mandate_evasion`, `denial_probe`, `double_charge`, `numeric_confusion`, `hallucinated_sku`, `scope_drift`. Layer 2: `prompt_injection` only. Two planned families were never built as their own fixture family: `failure_handling` (the retry-once-then-escalate behaviour is exercised live in `apps/buyer-agent/src/demo.ts`'s `PRAMAN_FAIL` path, not in the corpus) and `catalog_tamper` (its core claim — amount is resolved at evaluation time, never at browse time — is structural, guaranteed by D-01 rather than by a dedicated fixture testing for its absence).
+
+**Metrics.** `containment_rate_dev` / `containment_rate_heldout`, `incidental_containment`, `false_refusal_rate`, `money_at_risk_prevented_paise`, `unresolved_exceptions`, and p50/p95 latency all shipped as planned. Two metrics exist that weren't planned — `influence_rate` and `contained_despite_influence` — because they're specific to the Layer 2 split the original design didn't have. One planned metric was never built: total token spend per corpus run is not tracked anywhere.
+
+**Report artefacts.** `eval/report.md` and `eval/report.json` shipped as planned; `eval/badge.json` also shipped (the CI-badge JSON the plan mentioned, under its own file rather than folded into `report.json`). `eval/failures/<case_id>.trace.json` per failing case was never built — a failure is visible in the report table and console output instead. What the plan didn't anticipate: `eval/transcripts/<case_id>.json` — the agent's full verbatim transcript for **every** Layer 2 case, not just failures, since Layer 2's whole point is letting a reviewer see what the model actually did.
+
+**CI.** The real `.github/workflows/ci.yml` runs `pnpm typecheck`, `pnpm --filter @praman/shared run lint:casts`, `pnpm lint:boundary`, `pnpm eval:check-coverage`, `pnpm test`, `pnpm verify-ledger`, then `pnpm eval --layer1 --dev` — no separate `pnpm eval:report` script; report generation is a mode of the one `eval` CLI. Layer 2 is deliberately excluded from CI, but not for the reason originally planned (held-out cases skipped in CI, run manually): held-out cases run in CI same as dev cases, just reported in a separate column. Layer 2 is excluded because it needs a live model key and burns real rate-limit budget on every push — it's run manually instead, and its transcripts are committed as the evidence trail.
