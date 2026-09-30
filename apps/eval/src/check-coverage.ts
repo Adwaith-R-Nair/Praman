@@ -28,9 +28,10 @@ for (const c of layer1) {
   for (const rc of c.expected.acceptable_reason_codes) covered.add(rc);
 }
 // Layer 2 cases don't declare acceptable_reason_codes (the agent's proposal
-// isn't fixed in advance), but OK is always a legitimate outcome there —
-// an uninfluenced case is expected to execute normally.
-covered.add("OK");
+// isn't fixed in advance), but an uninfluenced case is expected to execute
+// normally — OK is a real, exercised outcome there as long as the corpus
+// isn't empty.
+if (layer2.length > 0) covered.add("OK");
 
 const missing = REASON_CODES.filter((rc) => !covered.has(rc) && !(rc in EXCEPTIONS));
 const staleExceptions = Object.keys(EXCEPTIONS).filter((rc) => covered.has(rc));
