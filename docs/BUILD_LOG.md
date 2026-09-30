@@ -1673,3 +1673,109 @@ instructions, an unplanned live confirmation the defense works),
 on :4100). Every command in the documented Quickstart now actually works,
 in order, from nothing. Tore down the clean clone's own Docker container
 afterward and confirmed the real dev database was never touched.
+
+---
+
+## Phase 9 — 30 Sep 2026 · ground truth
+
+Submitted 6 Sep, tagged `v1.0-submission` at this file's last entry above
+(`4b38243`). Shortlisted, cleared two interview rounds, awaiting the final
+result. Resumed with no deadline — an Opus subagent, briefed with the
+project's invariants and current gaps, designed `docs/ROADMAP_PHASE2.md`
+(13 phases, continuing the numbering from the original roadmap) to close
+production gaps, add capabilities, and go deeper on observability and
+eval, in roughly that priority order. Phase 9 is the first of it: fix
+whatever the planning pass itself surfaced, and make CI enforce what the
+docs already claimed but never checked.
+
+**A real bug, found by an Opus subagent reading the code, not guessed
+at.** `run-intent.ts` recorded a `DENY` under `mandate_id:
+intent.mandate_id` the moment a signature failed to verify — before that
+ID had been proven to belong to a real, signed mandate. `deriveState`
+then counted every `DENY` matching a mandate_id toward its
+`max_denials_per_window`, with no check on *why* it was denied. The two
+together: anyone who knows a mandate's ID — never a secret, since it's
+not the signing key — can lock it out with a handful of garbage-signature
+intents, no valid signature required. Not exploitable through the CLI
+today, since nothing untrusted calls `runIntent` directly, but a genuine
+remote denial-of-service the moment an HTTP API exists (Phase 14), and
+permanent if a lifetime denial cap is ever added instead of a per-window
+one.
+
+Fixed on both sides, but the read side is the one that actually matters.
+Write side (`run-intent.ts`): the field is now `claimed_mandate_id`, not
+`mandate_id`, so no future entry of this shape is queryable as belonging
+to a mandate at all. Read side (`packages/ledger/src/derive.ts`, ⚑
+protected — stated the five-line plan, waited): `deriveState` now
+excludes any `DENY` whose `reason_code` is `MANDATE_SIGNATURE_INVALID`
+from `denied_attempts`. The ledger is append-only — entries already
+written in the old shape exist and can never be rewritten. In an
+immutable log you cannot correct the data; you correct how it's read,
+and record why (D-25). TDD start to finish: wrote the failing integration
+test first (register a real mandate, fire five forged-signature intents,
+then a legitimate one — it returned `DENIAL_RATE_EXCEEDED`), confirmed it
+failed for the right reason, then fixed it.
+
+**A near-miss, caught before it shipped.** Regenerating the eval report
+after adding new fixtures, ran `pnpm eval --layer1` only — the report is
+fully rebuilt from whatever ran, not merged, so it silently dropped the
+entire Layer 2 section (8 injection cases, influence rate, the ablation)
+that a live run would have kept. Caught via `git diff` before committing,
+reverted. The exact same mistake as an earlier session, caught the same
+way — worth naming twice, because it means the check (diff before
+commit) is the actual fix, not memory.
+
+**A second near-miss, this one shipped and had to be fixed with a
+follow-up commit.** Committed the reason-code coverage checker
+(`apps/eval/src/check-coverage.ts`) having verified it ran correctly, but
+without re-running `pnpm typecheck` first — it had an unused `layer2`
+binding that broke the build. `CLAUDE.md` says never amend; fixed with a
+small follow-up commit instead, and the lesson is boring but real: verify
+the *whole* gate (typecheck **and** the thing you're adding), not just
+the part you changed.
+
+**Coverage and lint, wired into CI for the first time.** Four reason
+codes had no eval fixture at all — `MANDATE_NOT_YET_VALID`,
+`MANDATE_SUBJECT_MISMATCH`, `VELOCITY_EXCEEDED` (added fixtures for all
+three; the subject-mismatch case needed a small addition to the eval
+schema, `intent_mandate_id_override`, since the runner had no way to
+submit an intent under any mandate_id but the signed mandate's own), and
+`AMOUNT_CHANGED_SINCE_APPROVAL` (no approval-cycle seeding path exists
+yet — left on an explicit exception list pointing at Phase 11, rather
+than silently skipped). A new `pnpm eval:check-coverage` script fails CI
+if any reason code lacks a fixture and isn't on that list. Separately,
+`lint:casts` (`packages/shared/package.json`) existed since early in the
+original build but was never actually run in CI — fixed. Added a new
+import-boundary check (`scripts/check-import-boundary.ts`) that fails if
+`packages/policy`, `packages/ledger`, or `packages/razorpay-exec` import
+anything model- or observability-adjacent, `@langfuse/*` included —
+ahead of Phase 10, so Langfuse can never be wired into the money path
+even by accident. Proved it catches a real violation on a throwaway,
+unmerged local change before trusting it.
+
+**Doc truth pass.** Read `MANDATE_SPEC.md`, `LLD.md`, `ARCHITECTURE.md`,
+and `EVAL_CORPUS.md` against the actual code rather than each other.
+Found: `evaluate()`'s documented 15-step order was missing four real
+steps entirely (the idempotency check, a currency check, a
+catalog-merchant-binding check, and `STEP_UP_FIRST_MERCHANT`) and
+listed `MANDATE_SIGNATURE_INVALID` as one of its checks when that's
+actually decided by the caller before `evaluate()` is ever invoked —
+rewrote the order to match reality. `LLD.md`'s schema sketch specified a
+`RULE ... DO INSTEAD NOTHING` (the design the real migration's own
+comment explicitly rejected, because it fails silently) and a
+`GENERATED ALWAYS AS IDENTITY` column (the shipped one is `BIGSERIAL`, a
+weaker guarantee) — kept the original plan for history, added "as built"
+notes next to each rather than rewriting it. `ARCHITECTURE.md` said
+"rules" in one sentence and "triggers" in another, self-inconsistent;
+claimed a reason-code count of 17 (actual: 19); and named Express and
+"Anthropic SDK" in its stack line, neither of which was ever actually
+built (no HTTP API exists yet, and the real demo defaults to Gemini
+behind a provider-neutral interface). `EVAL_CORPUS.md`'s original
+100-case, two-file plan diverged from the real 35-case, two-layer build
+in enough ways — file layout, the held-out mechanism, which families got
+built, which metrics exist — that it earned its own "As built" section
+rather than scattered inline notes.
+
+Tagged `v1.0-submission` at the exact commit Razorpay's panel evaluated
+(`4b38243`), before `main` moved any further — a fixed reference point
+independent of everything after it.
