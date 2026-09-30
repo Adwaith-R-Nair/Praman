@@ -101,8 +101,11 @@ describe("F1: forged-signature intents do not lock out the real mandate holder",
     expect(result.kind).toBe("DECIDED");
     if (result.kind !== "DECIDED") throw new Error("unreachable");
     // Before the fix this was DENIAL_RATE_EXCEEDED — the 5 forged-signature
-    // denials, never proven to belong to this mandate, still counted against it.
-    expect(result.internal_reason_code).toBe("OK");
-    expect(result.order_id).not.toBeNull();
+    // denials, never proven to belong to this mandate, still counted against
+    // it. STEP_UP_FIRST_MERCHANT (not DENY) proves evaluate() was actually
+    // reached: this mandate's first-ever transaction with MERCHANT correctly
+    // requires human approval, unrelated to the lockout bug being tested here.
+    expect(result.internal_reason_code).toBe("STEP_UP_FIRST_MERCHANT");
+    expect(result.approval_id).not.toBeNull();
   });
 });
