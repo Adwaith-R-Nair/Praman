@@ -20,7 +20,8 @@
     "dispute": "tsx scripts/dispute.ts",
     "pending": "tsx scripts/pending.ts",
     "ablation": "tsx apps/eval/src/ablation-cli.ts",
-    "receipt-ui": "tsx apps/receipt-ui/src/server.ts"
+    "receipt-ui": "tsx apps/receipt-ui/src/server.ts",
+    "eval:check-coverage": "tsx apps/eval/src/check-coverage.ts"
   },
   "packageManager": "pnpm@11.24.0",
   "devEngines": {
