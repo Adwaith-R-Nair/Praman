@@ -540,3 +540,44 @@ would have allowed at that exact moment anyway. The human's "yes" narrows
 what would otherwise have been an automatic refusal (the step-up condition)
 down to nothing — it does not grant anything beyond what the mandate itself
 still authorises.
+
+---
+
+### D-25 · Unverified mandate claims are not attributed to a mandate · Accepted
+
+A caller who submits an intent with a forged or malformed signature has not
+proven they hold the mandate named in `intent.mandate_id` — they've only
+claimed to. `run-intent.ts` previously recorded the resulting `DENY` under
+`mandate_id: intent.mandate_id` anyway, and `deriveState` counted every
+`DENY` keyed to a mandate toward that mandate's `max_denials_per_window`.
+The two together mean anyone who knows a mandate's ID — not a secret, since
+it's never the signing key — could lock it out by submitting a handful of
+garbage-signature intents, no valid signature required.
+
+Not exploitable through the CLI today, since nothing untrusted calls
+`runIntent` directly. It becomes a real remote denial-of-service the moment
+an HTTP API exists (Phase 14), and a permanent one if a lifetime denial cap
+is ever added (Phase 19) instead of a per-window one.
+
+**Fixed on both sides, but the read side is the one that matters.** The
+write side (`run-intent.ts`) now records the field as `claimed_mandate_id`,
+not `mandate_id`, so no future entry of this shape is even queryable as
+belonging to a mandate at all. But the ledger is append-only — entries
+already written in the old shape exist and can never be rewritten. The real
+fix is on the read side: `deriveState` (`packages/ledger/src/derive.ts`)
+excludes any `DENY` whose `reason_code` is `MANDATE_SIGNATURE_INVALID` from
+`denied_attempts`, regardless of which field the entry used to name a
+mandate. In an immutable log you cannot correct the data. You correct how
+it's read, and you record why.
+
+**Rejected: rewriting or migrating old ledger entries.** Violates the
+append-only invariant for the sake of convenience. The read-side fix costs
+one condition in one function and handles every entry, old and new, the
+same way.
+
+**Consequence:** a mandate's denial-rate cap now only ever counts denials
+against someone who actually proved they hold that mandate. Probing a
+mandate's ID with bad signatures costs the prober nothing and the mandate
+holder nothing — which is the correct shape, since a denial-rate cap exists
+to stop a legitimate-looking attacker from burning through probes cheaply,
+not to be a free lockout lever for anyone who knows a public ID.
