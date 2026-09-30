@@ -12,10 +12,23 @@ import type { PurchaseIntent } from "@praman/policy";
 // they're safe to keep static.
 config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 
+// Dev observability only (D-xx) — initialised here, the entrypoint, never
+// inside a library package (CI enforces this, see lint:boundary). Started
+// only when both keys are actually present: LangfuseSpanProcessor doesn't
+// throw on missing credentials, it just logs a warning and lets every
+// export fail — explicit opt-in here avoids that noise entirely for anyone
+// who hasn't set up Langfuse, rather than relying on its own fallback.
+if (env["LANGFUSE_SECRET_KEY"] && env["LANGFUSE_PUBLIC_KEY"]) {
+  const { NodeSDK } = await import("@opentelemetry/sdk-node");
+  const { LangfuseSpanProcessor } = await import("@langfuse/otel");
+  new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
+}
+
 const { runIntent } = await import("@praman/control-plane");
 const { LiveExecutor, SimulatedExecutor } = await import("@praman/razorpay-exec");
 const { formatINR } = await import("@praman/shared");
-const { GeminiProvider } = await import("@praman/agent-core");
+const { GeminiProvider, TracedProvider } = await import("@praman/agent-core");
+const { startObservation } = await import("@langfuse/tracing");
 const { runAgent } = await import("./agent.js");
 const { recordAgentTranscript } = await import("./record-transcript.js");
 
@@ -42,7 +55,7 @@ console.log(
   `▸ executor: ${live ? "LIVE (real Razorpay test-mode order)" : `simulated${failWith ? ` (forced: ${failWith})` : ""}`}\n`,
 );
 
-const provider = new GeminiProvider(geminiKey, "gemini-3.1-flash-lite");
+const provider = new TracedProvider(new GeminiProvider(geminiKey, "gemini-3.1-flash-lite"));
 
 // Declined → the agent may re-plan once with a genuinely different cart (new
 // intent, new idempotency key). Timeout → runIntent returns IN_FLIGHT and we
@@ -86,7 +99,20 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     ? new LiveExecutor(env["RAZORPAY_KEY_ID"] ?? "", env["RAZORPAY_KEY_SECRET"] ?? "")
     : new SimulatedExecutor(failWith);
 
+  // Output is the agent-visible decision plus the internal reason code only
+  // — RunResult never carries the internal Decision.detail string (that
+  // stays inside run-intent.ts/evaluate.ts), so there's nothing here that
+  // could quote a mandate limit even by accident.
+  const intentSpan = startObservation("run-intent", { input: intent }, { asType: "span" });
   const result = await runIntent(intent, signed, publicKeyPem, executor, new Date(), agent.modelId);
+  intentSpan
+    .update({
+      output:
+        result.kind === "DECIDED"
+          ? { agent_visible: result.agent_visible, internal_reason_code: result.internal_reason_code }
+          : { kind: result.kind, detail: result.detail },
+    })
+    .end();
   // For the receipt viewer: the merchant text the agent read and its
   // verbatim tool call, not just the final decided intent.
   await recordAgentTranscript(result.trace_id, agent.transcript);

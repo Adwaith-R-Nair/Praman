@@ -1,3 +1,4 @@
+import { startActiveObservation, startObservation } from "@langfuse/tracing";
 import { wrapUntrusted } from "@praman/shared";
 import type { ConversationItem, ModelProvider, TokenUsage } from "@praman/agent-core";
 import { createCatalogClient, type CatalogClient } from "./catalog-client.js";
@@ -73,7 +74,27 @@ async function runTool(name: string, input: Record<string, unknown>, catalog: Ca
   return `Unknown tool: ${name}`;
 }
 
+/**
+ * Dev-observability only — see D-xx. Wraps the whole goal in one Langfuse
+ * trace so every model call and tool call below nests under it via ambient
+ * OpenTelemetry context. With no Langfuse keys configured at the entrypoint,
+ * no SDK ever starts and this is a standard OTel no-op (proven by
+ * TracedProvider's own tests, which run in exactly that state).
+ */
 export async function runAgent(provider: ModelProvider, goal: string, merchantId: string): Promise<AgentResult> {
+  return startActiveObservation(
+    "agent-run",
+    async (agentObs) => {
+      agentObs.update({ input: { goal, merchant_id: merchantId } });
+      const result = await runAgentInner(provider, goal, merchantId);
+      agentObs.update({ output: result });
+      return result;
+    },
+    { asType: "agent" },
+  );
+}
+
+async function runAgentInner(provider: ModelProvider, goal: string, merchantId: string): Promise<AgentResult> {
   const history: ConversationItem[] = [{ role: "user", text: `Merchant: ${merchantId}\nGoal: ${goal}` }];
   // Read live, not hoisted above the loop — same reasoning as wrapMerchantText.
   const systemPrompt = process.env["PRAMAN_NO_PROMPT_DEFENCE"] === "1" ? SYSTEM_PROMPT_NO_DEFENCE : SYSTEM_PROMPT;
@@ -102,14 +123,21 @@ export async function runAgent(provider: ModelProvider, goal: string, merchantId
 
       for (const call of res.calls) {
         if (call.name === "propose_intent") {
+          const span = startObservation("propose-intent", { input: call.input }, { asType: "tool" });
           proposed = {
             merchant_id: String(call.input["merchant_id"]),
             line_items: (call.input["line_items"] as { sku: string; qty: number }[] | undefined) ?? [],
             rationale: String(call.input["rationale"] ?? ""),
           };
+          span.update({ output: proposed }).end();
           break;
         }
-        toolResults.push({ id: call.id, name: call.name, content: await runTool(call.name, call.input, catalog) });
+        const span = startObservation(call.name, { input: call.input }, { asType: "tool" });
+        // The exact wrapped text the model received, delimiters included —
+        // the same string that reaches the prompt, not a summary of it.
+        const content = await runTool(call.name, call.input, catalog);
+        span.update({ output: content }).end();
+        toolResults.push({ id: call.id, name: call.name, content });
       }
 
       history.push({ role: "assistant", calls: res.calls, text: "", raw: res.raw });
