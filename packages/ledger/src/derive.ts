@@ -65,7 +65,13 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
       }
 
       case "decision":
-        if (row.payload["kind"] === "DENY") deniedAttempts.push(row.ts);
+        // A signature-invalid DENY never proved the caller owns this mandate_id
+        // — it's an unverified claim, not a real denied attempt by the holder.
+        // The ledger is append-only, so old entries in this shape can't be
+        // rewritten; this is corrected on the read side instead. See D-xx.
+        if (row.payload["kind"] === "DENY" && row.payload["reason_code"] !== "MANDATE_SIGNATURE_INVALID") {
+          deniedAttempts.push(row.ts);
+        }
         break;
 
       default:
