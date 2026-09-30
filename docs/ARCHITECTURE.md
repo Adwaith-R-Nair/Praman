@@ -37,9 +37,9 @@ Injection can make the model *want* the wrong thing. It cannot make the system *
 
 **1. Mandate** — a human-signed (Ed25519) grant of bounded authority: merchant allowlist, category allowlist, per-transaction cap, cumulative cap, velocity limit, validity window, human-approval threshold. Modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot. Protocol-agnostic by design, since UAP is unpublished.
 
-**2. Policy engine** — a pure, total, deterministic function of `(intent, mandate, ledger_state, catalog, now)`. No I/O, no clock, no randomness, **no LLM**. Returns `ALLOW` / `STEP_UP` / `DENY` with a machine-readable reason code from a closed enum of 17. Hand-written, ~150 lines, readable top to bottom in one pass.
+**2. Policy engine** — a pure, total, deterministic function of one input object (`intent`, `mandate`, `ledger_state`, `catalog`, `now`, `idempotency_key`). No I/O, no clock, no randomness, **no LLM**. Returns `ALLOW` / `STEP_UP` / `DENY` with a machine-readable reason code from a closed enum of 19. Hand-written, readable top to bottom in one pass.
 
-**3. Ledger** — append-only, hash-chained, Merkle-checkpointed. Every intent, decision, API call and outcome. Immutability enforced by Postgres rules rejecting UPDATE and DELETE, not by application convention. Spend is *derived by replaying the ledger*, never stored on the mandate — so inflating a budget requires forging the whole chain.
+**3. Ledger** — append-only, hash-chained, Merkle-checkpointed. Every intent, decision, API call and outcome. Immutability enforced by Postgres triggers rejecting UPDATE and DELETE, not by application convention. Spend is *derived by replaying the ledger*, never stored on the mandate — so inflating a budget requires forging the whole chain.
 
 ## System view
 
@@ -63,7 +63,9 @@ Evaluation and execution run in **two phases**, not one transaction: a database 
 
 ## Stack
 
-TypeScript (strict) · Express · Postgres + Prisma · Ed25519 via `node:crypto` · Anthropic SDK with tool use · MCP for the merchant catalog · Razorpay Node SDK, test mode only · Vitest + a custom eval runner in CI.
+TypeScript (strict) · Postgres + Prisma · Ed25519 via `node:crypto` · a provider-neutral model interface (Gemini and Anthropic implementations) with tool use · MCP for the merchant catalog · Razorpay Node SDK, test mode only · Vitest + a custom eval runner in CI.
+
+No HTTP framework — the control plane is a `runIntent()` orchestrator invoked by CLI, not a server (Express was the original plan; see the roadmap for the actual HTTP API phase).
 
 Deliberately boring where boring is correct. The novelty budget is spent on the decision layer, not the framework. **No vector database** — the catalog is small and structured, there is nothing to retrieve semantically, and adding one would have been decoration.
 

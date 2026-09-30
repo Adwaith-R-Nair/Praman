@@ -133,6 +133,12 @@ CREATE INDEX ledger_mandate_idx ON ledger_entry ((payload->>'mandate_id'), seq);
 
 CREATE RULE ledger_no_update AS ON UPDATE TO ledger_entry DO INSTEAD NOTHING;
 CREATE RULE ledger_no_delete AS ON DELETE TO ledger_entry DO INSTEAD NOTHING;
+-- As built, this plan changed: a RULE with DO INSTEAD NOTHING makes the
+-- UPDATE/DELETE report success while silently affecting zero rows — in a
+-- system whose entire output is evidence, that's the wrong failure mode.
+-- The shipped migration (packages/db/prisma/migrations/
+-- 20260901171804_enforce_ledger_immutability) uses BEFORE UPDATE/DELETE
+-- triggers that RAISE EXCEPTION instead, so a blocked write is loud.
 
 CREATE TABLE idempotency_record (
   key           CHAR(64) PRIMARY KEY,       -- sha256 hex
@@ -156,7 +162,7 @@ CREATE TABLE approval (
 **Two details worth defending out loud:**
 
 - `mandate` has no `spent_paise`. Anyone with DB write access could raise it. Deriving spend from an append-only, hash-chained log means inflating a budget requires forging the entire chain.
-- `ledger_entry.seq` is `GENERATED ALWAYS AS IDENTITY`, so it cannot be supplied by the application. A gap in the sequence is itself evidence.
+- `ledger_entry.seq` is auto-assigned by the database on every insert (`BIGSERIAL` as built, not `GENERATED ALWAYS AS IDENTITY` as originally planned here — the shipped column can technically accept an application-supplied value where `IDENTITY` would reject one outright; `append()` never provides one, so the guarantee holds through the single code path that writes this table, not through a schema-level constraint). A gap in the sequence is still evidence worth investigating.
 
 ---
 
@@ -165,7 +171,8 @@ CREATE TABLE approval (
 ```ts
 export type EventType =
   | "intent" | "decision" | "step_up_resolved"
-  | "api_call" | "outcome" | "mandate_revoked" | "checkpoint";
+  | "api_call" | "outcome" | "mandate_revoked" | "checkpoint"
+  | "agent_transcript"; // as built — records the agent's verbatim tool calls as ledger evidence
 
 export async function append(
   tx: PrismaTx,                     // caller's transaction — never opens its own
