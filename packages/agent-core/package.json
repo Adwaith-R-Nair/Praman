@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.123.0",
-    "@google/genai": "2.21.0"
+    "@google/genai": "2.21.0",
+    "@langfuse/tracing": "5.11.1"
   }
 }
