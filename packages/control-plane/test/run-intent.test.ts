@@ -71,3 +71,38 @@ describe("runIntent against a revoked mandate", () => {
     expect(result.order_id).toBeNull();
   });
 });
+
+describe("F1: forged-signature intents do not lock out the real mandate holder", () => {
+  it("still evaluates a legitimate intent after max_denials_per_window forged-signature attempts under the same claimed mandate_id", async () => {
+    const mandateId = "mnd_lockout_test";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    // max_denials_per_window is 5 for this mandate (see buildSignedMandate).
+    const forged = { ...signed, signature: { ...signed.signature, value: "not-a-real-signature" } };
+
+    const baseIntent = {
+      intent_id: "int_forged",
+      mandate_id: mandateId,
+      merchant_id: MERCHANT,
+      line_items: [{ sku: SKU, qty: 1 }] as const,
+      requested_at: "2026-08-28T01:00:00.000Z",
+      agent_rationale: "attacker probing a known mandate_id",
+    };
+
+    for (let i = 0; i < 5; i++) {
+      const forgedIntent: PurchaseIntent = { ...baseIntent, intent_id: `int_forged_${i.toString()}` };
+      const r = await runIntent(forgedIntent, forged, publicKeyPem, new SimulatedExecutor(), new Date(), "test-model");
+      if (r.kind !== "DECIDED") throw new Error("unreachable");
+      expect(r.internal_reason_code).toBe("MANDATE_SIGNATURE_INVALID");
+    }
+
+    const legitimateIntent: PurchaseIntent = { ...baseIntent, intent_id: "int_legit" };
+    const result = await runIntent(legitimateIntent, signed, publicKeyPem, new SimulatedExecutor(), new Date(), "test-model");
+
+    expect(result.kind).toBe("DECIDED");
+    if (result.kind !== "DECIDED") throw new Error("unreachable");
+    // Before the fix this was DENIAL_RATE_EXCEEDED — the 5 forged-signature
+    // denials, never proven to belong to this mandate, still counted against it.
+    expect(result.internal_reason_code).toBe("OK");
+    expect(result.order_id).not.toBeNull();
+  });
+});

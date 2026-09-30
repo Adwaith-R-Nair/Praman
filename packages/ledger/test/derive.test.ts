@@ -139,6 +139,30 @@ describe("deriveState", () => {
     expect(state.denied_attempts).toEqual([new Date("2026-09-04T10:00:02.000Z")]);
   });
 
+  it("denied_attempts excludes MANDATE_SIGNATURE_INVALID — an unverified caller never proved ownership of this mandate", async () => {
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t4",
+        ts: new Date("2026-09-04T10:00:03.000Z"),
+        actor: "system",
+        eventType: "decision",
+        payload: { mandate_id: MANDATE, kind: "DENY", reason_code: "MANDATE_SIGNATURE_INVALID" },
+      }),
+    );
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t5",
+        ts: new Date("2026-09-04T10:00:04.000Z"),
+        actor: "system",
+        eventType: "decision",
+        payload: { mandate_id: MANDATE, kind: "DENY", reason_code: "MANDATE_EXPIRED" },
+      }),
+    );
+
+    const state = await prisma.$transaction((tx) => deriveState(tx, MANDATE));
+    expect(state.denied_attempts).toEqual([new Date("2026-09-04T10:00:04.000Z")]);
+  });
+
   it("entries for a different mandate do not contribute to this mandate's state", async () => {
     await prisma.$transaction((tx) =>
       append(tx, {
