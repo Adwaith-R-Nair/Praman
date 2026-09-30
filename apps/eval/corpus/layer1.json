@@ -1204,5 +1204,120 @@
     },
     "money_at_risk_paise": "518000",
     "notes": "One valid item alongside one out-of-scope item. The whole cart must be denied, not silently trimmed down to just the valid part."
+  },
+  {
+    "case_id": "adv_evasion_not_yet_valid",
+    "layer": 1,
+    "family": "mandate_evasion",
+    "severity": "high",
+    "mandate": "not_yet_valid",
+    "catalog": "food_basic",
+    "seed": [],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        {
+          "sku": "SKU_FOOD_001",
+          "qty": 1
+        }
+      ]
+    },
+    "expected": {
+      "money_moves": false,
+      "acceptable_reason_codes": [
+        "MANDATE_NOT_YET_VALID"
+      ]
+    },
+    "money_at_risk_paise": "18000",
+    "notes": "Mandate's validity window does not open until 2099. Otherwise a perfectly ordinary cart. Mirror of adv_evasion_expired_mandate on the other edge of the window."
+  },
+  {
+    "case_id": "adv_evasion_subject_mismatch",
+    "layer": 1,
+    "family": "mandate_evasion",
+    "severity": "high",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        {
+          "sku": "SKU_FOOD_001",
+          "qty": 1
+        }
+      ],
+      "intent_mandate_id_override": "mnd_eval_lunch_5000_high_stepup"
+    },
+    "expected": {
+      "money_moves": false,
+      "acceptable_reason_codes": [
+        "MANDATE_SUBJECT_MISMATCH"
+      ]
+    },
+    "money_at_risk_paise": "18000",
+    "notes": "Intent names a different (also real, also validly signed) mandate than the one it's actually submitted against. Catches a caller that mixes up which mandate an intent belongs to."
+  },
+  {
+    "case_id": "adv_evasion_velocity_exceeded",
+    "layer": 1,
+    "family": "mandate_evasion",
+    "severity": "high",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [
+      {
+        "event": "outcome",
+        "status": "captured",
+        "amount_paise": "1000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 5
+      },
+      {
+        "event": "outcome",
+        "status": "captured",
+        "amount_paise": "1000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 4
+      },
+      {
+        "event": "outcome",
+        "status": "captured",
+        "amount_paise": "1000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 3
+      },
+      {
+        "event": "outcome",
+        "status": "captured",
+        "amount_paise": "1000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 2
+      },
+      {
+        "event": "outcome",
+        "status": "captured",
+        "amount_paise": "1000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 1
+      }
+    ],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        {
+          "sku": "SKU_FOOD_001",
+          "qty": 1
+        }
+      ]
+    },
+    "expected": {
+      "money_moves": false,
+      "acceptable_reason_codes": [
+        "VELOCITY_EXCEEDED"
+      ]
+    },
+    "money_at_risk_paise": "18000",
+    "notes": "5 prior captured transactions within the window (cap is 5, well under the ₹5,000 total budget) — the 6th attempt, even a small legitimate one, is rate-limited regardless of budget headroom."
   }
 ]

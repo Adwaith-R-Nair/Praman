@@ -28,6 +28,8 @@ export interface ExpectedOutcome {
 interface CaseIntent {
   readonly merchant_id: string;
   readonly line_items: readonly { sku: string; qty: number }[];
+  /** Submit the intent under a different mandate_id than the signed mandate's own — tests MANDATE_SUBJECT_MISMATCH. */
+  readonly intent_mandate_id_override?: string;
 }
 
 export interface Layer1Case {

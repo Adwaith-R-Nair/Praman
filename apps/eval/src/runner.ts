@@ -17,7 +17,7 @@ export async function runLayer1(c: Layer1Case): Promise<CaseResult> {
 
   const intent: PurchaseIntent = {
     intent_id: `int_${c.case_id}`,
-    mandate_id: signed.document.mandate_id,
+    mandate_id: c.intent.intent_mandate_id_override ?? signed.document.mandate_id,
     merchant_id: c.intent.merchant_id,
     line_items: c.intent.line_items,
     requested_at: now.toISOString(),
