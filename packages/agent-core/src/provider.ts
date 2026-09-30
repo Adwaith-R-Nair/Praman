@@ -10,9 +10,22 @@ export interface ToolCall {
   readonly input: Record<string, unknown>;
 }
 
+/**
+ * Normalised across providers so a caller never branches on which one sent
+ * this turn. `total`, `cached_input` are populated only when the provider's
+ * own response actually carries them — never derived, so a report built
+ * from this never states a number the provider didn't itself report.
+ */
+export interface TokenUsage {
+  readonly input: number;
+  readonly output: number;
+  readonly cached_input?: number;
+  readonly total?: number;
+}
+
 export type ProviderTurn =
-  | { readonly kind: "TOOL_CALLS"; readonly calls: readonly ToolCall[]; readonly raw: unknown }
-  | { readonly kind: "TEXT"; readonly text: string; readonly raw: unknown };
+  | { readonly kind: "TOOL_CALLS"; readonly calls: readonly ToolCall[]; readonly raw: unknown; readonly usage?: TokenUsage }
+  | { readonly kind: "TEXT"; readonly text: string; readonly raw: unknown; readonly usage?: TokenUsage };
 
 /**
  * Neutral conversation format — neither Anthropic's nor Google's. Each

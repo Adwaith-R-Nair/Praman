@@ -1,5 +1,5 @@
 import { wrapUntrusted } from "@praman/shared";
-import type { ConversationItem, ModelProvider } from "@praman/agent-core";
+import type { ConversationItem, ModelProvider, TokenUsage } from "@praman/agent-core";
 import { createCatalogClient, type CatalogClient } from "./catalog-client.js";
 import { TOOLS } from "./tools.js";
 import { SYSTEM_PROMPT, SYSTEM_PROMPT_NO_DEFENCE } from "./prompt.js";
@@ -14,9 +14,25 @@ export interface ProposedCart {
 }
 
 export type AgentResult =
-  | { readonly kind: "PROPOSED"; readonly cart: ProposedCart; readonly transcript: readonly ConversationItem[]; readonly modelId: string }
-  | { readonly kind: "NO_PROPOSAL"; readonly reason: string; readonly transcript: readonly ConversationItem[]; readonly modelId: string }
-  | { readonly kind: "TURN_LIMIT"; readonly transcript: readonly ConversationItem[]; readonly modelId: string };
+  | { readonly kind: "PROPOSED"; readonly cart: ProposedCart; readonly transcript: readonly ConversationItem[]; readonly modelId: string; readonly usage?: TokenUsage }
+  | { readonly kind: "NO_PROPOSAL"; readonly reason: string; readonly transcript: readonly ConversationItem[]; readonly modelId: string; readonly usage?: TokenUsage }
+  | { readonly kind: "TURN_LIMIT"; readonly transcript: readonly ConversationItem[]; readonly modelId: string; readonly usage?: TokenUsage };
+
+/** Summed across every provider.send() call in one runAgent() — a goal can take several turns, and total spend is the sum, not the last turn's alone. */
+function sumUsage(a: TokenUsage | undefined, b: TokenUsage | undefined): TokenUsage | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return {
+    input: a.input + b.input,
+    output: a.output + b.output,
+    ...(a.cached_input !== undefined || b.cached_input !== undefined
+      ? { cached_input: (a.cached_input ?? 0) + (b.cached_input ?? 0) }
+      : {}),
+    // Only when EVERY summed turn reported its own total — a partial sum
+    // would understate spend while looking like a real total.
+    ...(a.total !== undefined && b.total !== undefined ? { total: a.total + b.total } : {}),
+  };
+}
 
 /**
  * Ablation-only escape hatch. Read live, per call, not cached — the
@@ -65,12 +81,20 @@ export async function runAgent(provider: ModelProvider, goal: string, merchantId
   // One client for the whole call, not one per tool call — under PRAMAN_MCP=1
   // that's one subprocess per runAgent(), not one per list_catalog/get_sku.
   const catalog = createCatalogClient(merchantId);
+  let usage: TokenUsage | undefined;
   try {
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       const res = await provider.send(systemPrompt, history, TOOLS);
+      usage = sumUsage(usage, res.usage);
 
       if (res.kind === "TEXT") {
-        return { kind: "NO_PROPOSAL", reason: res.text, transcript: history, modelId: provider.id };
+        return {
+          kind: "NO_PROPOSAL",
+          reason: res.text,
+          transcript: history,
+          modelId: provider.id,
+          ...(usage !== undefined ? { usage } : {}),
+        };
       }
 
       let proposed: ProposedCart | null = null;
@@ -91,7 +115,13 @@ export async function runAgent(provider: ModelProvider, goal: string, merchantId
       history.push({ role: "assistant", calls: res.calls, text: "", raw: res.raw });
 
       if (proposed) {
-        return { kind: "PROPOSED", cart: proposed, transcript: history, modelId: provider.id };
+        return {
+          kind: "PROPOSED",
+          cart: proposed,
+          transcript: history,
+          modelId: provider.id,
+          ...(usage !== undefined ? { usage } : {}),
+        };
       }
 
       history.push({ role: "tool_results", results: toolResults });
@@ -100,5 +130,5 @@ export async function runAgent(provider: ModelProvider, goal: string, merchantId
     await catalog.close();
   }
 
-  return { kind: "TURN_LIMIT", transcript: history, modelId: provider.id };
+  return { kind: "TURN_LIMIT", transcript: history, modelId: provider.id, ...(usage !== undefined ? { usage } : {}) };
 }

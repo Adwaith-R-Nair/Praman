@@ -1,5 +1,16 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ConversationItem, ModelProvider, ProviderTurn, ToolSpec } from "./provider.js";
+import type { ConversationItem, ModelProvider, ProviderTurn, TokenUsage, ToolSpec } from "./provider.js";
+
+/** No `total` — Anthropic doesn't return one, and summing input+output ourselves would silently assume cached tokens aren't double-counted, which isn't a claim this function can verify. */
+function usageFromAnthropic(usage: Anthropic.Usage): TokenUsage {
+  return {
+    input: usage.input_tokens,
+    output: usage.output_tokens,
+    ...(usage.cache_read_input_tokens !== null && usage.cache_read_input_tokens !== undefined
+      ? { cached_input: usage.cache_read_input_tokens }
+      : {}),
+  };
+}
 
 /**
  * Not exercised — configured for cost reasons (Gemini's free tier is what's
@@ -57,12 +68,14 @@ export class AnthropicProvider implements ModelProvider {
       messages: toAnthropicMessages(history),
     });
 
+    const usage = usageFromAnthropic(res.usage);
     const toolUseBlocks = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (toolUseBlocks.length > 0) {
       return {
         kind: "TOOL_CALLS",
         calls: toolUseBlocks.map((b) => ({ id: b.id, name: b.name, input: b.input as Record<string, unknown> })),
         raw: res,
+        usage,
       };
     }
 
@@ -70,6 +83,6 @@ export class AnthropicProvider implements ModelProvider {
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("\n");
-    return { kind: "TEXT", text, raw: res };
+    return { kind: "TEXT", text, raw: res, usage };
   }
 }

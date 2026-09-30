@@ -6,8 +6,9 @@ import {
   createPartFromFunctionCall,
   createPartFromFunctionResponse,
   type Content,
+  type GenerateContentResponseUsageMetadata,
 } from "@google/genai";
-import type { ConversationItem, ModelProvider, ProviderTurn, ToolSpec } from "./provider.js";
+import type { ConversationItem, ModelProvider, ProviderTurn, TokenUsage, ToolSpec } from "./provider.js";
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
 
@@ -34,6 +35,25 @@ function extractOriginalModelContent(raw: unknown): Content | undefined {
   const content = (candidates[0] as { content?: unknown }).content;
   if (content === null || typeof content !== "object") return undefined;
   return content as Content;
+}
+
+/**
+ * Undefined whenever the response omits the two counts a usage figure needs
+ * — never a guessed zero. Reads `candidatesTokenCount`, verified against a
+ * live API response rather than assumed from the type alone: this SDK
+ * declares an unrelated `UsageMetadata` class (a different API surface)
+ * with a similarly-named but distinct `responseTokenCount` field, and
+ * because every field on it is optional, TypeScript accepts either type
+ * silently — a live call is what actually caught the mismatch.
+ */
+function usageFromGemini(meta: GenerateContentResponseUsageMetadata | undefined): TokenUsage | undefined {
+  if (meta?.promptTokenCount === undefined || meta.candidatesTokenCount === undefined) return undefined;
+  return {
+    input: meta.promptTokenCount,
+    output: meta.candidatesTokenCount,
+    ...(meta.cachedContentTokenCount !== undefined ? { cached_input: meta.cachedContentTokenCount } : {}),
+    ...(meta.totalTokenCount !== undefined ? { total: meta.totalTokenCount } : {}),
+  };
 }
 
 function toGeminiContent(item: ConversationItem): Content {
@@ -106,6 +126,7 @@ export class GeminiProvider implements ModelProvider {
       },
     });
 
+    const usage = usageFromGemini(res.usageMetadata);
     const calls = res.functionCalls ?? [];
     if (calls.length > 0) {
       return {
@@ -118,8 +139,9 @@ export class GeminiProvider implements ModelProvider {
           input: c.args ?? {},
         })),
         raw: res,
+        ...(usage !== undefined ? { usage } : {}),
       };
     }
-    return { kind: "TEXT", text: res.text ?? "", raw: res };
+    return { kind: "TEXT", text: res.text ?? "", raw: res, ...(usage !== undefined ? { usage } : {}) };
   }
 }
