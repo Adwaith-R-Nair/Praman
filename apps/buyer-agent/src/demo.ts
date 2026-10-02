@@ -127,7 +127,7 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
   // verbatim tool call, not just the final decided intent. langfuseTraceId
   // is the agent's own trace (set above, before this intent even existed),
   // non-evidentiary — see record-transcript.ts.
-  await recordAgentTranscript(result.trace_id, agent.transcript, agent.langfuseTraceId);
+  await recordAgentTranscript(result.trace_id, agent.transcript, agent.langfuseTraceId, agent.promptProvenance);
 
   if (result.kind === "IN_FLIGHT") {
     console.log(`▸ IN FLIGHT — ${result.detail}`);

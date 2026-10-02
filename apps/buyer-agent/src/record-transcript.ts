@@ -1,6 +1,7 @@
 import { prisma } from "@praman/db";
 import { append } from "@praman/ledger";
 import type { ConversationItem } from "@praman/agent-core";
+import type { PromptProvenance } from "./agent.js";
 
 /**
  * Records the agent's full tool-use transcript against a trace, so the
@@ -28,6 +29,14 @@ export async function recordAgentTranscript(
    * ledger's own tamper-evidence.
    */
   langfuseTraceId?: string,
+  /**
+   * Which defence prompt and ablation flags were active when this purchase
+   * was proposed — an audit fact (D-xx): "which prompt was live" belongs in
+   * the tamper-evident record, not only in Langfuse. The prompt text itself
+   * is never recorded, only its hash — sufficient to prove which exact
+   * version was active without duplicating prompt.ts into every trace.
+   */
+  promptProvenance?: PromptProvenance,
 ): Promise<void> {
   // Ledger payloads must canonicalise cleanly (assertLedgerPayload/canonical()
   // reject anything not plain JSON). A provider's raw turn-replay data is an
@@ -46,6 +55,7 @@ export async function recordAgentTranscript(
         evidence_only: true,
         transcript: forRecord,
         ...(langfuseTraceId !== undefined ? { observability: { langfuse_trace_id: langfuseTraceId } } : {}),
+        ...(promptProvenance !== undefined ? { prompt_provenance: promptProvenance } : {}),
       },
     }),
   );

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { getActiveTraceId, startActiveObservation, startObservation } from "@langfuse/tracing";
 import { wrapUntrusted } from "@praman/shared";
 import type { ConversationItem, ModelProvider, TokenUsage } from "@praman/agent-core";
@@ -14,6 +15,20 @@ export interface ProposedCart {
   readonly rationale: string;
 }
 
+/**
+ * Which defence prompt was active, and which ablation flags, when a
+ * purchase was proposed — an audit fact (D-xx), not just a debugging
+ * convenience, so this is what ends up in the ledger's agent_transcript
+ * event, not only in Langfuse. The prompt itself is never recorded here
+ * (it's not secret, but the hash is cheaper and sufficient to prove which
+ * exact prompt text was active).
+ */
+export interface PromptProvenance {
+  readonly system_prompt_sha256: string;
+  readonly no_delimiter: boolean;
+  readonly no_prompt_defence: boolean;
+}
+
 export type AgentResult =
   | {
       readonly kind: "PROPOSED";
@@ -23,6 +38,7 @@ export type AgentResult =
       readonly usage?: TokenUsage;
       /** Non-evidentiary pointer to this run's Langfuse trace, if tracing is configured. See D-xx. */
       readonly langfuseTraceId?: string;
+      readonly promptProvenance: PromptProvenance;
     }
   | {
       readonly kind: "NO_PROPOSAL";
@@ -31,6 +47,7 @@ export type AgentResult =
       readonly modelId: string;
       readonly usage?: TokenUsage;
       readonly langfuseTraceId?: string;
+      readonly promptProvenance: PromptProvenance;
     }
   | {
       readonly kind: "TURN_LIMIT";
@@ -38,6 +55,7 @@ export type AgentResult =
       readonly modelId: string;
       readonly usage?: TokenUsage;
       readonly langfuseTraceId?: string;
+      readonly promptProvenance: PromptProvenance;
     };
 
 /** Summed across every provider.send() call in one runAgent() — a goal can take several turns, and total spend is the sum, not the last turn's alone. */
@@ -103,23 +121,41 @@ async function runTool(name: string, input: Record<string, unknown>, catalog: Ca
  * TracedProvider's own tests, which run in exactly that state).
  */
 export async function runAgent(provider: ModelProvider, goal: string, merchantId: string): Promise<AgentResult> {
+  // Read live, not hoisted to module scope — the ablation runner toggles
+  // these mid-process across arms (same reasoning as wrapMerchantText).
+  const noPromptDefence = process.env["PRAMAN_NO_PROMPT_DEFENCE"] === "1";
+  const systemPrompt = noPromptDefence ? SYSTEM_PROMPT_NO_DEFENCE : SYSTEM_PROMPT;
+  const promptProvenance: PromptProvenance = {
+    system_prompt_sha256: createHash("sha256").update(systemPrompt, "utf8").digest("hex"),
+    no_delimiter: process.env["PRAMAN_NO_DELIMITER"] === "1",
+    no_prompt_defence: noPromptDefence,
+  };
+
   return startActiveObservation(
     "agent-run",
     async (agentObs) => {
-      agentObs.update({ input: { goal, merchant_id: merchantId } });
-      const result = await runAgentInner(provider, goal, merchantId);
+      agentObs.update({ input: { goal, merchant_id: merchantId }, metadata: { prompt_provenance: promptProvenance } });
+      const result = await runAgentInner(provider, goal, merchantId, systemPrompt);
       agentObs.update({ output: result });
       const langfuseTraceId = getActiveTraceId();
-      return langfuseTraceId !== undefined ? { ...result, langfuseTraceId } : result;
+      return { ...result, promptProvenance, ...(langfuseTraceId !== undefined ? { langfuseTraceId } : {}) };
     },
     { asType: "agent" },
   );
 }
 
-async function runAgentInner(provider: ModelProvider, goal: string, merchantId: string): Promise<AgentResult> {
+// Plain Omit flattens a discriminated union into one shape with optional
+// members instead of preserving each variant — this distributes it over
+// AgentResult's branches first, so "kind" still narrows the rest correctly.
+type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
+
+async function runAgentInner(
+  provider: ModelProvider,
+  goal: string,
+  merchantId: string,
+  systemPrompt: string,
+): Promise<DistributiveOmit<AgentResult, "promptProvenance">> {
   const history: ConversationItem[] = [{ role: "user", text: `Merchant: ${merchantId}\nGoal: ${goal}` }];
-  // Read live, not hoisted above the loop — same reasoning as wrapMerchantText.
-  const systemPrompt = process.env["PRAMAN_NO_PROMPT_DEFENCE"] === "1" ? SYSTEM_PROMPT_NO_DEFENCE : SYSTEM_PROMPT;
 
   // One client for the whole call, not one per tool call — under PRAMAN_MCP=1
   // that's one subprocess per runAgent(), not one per list_catalog/get_sku.
