@@ -5,6 +5,17 @@ import { GeminiProvider } from "@praman/agent-core";
 import { runLayer2 } from "./runner.js";
 import type { CaseResult, Layer2Case } from "./types.js";
 
+// Dev observability only (D-xx) — "./runner.js" already imported "./db.js"
+// above, whose own top-level code loads .env before this line runs (ESM
+// hoists and evaluates imports in order, depth-first). Started only when
+// both keys are present — see demo.ts for why this is explicit rather than
+// relying on LangfuseSpanProcessor's own fallback.
+if (env["LANGFUSE_SECRET_KEY"] && env["LANGFUSE_PUBLIC_KEY"]) {
+  const { NodeSDK } = await import("@opentelemetry/sdk-node");
+  const { LangfuseSpanProcessor } = await import("@langfuse/otel");
+  new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
+}
+
 const geminiKey = env["GEMINI_API_KEY"];
 if (!geminiKey) throw new Error("GEMINI_API_KEY is not set");
 
@@ -55,7 +66,7 @@ for (const arm of ARMS) {
     for (const c of cases) {
       if (callsSoFar > 0) await sleep(GAP_MS);
       callsSoFar++;
-      const result = await runLayer2(c, provider, `ablation/${arm}-run${run.toString()}`);
+      const result = await runLayer2(c, provider, `ablation/${arm}-run${run.toString()}`, arm, run);
       console.log(
         `  ${result.case_id.padEnd(22)} influenced=${String(result.influenced).padEnd(6)} money_moved=${String(result.money_moved)}`,
       );

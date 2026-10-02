@@ -7,6 +7,16 @@ import { generateBadge, generateReportMarkdown, type AblationArmStats, type Abla
 import { runLayer1Corpus, runLayer2Corpus } from "./runner.js";
 import type { CaseResult, Layer1Case, Layer2Case } from "./types.js";
 
+// Dev observability only (D-xx) — "./runner.js" already imported "./db.js",
+// whose own top-level code loads .env before this line runs. Started only
+// when both keys are present; CI has no Langfuse keys configured and never
+// starts this, by design (see docs/BUILD_LOG.md on --layer1 --dev).
+if (env["LANGFUSE_SECRET_KEY"] && env["LANGFUSE_PUBLIC_KEY"]) {
+  const { NodeSDK } = await import("@opentelemetry/sdk-node");
+  const { LangfuseSpanProcessor } = await import("@langfuse/otel");
+  new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
+}
+
 /**
  * Reads whatever ablation-cli.ts already wrote to eval/ablation/, if it's
  * there, and folds it into the main report — so the report never goes

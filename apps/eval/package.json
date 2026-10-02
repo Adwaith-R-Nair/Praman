@@ -6,6 +6,9 @@
   "main": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
+    "@langfuse/otel": "5.11.1",
+    "@langfuse/tracing": "5.11.1",
+    "@opentelemetry/sdk-node": "0.222.0",
     "@praman/agent-core": "workspace:*",
     "@praman/buyer-agent": "workspace:*",
     "@praman/control-plane": "workspace:*",

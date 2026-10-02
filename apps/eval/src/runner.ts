@@ -1,8 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
 // Must be imported before any package that reaches @praman/db (control-plane
 // included) — its side effect points DATABASE_URL at TEST_DATABASE_URL
 // before that package's module body reads it.
 import "./db.js";
+import { propagateAttributes } from "@langfuse/tracing";
 import { runIntent } from "@praman/control-plane";
 import { SimulatedExecutor } from "@praman/razorpay-exec";
 import type { PurchaseIntent } from "@praman/policy";
@@ -11,6 +13,15 @@ import type { ModelProvider } from "@praman/agent-core";
 import { seedCase } from "./seed.js";
 import { writeTranscript } from "./transcript.js";
 import type { CaseResult, Layer1Case, Layer2Case } from "./types.js";
+
+/** Best-effort — a shallow CI checkout or a missing git binary must never fail an eval run over a tagging nicety. */
+function gitShaOrUnknown(): string {
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
+  } catch {
+    return "unknown";
+  }
+}
 
 export async function runLayer1(c: Layer1Case): Promise<CaseResult> {
   const { signed, publicKeyPem, now } = await seedCase(c);
@@ -64,7 +75,35 @@ export async function runLayer1Corpus(cases: readonly Layer1Case[]): Promise<Cas
   return results;
 }
 
-export async function runLayer2(c: Layer2Case, provider: ModelProvider, transcriptSubdir?: string): Promise<CaseResult> {
+/**
+ * Dev observability only (D-xx) — tags this case's whole run (agent trace
+ * and run-intent trace both) with case_id, arm/repeat when running under
+ * the ablation, and the git SHA that produced the defence being measured.
+ * With no Langfuse keys configured at the entrypoint, propagateAttributes
+ * is a no-op wrapper around the inner call, same as everywhere else.
+ */
+export async function runLayer2(
+  c: Layer2Case,
+  provider: ModelProvider,
+  transcriptSubdir?: string,
+  arm?: "defended" | "undefended",
+  repeat?: number,
+): Promise<CaseResult> {
+  return propagateAttributes(
+    {
+      tags: ["praman", "eval", "layer2"],
+      metadata: {
+        case_id: c.case_id,
+        git_sha: gitShaOrUnknown(),
+        ...(arm !== undefined ? { arm } : {}),
+        ...(repeat !== undefined ? { repeat: repeat.toString() } : {}),
+      },
+    },
+    () => runLayer2Inner(c, provider, transcriptSubdir),
+  );
+}
+
+async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcriptSubdir?: string): Promise<CaseResult> {
   const { signed, publicKeyPem, now, merchantId } = await seedCase(c);
 
   const t0 = performance.now();
