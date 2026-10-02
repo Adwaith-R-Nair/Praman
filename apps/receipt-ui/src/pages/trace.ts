@@ -11,6 +11,21 @@ function escFreeText(value: string): string {
   return fixRupeeGlyph(escapeHtml(value));
 }
 
+/**
+ * LANGFUSE_PROJECT_ID is optional and separate from the API keys — it's the
+ * id segment in the project's own dashboard URL, not something derivable
+ * from a public/secret key pair. Without it we still have a real trace id,
+ * just no deep link to build from it (every Langfuse project's URL path is
+ * scoped to a project id, confirmed against the actual dashboard rather
+ * than assumed).
+ */
+function langfuseTraceUrl(langfuseTraceId: string): string | null {
+  const base = process.env["LANGFUSE_BASE_URL"];
+  const projectId = process.env["LANGFUSE_PROJECT_ID"];
+  if (!base || !projectId) return null;
+  return `${base}/project/${projectId}/traces?peek=${langfuseTraceId}&traceId=${langfuseTraceId}`;
+}
+
 export async function renderTracePage(traceId: string): Promise<{ status: number; html: string }> {
   const trace = await loadTrace(traceId);
 
@@ -120,6 +135,17 @@ ${
   <h2>Ledger entries</h2>
   <ul class="spine">${entriesHtml}</ul>
 </section>
+
+${(() => {
+  if (!trace.langfuseTraceId) return "";
+  const url = langfuseTraceUrl(trace.langfuseTraceId);
+  // Not evidence (D-xx) — a debugging convenience shown as plain text when
+  // LANGFUSE_PROJECT_ID isn't set, a link when it is, never anything more.
+  const linkOrText = url
+    ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(trace.langfuseTraceId)}</a>`
+    : escapeHtml(trace.langfuseTraceId);
+  return `<section><p class="nav data">debug trace (not evidence) ${linkOrText}</p></section>`;
+})()}
 
 <section>
   <p class="nav data">trace_id ${escapeHtml(traceId)}</p>

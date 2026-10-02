@@ -28,7 +28,7 @@ const { runIntent } = await import("@praman/control-plane");
 const { LiveExecutor, SimulatedExecutor } = await import("@praman/razorpay-exec");
 const { formatINR } = await import("@praman/shared");
 const { GeminiProvider, TracedProvider } = await import("@praman/agent-core");
-const { startObservation } = await import("@langfuse/tracing");
+const { propagateAttributes, startObservation } = await import("@langfuse/tracing");
 const { runAgent } = await import("./agent.js");
 const { recordAgentTranscript } = await import("./record-transcript.js");
 
@@ -74,7 +74,17 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
 
   if (attempt > 1) console.log(`▸ retry ${(attempt - 1).toString()}/${(MAX_ATTEMPTS - 1).toString()} — declined, re-planning\n`);
 
-  const agent = await runAgent(provider, goal, merchantId);
+  // Generated early (the id itself doesn't depend on what the agent
+  // proposes) so both the agent's trace and the decision's trace below can
+  // be tagged with the same praman_trace_id even though they're separate
+  // Langfuse traces — propagateAttributes stamps every span started within
+  // its callback, including ones that start their own new trace root.
+  const intentId = `int_${randomUUID()}`;
+  const traceId = `trc_${intentId}`;
+
+  const agent = await propagateAttributes({ tags: ["praman"], metadata: { praman_trace_id: traceId } }, () =>
+    runAgent(provider, goal, merchantId),
+  );
 
   if (agent.kind !== "PROPOSED") {
     console.log(`▸ agent made no proposal (${agent.kind})`);
@@ -87,7 +97,7 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
   console.log(`  model: ${agent.modelId}\n`);
 
   const intent: PurchaseIntent = {
-    intent_id: `int_${randomUUID()}`,
+    intent_id: intentId,
     mandate_id: signed.document.mandate_id,
     merchant_id: agent.cart.merchant_id,
     line_items: agent.cart.line_items,
@@ -103,19 +113,21 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
   // — RunResult never carries the internal Decision.detail string (that
   // stays inside run-intent.ts/evaluate.ts), so there's nothing here that
   // could quote a mandate limit even by accident.
-  const intentSpan = startObservation("run-intent", { input: intent }, { asType: "span" });
-  const result = await runIntent(intent, signed, publicKeyPem, executor, new Date(), agent.modelId);
-  intentSpan
-    .update({
-      output:
-        result.kind === "DECIDED"
-          ? { agent_visible: result.agent_visible, internal_reason_code: result.internal_reason_code }
-          : { kind: result.kind, detail: result.detail },
-    })
-    .end();
+  const result = await propagateAttributes({ tags: ["praman"], metadata: { praman_trace_id: traceId } }, async () => {
+    const intentSpan = startObservation("run-intent", { input: intent }, { asType: "span" });
+    const r = await runIntent(intent, signed, publicKeyPem, executor, new Date(), agent.modelId);
+    intentSpan
+      .update({
+        output: r.kind === "DECIDED" ? { agent_visible: r.agent_visible, internal_reason_code: r.internal_reason_code } : { kind: r.kind, detail: r.detail },
+      })
+      .end();
+    return r;
+  });
   // For the receipt viewer: the merchant text the agent read and its
-  // verbatim tool call, not just the final decided intent.
-  await recordAgentTranscript(result.trace_id, agent.transcript);
+  // verbatim tool call, not just the final decided intent. langfuseTraceId
+  // is the agent's own trace (set above, before this intent even existed),
+  // non-evidentiary — see record-transcript.ts.
+  await recordAgentTranscript(result.trace_id, agent.transcript, agent.langfuseTraceId);
 
   if (result.kind === "IN_FLIGHT") {
     console.log(`▸ IN FLIGHT — ${result.detail}`);

@@ -17,7 +17,18 @@ import type { ConversationItem } from "@praman/agent-core";
  * conversation, it must re-fetch fresh catalog text, not reuse what's
  * stored here.
  */
-export async function recordAgentTranscript(traceId: string, transcript: readonly ConversationItem[]): Promise<void> {
+export async function recordAgentTranscript(
+  traceId: string,
+  transcript: readonly ConversationItem[],
+  /**
+   * Pointer to this run's Langfuse trace, if tracing was configured.
+   * Explicitly non-evidentiary (D-xx): a convenience for a human jumping to
+   * the debugging view, never asserted as true and never read back by any
+   * verification path. A broken or stale pointer has no effect on the
+   * ledger's own tamper-evidence.
+   */
+  langfuseTraceId?: string,
+): Promise<void> {
   // Ledger payloads must canonicalise cleanly (assertLedgerPayload/canonical()
   // reject anything not plain JSON). A provider's raw turn-replay data is an
   // opaque SDK object with no such guarantee, and isn't needed for human
@@ -31,7 +42,11 @@ export async function recordAgentTranscript(traceId: string, transcript: readonl
       ts: new Date(),
       actor: "agent",
       eventType: "agent_transcript",
-      payload: { evidence_only: true, transcript: forRecord },
+      payload: {
+        evidence_only: true,
+        transcript: forRecord,
+        ...(langfuseTraceId !== undefined ? { observability: { langfuse_trace_id: langfuseTraceId } } : {}),
+      },
     }),
   );
 }

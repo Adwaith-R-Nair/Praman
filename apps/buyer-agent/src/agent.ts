@@ -1,4 +1,4 @@
-import { startActiveObservation, startObservation } from "@langfuse/tracing";
+import { getActiveTraceId, startActiveObservation, startObservation } from "@langfuse/tracing";
 import { wrapUntrusted } from "@praman/shared";
 import type { ConversationItem, ModelProvider, TokenUsage } from "@praman/agent-core";
 import { createCatalogClient, type CatalogClient } from "./catalog-client.js";
@@ -15,9 +15,30 @@ export interface ProposedCart {
 }
 
 export type AgentResult =
-  | { readonly kind: "PROPOSED"; readonly cart: ProposedCart; readonly transcript: readonly ConversationItem[]; readonly modelId: string; readonly usage?: TokenUsage }
-  | { readonly kind: "NO_PROPOSAL"; readonly reason: string; readonly transcript: readonly ConversationItem[]; readonly modelId: string; readonly usage?: TokenUsage }
-  | { readonly kind: "TURN_LIMIT"; readonly transcript: readonly ConversationItem[]; readonly modelId: string; readonly usage?: TokenUsage };
+  | {
+      readonly kind: "PROPOSED";
+      readonly cart: ProposedCart;
+      readonly transcript: readonly ConversationItem[];
+      readonly modelId: string;
+      readonly usage?: TokenUsage;
+      /** Non-evidentiary pointer to this run's Langfuse trace, if tracing is configured. See D-xx. */
+      readonly langfuseTraceId?: string;
+    }
+  | {
+      readonly kind: "NO_PROPOSAL";
+      readonly reason: string;
+      readonly transcript: readonly ConversationItem[];
+      readonly modelId: string;
+      readonly usage?: TokenUsage;
+      readonly langfuseTraceId?: string;
+    }
+  | {
+      readonly kind: "TURN_LIMIT";
+      readonly transcript: readonly ConversationItem[];
+      readonly modelId: string;
+      readonly usage?: TokenUsage;
+      readonly langfuseTraceId?: string;
+    };
 
 /** Summed across every provider.send() call in one runAgent() — a goal can take several turns, and total spend is the sum, not the last turn's alone. */
 function sumUsage(a: TokenUsage | undefined, b: TokenUsage | undefined): TokenUsage | undefined {
@@ -88,7 +109,8 @@ export async function runAgent(provider: ModelProvider, goal: string, merchantId
       agentObs.update({ input: { goal, merchant_id: merchantId } });
       const result = await runAgentInner(provider, goal, merchantId);
       agentObs.update({ output: result });
-      return result;
+      const langfuseTraceId = getActiveTraceId();
+      return langfuseTraceId !== undefined ? { ...result, langfuseTraceId } : result;
     },
     { asType: "agent" },
   );

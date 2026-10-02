@@ -26,6 +26,8 @@ export interface TraceView {
   readonly orderId: string | null;
   readonly orderStatus: string | null;
   readonly approvalVerdict: string | null;
+  /** Non-evidentiary pointer to this run's Langfuse trace, if tracing was configured when it ran. See D-xx. */
+  readonly langfuseTraceId: string | null;
 }
 
 /**
@@ -140,6 +142,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     orderId: asString(outcome?.["order_id"]),
     orderStatus: asString(outcome?.["status"]),
     approvalVerdict: asString(stepUpResolved?.["verdict"]),
+    langfuseTraceId: asString((transcriptPayload?.["observability"] as Record<string, unknown> | undefined)?.["langfuse_trace_id"]),
   };
 }
 
