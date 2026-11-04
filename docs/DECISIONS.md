@@ -749,6 +749,8 @@ reads changes from `price_paise=` to `price_minor=`; the policy never read that 
 
 ### D-29 · Currency comes from the signed mandate · Accepted
 
+Status: the claim that `merchant.currency` can only disagree into a refusal was false when written. D-35 makes it true.
+
 Until now a price was a bare integer and every reader assumed rupees. `50000` meant
 ₹500 because nothing else could exist. With USD, the same integer could be $500, and
 nothing in the system would notice. The danger isn't a crash. It's a charge that looks
@@ -923,6 +925,8 @@ small policy change, preparing for a checkout took another, and adding the rail 
 ### D-32 · Rail comes from merchant configuration · Accepted
 
 Status: the section "The rail's currency is checked on return" is replaced by D-33. The rest holds.
+
+Status: the last paragraph, that `merchant.currency` is stored and not compared, is closed by D-35.
 
 Praman needs to pay on two rails without the control plane caring which. Three things could
 choose the rail: the intent, the mandate, or the server's own record of the merchant. An intent
@@ -1113,3 +1117,32 @@ Nothing raises an alarm when a key has two orders yet.
 
 **Consequence for Task 7.** Capture and release outcomes must carry the order's `order_id`, or a release can't free
 the right order on a key that has two.
+
+### D-35 · A merchant in another currency is refused · Accepted
+
+Corrects D-29, which says `merchant.currency` "can only ever disagree into a refusal, because each of its items still
+has to match the mandate", and the design, which says a merchant whose currency differs from the mandate's is denied.
+Neither was true. Nothing compared `merchant.currency` to anything, as D-32's last paragraph admits. A merchant row in
+INR with a USD catalog item passed `evaluate()` and reached the rail for a USD mandate. Found in independent review,
+and an implementer's decision for the builder to check.
+
+**Decision: `routeMerchant` compares the merchant's currency with the signed mandate's, and `gateOnRail` denies
+`CURRENCY_MISMATCH`.** It is the gate D-32 already built, so everything D-32 says of that gate holds here:
+
+- **Policy answers first.** An expired mandate or an unknown SKU still reports as itself.
+- **A `STEP_UP` is denied too,** because a human shouldn't approve what can't happen. It is checked again at approval,
+  since the merchant's configuration may have changed in between.
+- **It is a real `decision` row,** so it counts toward the denial-rate cap.
+- **It can only turn a yes into a no.** The merchant's currency never replaces the mandate's. D-29's point stands: a
+  merchant's configuration isn't signed by the person whose money it is.
+
+`packages/policy` isn't touched, so the claim that adding the rail took no policy change still holds.
+
+**`CURRENCY_MISMATCH`, not `MERCHANT_OUT_OF_SCOPE`.** The merchant is in scope and payable. What's wrong is the same
+thing the code already means elsewhere, and the caller needs to know that rather than look for a missing merchant.
+
+**Rejected: leaving it to the catalog check.** That is what D-32 did, on the reasoning that `seed-catalog` writes both
+together. A check that holds because one script behaves is not a check, and these columns are edited by hand in a demo.
+
+**Consequence.** Three tests had a USD mandate buying from a merchant row in INR. That was the gap itself, in a fixture.
+They now configure the merchant as USD, and their assertions didn't change.
