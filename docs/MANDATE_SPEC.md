@@ -87,7 +87,7 @@ export function evaluate(input: EvaluateInput): Decision;
 export interface EvaluateInput {
   intent: PurchaseIntent;
   mandate: VerifiedMandate;      // signature already verified — see below
-  state: LedgerDerivedState;     // { spent_minor, txn_timestamps, revoked, merchants_transacted, seen_idempotency_keys, denied_attempts }
+  state: LedgerDerivedState;     // { spent_minor, txn_timestamps, revoked, merchants_transacted, seen_idempotency_keys, released_keys, denied_attempts }
   catalog: CatalogSnapshot;      // trusted, server-side
   now: Date;
   idempotency_key: string;
@@ -185,7 +185,7 @@ The rejected alternative was executing the stored intent directly on approval, w
   "trace_id": "trc_01J8XK4M2A",
   "ts": "2026-08-28T12:04:11.882Z",
   "actor": "agt_lunchbuyer",
-  "event_type": "decision",   // intent | decision | api_call | outcome | step_up_resolved | mandate_revoked
+  "event_type": "decision",   // intent | decision | api_call | outcome | step_up_resolved | mandate_revoked | capture_decision | settlement
   "payload": { /* event-specific, canonicalised */ },
   "payload_hash": "sha256:...",
   "prev_hash": "sha256:...",
@@ -196,6 +196,7 @@ The rejected alternative was executing the stored intent directly on approval, w
 - `seq` is a Postgres identity column; a gap means tampering.
 - New events carry amounts as `amount_minor`. Rows written before the rename carry `amount_paise`, and always will, because `payload_hash` covers those bytes. Readers accept both through `readAmount` and `amountIfPresent` in `packages/ledger/src/derive.ts` (D-28).
 - New `decision`, `api_call` and `outcome` events with an amount also carry `currency`. Older rows have none and are INR, because nothing else was accepted when they were written. `readCurrency` in the same file reads both (D-29).
+- `outcome` status is `created`, `captured`, `failed` or `released`. Spend is counted per order, not per row: rows with one `idempotency_key` fold together, and a `released` order with no capture frees its budget but keeps its velocity timestamp. Old rows with no key each count on their own (D-30).
 - `entry_hash` chains to `prev_hash`. Genesis entry uses 64 zeros.
 - Every 100 entries (or hourly), compute a Merkle root over `entry_hash` values and append a `checkpoint` entry containing it. The checkpoint is what you'd anchor externally in production — say this in the pitch, and be clear you didn't anchor it in the demo.
 - Immutability enforced in migration:

@@ -1948,3 +1948,85 @@ each one is safe on its own.
 it still says 35 cases, and it says ₹20338.00 at risk prevented, where the corpus sums to
 ₹20878.00 even before these new cases. That older figure was already stale before this
 work. Task 11 regenerates the report, and the README's numbers should be checked against it.
+
+### Phase P4 · 2026-11-05 · holding budget per order, and freezing policy
+
+This is the last change to `packages/policy` before PayPal arrives. D-30 and D-31 have the
+reasoning. There are three parts.
+
+**1. One order, counted once.** On Razorpay an order has one outcome row, so `deriveState` could
+just add up rows. On PayPal an order is created, and later captured or released, which is two rows
+for one purchase. Adding them up would charge the budget twice. So rows are now grouped by
+`idempotency_key` first, then each order is counted once. Walking one through a $12.50 purchase:
+
+| Ledger so far | `spent_minor` | Velocity entries | Merchant trusted | Can capture? |
+|---|---|---|---|---|
+| created | 1250 | 1 | yes | yes |
+| created, captured | 1250 | 1 | yes | already done |
+| created, released (10 minutes, nobody approved) | 0 | 1 | no | no, `ORDER_RELEASED` |
+
+The last row is the new idea. Abandoning a checkout gives the money back, but it still used up a
+velocity slot and it earns no trust at that merchant. Without those two, an agent could open and
+abandon checkouts all day, and could skip the first-merchant step-up by doing it once.
+
+**Old rows.** Rows with no `idempotency_key` can't be grouped with anything, so each still counts
+on its own, as it always did. `_paise` rows go through `readAmount` as before.
+
+**Razorpay is the same.** I checked rather than assumed. A throwaway read-only script compared the
+old sum against the new fold, per mandate, on the dev ledger:
+
+```
+ledger entries: 242; mandates compared: 21; identical: 21; different: 0
+```
+
+**2. A second gate, at capture.** `evaluateCapture()` is new, small and pure. During a checkout the
+mandate can be revoked or expire, the hold can be released, and the rail's amount might not match.
+It checks exactly those and nothing else. It isn't `evaluate()` run again, because that would say
+`DUPLICATE_INTENT`. Nothing calls it yet. Task 7 does.
+
+**3. The freeze.** `.policy-freeze` holds `df81b87`, the commit that finished the policy package.
+`pnpm lint:policy-freeze` fails if anything in `packages/policy` differs from it, and CI runs it.
+It fails on a working-tree edit, on a new untracked file, on a committed edit (tried in a scratch
+clone, so this branch has no throwaway commit), and on a missing, malformed or unknown SHA:
+
+```
+packages/policy has changed since it was frozen at df81b87e489c9c30a60e19b09a587328ea06ca9a:
+  - packages/policy/src/evaluate.ts
+```
+
+CI's checkout now uses `fetch-depth: 0`, because a shallow clone wouldn't have the frozen commit.
+That case fails with a message. It doesn't pass quietly.
+
+**Where I went beyond the plan, worth checking:**
+
+- **A capture beats a release.** The plan says to apply `released` last. Taken literally, a row
+  saying released and a row saying captured on one key would free the budget for money that has
+  moved. Task 7's lock should make that impossible, but if it ever happens the mandate could
+  overspend, so a captured order stays counted. It stays in `released_keys` too, so a further
+  capture is still refused.
+- **If one key's amounts disagree, the higher one counts,** rather than throwing. That row can't
+  ever be rewritten, so a throw would break that mandate permanently, including its revocation check.
+- **`evaluateCapture()` also checks `MANDATE_NOT_YET_VALID`.** The design says "the validity window",
+  and the plan only lists expiry.
+- **The corpus needed a new shape.** `ORDER_RELEASED` needs a fixture, but Layer 1 only ever called
+  `runIntent`, which can't reach it. Cases can now have a `capture` field that calls
+  `evaluateCapture()` on a seeded order. There are seven new cases, four in a new `order_hold` family
+  and three benign controls, so Layer 1 is now 46. I removed the release handling temporarily and
+  ran it: 43 of 46, with the three cases that depend on it failing. With it back, 46 of 46.
+- **`AMOUNT_CHANGED_SINCE_APPROVAL` stays on the coverage exception list.** A capture fixture would
+  technically cover the code, but the exception is about the step-up approval path, which still has
+  no fixture. Removing it would hide that gap.
+
+**For Task 7, which builds on this:**
+
+- The capture's ledger outcome has to carry the order's key, not `captureRecordKey`. An outcome under
+  the capture key would look like a second order and count the budget twice.
+- A `failed` outcome doesn't free a hold, which is what today's code does and what Razorpay needs. So
+  a declined capture keeps holding budget unless Task 7 or 9 does something about it. That needs a
+  decision there.
+- The trace page and dispute bundle read the *first* outcome in a trace. With created and captured in
+  one trace, they would show "created".
+
+**One thing to know.** `eval/report.md` still is not regenerated, and Task 11 does that. There are
+three commits on purpose: the feature, then the freeze that names
+it, then this.

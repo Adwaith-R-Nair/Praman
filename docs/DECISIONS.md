@@ -150,6 +150,8 @@ On execution failure the agent may retry once on an alternate method. If a retry
 
 ### D-17 · Auto-capture, with no second gate at capture time · Accepted
 
+Status: holds for Razorpay only. On PayPal a buyer checkout sits between creation and capture, so inputs can change and capture is re-checked. See D-31.
+
 Razorpay is configured to auto-capture, and uncaptured authorizations are set
 to refund automatically rather than await manual dashboard capture.
 
@@ -799,3 +801,117 @@ Razorpay account takes INR only.
 
 **Consequence.** The `eval` money-at-risk metric is now one total per currency, since a
 sum of paise and cents means nothing. Its JSON shape changed from a string to an object.
+
+### D-30 · Budget during checkout · Accepted
+
+Decided by the builder on 2026-11-04. On PayPal an order is created, the buyer goes off
+to approve it, and only then does Praman capture. That can take minutes, or never finish,
+and PayPal's order can't be cancelled by API (D-26). So what does an order at checkout do
+to the mandate's budget?
+
+**Decision: a created order holds budget. After 10 minutes unapproved it gets a `released`
+outcome, which frees the budget but still counts toward velocity.**
+
+Praman has already authorised that checkout, so it is a promise. If it held nothing, a
+mandate with a $50 budget could open ten $50 checkouts and have every one approved.
+
+**How `deriveState` counts this.** It used to add up outcome rows. An order now has several
+rows (created, then captured or released), so that would count it twice. Rows are now folded
+by `idempotency_key` first, then counted once per order:
+
+| Rows for one key | Budget | Velocity | Merchant trusted | Key seen | In `released_keys` |
+|---|---|---|---|---|---|
+| created | held | 1 | yes | yes | no |
+| created, captured | held once | 1, at the created time | yes | yes | no |
+| created, released | freed | 1 | no | yes | yes |
+| released and captured, either order | held | 1 | yes | yes | yes |
+| created, failed | held | 1 | yes | yes | no |
+| no key at all (old rows) | each row on its own | 1 each | yes | no | no |
+
+Those lines each answer a real question:
+
+- **A released key stays seen.** A repeat of this intent would send the same
+  `PayPal-Request-Id`, and PayPal would return the same dead order. `DUPLICATE_INTENT` is the
+  right answer. A new intent gets a new key.
+- **A released order earns no trust.** Otherwise opening a checkout and walking away would
+  skip the first-merchant step-up on the next purchase.
+- **A released order keeps its velocity timestamp.** Otherwise an agent could open and abandon
+  checkouts forever without ever reaching its rate limit.
+- **A capture beats a release.** The plan says to apply `released` last, and the rows are
+  folded first so arrival order can't matter. But I did not let a release free an order that
+  also has a capture. Task 7's lock should make that combination impossible. If it ever
+  happens, the money has moved, and freeing its budget would let the mandate overspend. The
+  key still goes in `released_keys`, so no further capture is allowed either. This is the
+  careful answer in both directions.
+- **Disagreeing amounts on one key count the higher one.** They should never disagree. Throwing
+  would match `readAmount`, but that row can never be rewritten, so one bad row would break the
+  mandate for good, including its revocation check. A malformed amount still throws, as before.
+- **A release with no key frees nothing,** because it can't say which order it means.
+
+**Razorpay is unchanged.** It has one outcome per order, so folding changes nothing, and it
+never writes `released`. D-17's rule that a created Razorpay order counts as spend still holds.
+Checked on the dev ledger, by comparing the old sum with the new fold for each mandate: 242
+entries, 21 mandates, all identical. If a duplicate outcome ever did appear on one Razorpay
+key, it would now count once, not twice. That is a fix, not a change in intended behaviour.
+
+**Rejected: holding nothing until capture.** It's the ten-checkouts problem above.
+
+**Rejected: a longer hold.** Longer means the budget is stuck for longer on an abandoned
+checkout. Ten minutes is a judgement about how long a buyer takes at checkout, not a PayPal
+limit, and it is not enforced by PayPal either. Praman enforces it by refusing to capture (D-31).
+
+**Consequence.** `txn_timestamps` now has one entry per order, not one per row. A capture's
+ledger outcome must carry the *order's* key, even though Task 7 keeps its outbox record under a
+separate derived key. An outcome under the capture key would look like a second order.
+
+### D-31 · Capture re-checks the mandate · Accepted
+
+Decided by the builder on 2026-11-04, following D-24. D-17 says a gate at capture would
+"re-evaluate identical facts". On Razorpay that's true. On PayPal it isn't: while the buyer is at
+checkout, a mandate can be revoked or can expire, and the order's hold can be released. So
+capture gets a gate.
+
+**Decision: a small pure function, `evaluateCapture()`, in `packages/policy`.** It checks, in
+this order:
+
+1. `ORDER_RELEASED`. First because it is final. If an order was released and its mandate has
+   also expired, the useful thing to tell the buyer is that this checkout timed out and nothing
+   was charged.
+2. `MANDATE_REVOKED`.
+3. `MANDATE_NOT_YET_VALID`, then `MANDATE_EXPIRED`, with the same boundaries as `evaluate()`.
+4. `CURRENCY_MISMATCH`. Before the amount, since amounts in two currencies can't be compared.
+5. `AMOUNT_CHANGED_SINCE_APPROVAL`, if the rail quotes anything other than what the ledger holds.
+
+If it allows the capture, it returns the *ledger's* amount, never the rail's.
+
+**`ORDER_RELEASED` is a new reason code,** which the design's "existing codes" didn't foresee. No
+existing code means this, and the caller has to do something different: explain that the checkout
+timed out, rather than that something is wrong with the mandate. `evaluate()` never returns it.
+
+**It doesn't re-check limits, scope or velocity.** Those were decided when the order was created,
+and the hold is already counted in `spent_minor`. Checking again would refuse the order for
+counting itself, and a buyer who has paid at PayPal should not be refused because of a later
+purchase. It also leaves out the denial-rate cap, for the same reason.
+
+**Refusals at capture don't count toward the denial-rate cap.** They are recorded as a new
+`capture_decision` event, which `deriveState` doesn't read as a denied attempt. The cap (D-20) exists
+to make probing the policy expensive. A buyer returning late isn't probing anything, and an agent
+can't learn the mandate's limits from these codes. A new `settlement` event type also arrives here
+for webhooks, and moves nothing on its own.
+
+**Rejected: running `evaluate()` again.** Its first step would return `DUPLICATE_INTENT`, since this
+key is already seen. Getting past that would need a flag in the middle of `evaluate()`, which is the
+function this project most wants to keep readable.
+
+**Rejected: putting this in the control plane.** Whether money may move is a policy decision, and
+policy lives in one package with no I/O. It also has to land before that package is frozen.
+
+**Corpus.** `apps/eval/corpus/layer1.json` runs this function directly, through a `capture` field on
+a case. A capture case's `money_moved` means "the capture would have been allowed". Nothing reaches
+a rail, because the capture flow doesn't exist until Task 7.
+
+**Consequence.** This is the last planned change to `packages/policy`. `.policy-freeze` names this
+commit and `pnpm lint:policy-freeze` fails if the package differs from it, so the claim that adding
+PayPal took no policy change is checked rather than asserted. `evaluateCapture()` is written for
+PayPal's flow, but it lands before the freeze, so the honest wording is: adding a currency took a
+small policy change, preparing for a checkout took another, and adding the rail itself took none.

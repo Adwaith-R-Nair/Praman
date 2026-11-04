@@ -175,7 +175,8 @@ CREATE TABLE approval (
 export type EventType =
   | "intent" | "decision" | "step_up_resolved"
   | "api_call" | "outcome" | "mandate_revoked" | "checkpoint"
-  | "agent_transcript"; // as built — records the agent's verbatim tool calls as ledger evidence
+  | "agent_transcript" // as built — records the agent's verbatim tool calls as ledger evidence
+  | "capture_decision" | "settlement"; // PayPal's capture re-check and webhook results (D-31)
 
 export async function append(
   tx: PrismaTx,                     // caller's transaction — never opens its own
