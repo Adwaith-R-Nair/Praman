@@ -4,7 +4,7 @@ import { append, deriveState } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument, type SignedMandate } from "@praman/mandate";
 import { routeAllTo, routeByRail, SimulatedExecutor, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
-import type { Rail } from "@praman/shared";
+import { minor, type Rail } from "@praman/shared";
 import { runIntent } from "../src/run-intent.js";
 import { resolveApproval } from "../src/resolve-approval.js";
 
@@ -146,6 +146,25 @@ describe("resolveApproval routing", () => {
     expect(state.spent_minor).toBe(5000n);
     const again = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), now);
     expect(again).toEqual(result);
+  });
+
+  it("holds the approved amount when the rail reports another one", async () => {
+    const mandateId = "mnd_apr_wrong_amount";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_wrong_amount");
+    const inner = new SimulatedExecutor();
+    const executor: Executor = {
+      rail: "simulated",
+      createOrder: async (req) => ({ ...(await inner.createOrder(req)), amount_minor: minor(1n) }),
+      findOrder: (lookup) => inner.findOrder(lookup),
+      capture: (req) => inner.capture(req),
+    };
+
+    const result = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), new Date("2026-09-01T01:00:00.000Z"));
+
+    expect(result).toMatchObject({ kind: "EXECUTED", order_status: "mismatch" });
+    const state = await prisma.$transaction((tx) => deriveState(tx, mandateId));
+    expect(state.spent_minor).toBe(5000n);
   });
 });
 

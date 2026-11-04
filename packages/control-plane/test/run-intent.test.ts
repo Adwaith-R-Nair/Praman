@@ -489,6 +489,44 @@ describe("runIntent routing", () => {
     expect(state.spent_minor).toBe(11000n);
   });
 
+  it("an order reported for 1 minor unit still uses up the signed budget at its authorised price", async () => {
+    const mandateId = "mnd_route_amount_low";
+    await seedTrustedMerchant(mandateId);
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId, "INR", "12000");
+    let calls = 0;
+    const executor = executorOn("simulated", (outcome) => {
+      calls += 1;
+      return { ...outcome, status: "created", amount_minor: minor(1n), approve_url: "https://sandbox.example.test/pay" };
+    });
+
+    const results = [];
+    for (const i of [1, 2, 3]) {
+      results.push(await runIntent(buildIntent(`int_route_amount_low_${String(i)}`, mandateId), signed, publicKeyPem, routeAllTo(executor), NOW, "test-model"));
+    }
+
+    expect(results.map((r) => r.kind === "DECIDED" && r.order_status)).toEqual(["mismatch", "mismatch", null]);
+    expect(results[0]).toMatchObject({ approve_url: null });
+    expect(results[2]?.kind === "DECIDED" && results[2].internal_reason_code).toBe("MANDATE_BUDGET_EXHAUSTED");
+    expect(calls).toBe(2);
+    const state = await prisma.$transaction((tx) => deriveState(tx, mandateId));
+    expect(state.spent_minor).toBe(11000n);
+    const outcome = await prisma.ledgerEntry.findFirst({ where: { traceId: results[0]?.trace_id ?? "", eventType: "outcome" } });
+    expect(outcome?.payload).toMatchObject({ status: "mismatch", amount_minor: "5000", rail_amount_minor: "1", failure_code: "RAIL_AMOUNT_MISMATCH" });
+  });
+
+  it("an order reported for more than was authorised counts at the higher figure", async () => {
+    const mandateId = "mnd_route_amount_high";
+    await seedTrustedMerchant(mandateId);
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const executor = executorOn("simulated", (outcome) => ({ ...outcome, status: "created", amount_minor: minor(9000n) }));
+
+    const result = await runIntent(buildIntent("int_route_amount_high", mandateId), signed, publicKeyPem, routeAllTo(executor), NOW, "test-model");
+
+    expect(result).toMatchObject({ kind: "DECIDED", order_status: "mismatch" });
+    const state = await prisma.$transaction((tx) => deriveState(tx, mandateId));
+    expect(state.spent_minor).toBe(10000n);
+  });
+
   it("a mismatched order earns the merchant no trust, so the next purchase still steps up", async () => {
     const mandateId = "mnd_route_currency_trust";
     const { signed, publicKeyPem } = buildSignedMandate(mandateId);

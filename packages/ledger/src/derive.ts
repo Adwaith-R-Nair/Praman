@@ -54,6 +54,21 @@ export function readCurrency(payload: Record<string, unknown>): Currency {
   return currency;
 }
 
+/**
+ * What one outcome row holds of the budget. On a mismatch, amount_minor is what
+ * Praman authorised and rail_amount_minor is what the rail reported. A rail
+ * reporting less can't free budget, and one reporting more is counted at more,
+ * the same rule as two rows disagreeing. In another currency the two numbers
+ * can't be compared, so the authorised one stands (D-33).
+ */
+function heldAmount(payload: Record<string, unknown>, seq: bigint): bigint {
+  const authorised = BigInt(readAmount(payload, seq));
+  const reported = payload["rail_amount_minor"];
+  if (reported === undefined || payload["rail_currency"] !== payload["currency"]) return authorised;
+  const amount = BigInt(readAmount({ amount_minor: reported }, seq));
+  return amount > authorised ? amount : authorised;
+}
+
 /** Everything the outcomes for one order add up to. See deriveState. */
 interface OrderFold {
   readonly firstSeen: Date;
@@ -140,7 +155,7 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
         // any order. See the counting below for what it doesn't get (D-33).
         if (status !== "created" && status !== "captured" && status !== "mismatch") break;
 
-        const amount = BigInt(readAmount(row.payload, row.seq));
+        const amount = heldAmount(row.payload, row.seq);
         let order: OrderFold;
         if (typeof key === "string") {
           keys.add(key);

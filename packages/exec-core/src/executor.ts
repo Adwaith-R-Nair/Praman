@@ -68,7 +68,7 @@ export function routeByRail(executors: readonly Executor[]): ExecutorRouter {
  */
 export interface MismatchedOutcome extends Omit<ExecOutcome, "status" | "failure_code"> {
   readonly status: "mismatch";
-  readonly failure_code: "RAIL_CURRENCY_MISMATCH";
+  readonly failure_code: "RAIL_CURRENCY_MISMATCH" | "RAIL_AMOUNT_MISMATCH";
   readonly rail_status: "created" | "captured";
   readonly rail_amount_minor: Minor;
   readonly rail_currency: Currency;
@@ -79,18 +79,20 @@ export type AcceptedOutcome = ExecOutcome | MismatchedOutcome;
 /**
  * The rail's answer only counts if it is about the money Praman asked for. 1250
  * minor units of USD and 1250 of INR are not the same money, and a rail can answer
- * with success about something else (D-26). A failure is passed through: it says
- * no order exists, so what it reports about money doesn't matter.
+ * with success about an older order for another amount (D-26). A failure is passed
+ * through: it says no order exists, so what it reports about money doesn't matter.
  */
 export function acceptOutcome(outcome: ExecOutcome, requested: { readonly amount_minor: Minor; readonly currency: Currency }): AcceptedOutcome {
-  if (outcome.status === "failed" || outcome.currency === requested.currency) return outcome;
+  if (outcome.status === "failed") return outcome;
+  const currencyDiffers = outcome.currency !== requested.currency;
+  if (!currencyDiffers && outcome.amount_minor === requested.amount_minor) return outcome;
   return {
     ...outcome,
     status: "mismatch",
     amount_minor: requested.amount_minor,
     currency: requested.currency,
     approve_url: null,
-    failure_code: "RAIL_CURRENCY_MISMATCH",
+    failure_code: currencyDiffers ? "RAIL_CURRENCY_MISMATCH" : "RAIL_AMOUNT_MISMATCH",
     rail_status: outcome.status,
     rail_amount_minor: outcome.amount_minor,
     rail_currency: outcome.currency,

@@ -335,6 +335,25 @@ describe("deriveState folding outcomes by order", () => {
     expect(s.merchants_transacted.size).toBe(0);
   });
 
+  it("a mismatch counts the higher of the authorised amount and the rail's, in the same currency", async () => {
+    await outcome("mismatch", "low", { currency: "INR", rail_currency: "INR", rail_amount_minor: "1" });
+    await outcome("mismatch", "high", { currency: "INR", rail_currency: "INR", rail_amount_minor: "9000" });
+
+    expect((await state()).spent_minor).toBe(14000n);
+  });
+
+  it("a mismatch ignores the rail's amount in another currency, since the two can't be compared", async () => {
+    await outcome("mismatch", "k1", { currency: "INR", rail_currency: "USD", rail_amount_minor: "9000" });
+
+    expect((await state()).spent_minor).toBe(5000n);
+  });
+
+  it("refuses a malformed rail amount on a mismatch", async () => {
+    await outcome("mismatch", "k1", { currency: "INR", rail_currency: "INR", rail_amount_minor: "12.50" });
+
+    await expect(state()).rejects.toThrow(/malformed/);
+  });
+
   it("a release can't free a mismatch, because what the rail holds is unknown", async () => {
     await outcome("mismatch", "k1", { rail_status: "created", rail_currency: "USD", rail_amount_minor: "5000" });
     await outcome("released", "k1", { amount_minor: undefined });

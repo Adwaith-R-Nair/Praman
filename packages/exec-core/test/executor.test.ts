@@ -71,6 +71,32 @@ describe("acceptOutcome", () => {
     expect(acceptOutcome(captured, ASKED_INR)).toMatchObject({ status: "mismatch", rail_status: "captured", payment_id: "pay_1" });
   });
 
+  it.each([
+    ["lower", 1n],
+    ["higher", 9999n],
+  ])("marks an order for a %s amount as a mismatch, at the authorised amount", (_name, reported) => {
+    const outcome: ExecOutcome = { ...OUTCOME, amount_minor: minor(reported) };
+    expect(acceptOutcome(outcome, ASKED_USD)).toEqual({
+      ...OUTCOME,
+      status: "mismatch",
+      approve_url: null,
+      failure_code: "RAIL_AMOUNT_MISMATCH",
+      rail_status: "created",
+      rail_amount_minor: reported,
+      rail_currency: "USD",
+    });
+  });
+
+  it("names the currency when both differ, since amounts in two currencies can't be compared", () => {
+    const outcome: ExecOutcome = { ...OUTCOME, amount_minor: minor(1n) };
+    expect(acceptOutcome(outcome, ASKED_INR)).toMatchObject({ failure_code: "RAIL_CURRENCY_MISMATCH", amount_minor: 1250n, currency: "INR", rail_amount_minor: 1n });
+  });
+
+  it("leaves a failure alone whatever amount it reports", () => {
+    const failed: ExecOutcome = { ...OUTCOME, status: "failed", amount_minor: minor(1n), approve_url: null, failure_code: "BAD_REQUEST_ERROR" };
+    expect(acceptOutcome(failed, ASKED_USD)).toBe(failed);
+  });
+
   it("leaves a failure alone: no order exists, so there is nothing to mismatch, and the rail's code stands", () => {
     const failed: ExecOutcome = { ...OUTCOME, status: "failed", approve_url: null, failure_code: "CURRENCY_NOT_SUPPORTED" };
     expect(acceptOutcome(failed, ASKED_INR)).toBe(failed);

@@ -4,7 +4,7 @@ import { append, deriveState } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
 import { routeAllTo, routeByRail, SimulatedExecutor, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
-import type { Rail } from "@praman/shared";
+import { minor, type Rail } from "@praman/shared";
 import { runIntent, RECONCILE_MIN_AGE_MS } from "../src/run-intent.js";
 import { reconcilePending } from "../src/reconcile.js";
 
@@ -292,6 +292,28 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
       });
       // Same answer as if T2 had seen it: the seeded history plus the order that exists.
       const state = await prisma.$transaction((tx) => deriveState(tx, "mnd_crash_currency"));
+      expect(state.spent_minor).toBe(6000n);
+    });
+
+    it("counts a found order with another amount the same way T2 would", async () => {
+      const now = new Date();
+      const inner = new SimulatedExecutor();
+      const traceId = await crashOnce("mnd_crash_amount", "int_crash_amount", inner, now);
+      const lying: Executor = {
+        rail: "simulated",
+        createOrder: (req) => inner.createOrder(req),
+        findOrder: async (lookup) => {
+          const found = await inner.findOrder(lookup);
+          return found === null ? null : { ...found, amount_minor: minor(1n) };
+        },
+        capture: (req) => inner.capture(req),
+      };
+
+      await reconcilePending(routeAllTo(lying), now);
+
+      const outcome = await prisma.ledgerEntry.findFirst({ where: { traceId, eventType: "outcome" } });
+      expect(outcome?.payload).toMatchObject({ status: "mismatch", amount_minor: "5000", rail_amount_minor: "1", failure_code: "RAIL_AMOUNT_MISMATCH", reconciled: true });
+      const state = await prisma.$transaction((tx) => deriveState(tx, "mnd_crash_amount"));
       expect(state.spent_minor).toBe(6000n);
     });
   });
