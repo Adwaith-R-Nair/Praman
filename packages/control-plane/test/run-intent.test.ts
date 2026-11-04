@@ -5,7 +5,7 @@ import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
 import { routeAllTo, routeByRail, SimulatedExecutor, type ExecOutcome, type Executor } from "@praman/exec-core";
 import { LiveExecutor } from "@praman/razorpay-exec";
-import type { Currency, Rail } from "@praman/shared";
+import { minor, type Currency, type Rail } from "@praman/shared";
 import { runIntent } from "../src/run-intent.js";
 
 const MERCHANT = "TEST_REVOKE_MERCH";
