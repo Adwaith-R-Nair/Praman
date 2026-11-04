@@ -11,6 +11,13 @@ export const ORDER_NOT_APPROVED = "ORDER_NOT_APPROVED";
 /** 108 works and 109 gets a 500, which would read as an unknown outcome for ever (D-26). Derived keys are 64. */
 const MAX_REQUEST_ID_LENGTH = 108;
 
+/**
+ * 422s on capture that aren't refusals of the money (D-39). PayPal's error reference
+ * says one was already captured, or that PayPal is capturing it now. Calling any of them
+ * a failure would close the record while the buyer is, or soon will be, charged.
+ */
+const CAPTURE_MAY_HAVE_MOVED_MONEY: readonly string[] = ["ORDER_ALREADY_CAPTURED", "ORDER_COMPLETION_IN_PROGRESS", "AUTO_CAPTURE_ENABLED"];
+
 const fitsPayPal = (key: string): boolean => key.length > 0 && key.length <= MAX_REQUEST_ID_LENGTH;
 
 function requireSandbox(baseUrl: string): void {
@@ -206,10 +213,10 @@ export class PayPalExecutor implements Executor {
    * Live capture is unverified: no sandbox buyer approval has registered yet, so
    * this is tested against PayPal's documented shapes (test/documented-shapes.ts).
    *
-   * A named refusal means this capture didn't take money, so it's a failure. The one
-   * exception is ORDER_ALREADY_CAPTURED, where money HAS moved, and which a retry
-   * under another key would hit. Calling that a failure would free budget for a
-   * paid order, so the real capture is read back.
+   * A named refusal is a failure, on the reading that this capture took no money.
+   * The exceptions are CAPTURE_MAY_HAVE_MOVED_MONEY, where the order is read back and
+   * what it says is reported. An order with no finished capture yet stays unknown, so
+   * the record stays pending and a later look can tell.
    *
    * Anything short of a capture or a refusal stays unknown.
    */
@@ -218,7 +225,7 @@ export class PayPalExecutor implements Executor {
     if (!fitsPayPal(req.idempotency_key)) return this.#failed(req, req.order_id, "IDEMPOTENCY_KEY_INVALID");
 
     const res = await this.#client.call("POST", `/v2/checkout/orders/${encodeURIComponent(req.order_id)}/capture`, { requestId: req.idempotency_key, body: {} });
-    if (res.kind === "refused" && !res.issues.includes("ORDER_ALREADY_CAPTURED")) return this.#failed(req, req.order_id, res.code);
+    if (res.kind === "refused" && !res.issues.some((issue) => CAPTURE_MAY_HAVE_MOVED_MONEY.includes(issue))) return this.#failed(req, req.order_id, res.code);
 
     const answer = res.kind === "ok" ? res : await this.#getOrder(req.order_id);
     if (answer.kind === "refused") throw this.#couldNotAsk(answer.code);

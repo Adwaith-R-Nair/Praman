@@ -506,6 +506,49 @@ describe("PayPalExecutor.capture", () => {
     await expect(executor(fetchMock).capture(captureReq())).rejects.toBeInstanceOf(PayPalUnknownOutcome);
   });
 
+  // PayPal's error reference, under capture: both are 422s that mean a capture is under way.
+  // Neither has been seen live, because nothing has been captured live.
+  describe.each(["ORDER_COMPLETION_IN_PROGRESS", "AUTO_CAPTURE_ENABLED"])("a capture answered with %s, where money may be moving", (issue) => {
+    const inProgress: Reply = { status: 422, body: refusal("UNPROCESSABLE_ENTITY", issue) };
+
+    it("reports the capture when reading the order shows it finished", async () => {
+      const { fetchMock, api } = fakePayPal([inProgress, { status: 200, body: documentedCapture("COMPLETED") }]);
+      expect(await executor(fetchMock).capture(captureReq())).toMatchObject({ status: "captured", payment_id: "3C679366HH908993F" });
+      expect(api[1]?.init.method).toBe("GET");
+    });
+
+    it("stays unknown while the order shows no capture yet, so the record stays pending", async () => {
+      const { fetchMock } = fakePayPal([inProgress, { status: 200, body: order({ id: "5O190127TN364715T", status: "APPROVED" }) }]);
+      await expect(executor(fetchMock).capture(captureReq())).rejects.toBeInstanceOf(PayPalUnknownOutcome);
+    });
+
+    it("stays unknown while the capture inside the order is pending", async () => {
+      const { fetchMock } = fakePayPal([inProgress, { status: 200, body: documentedCapture("PENDING") }]);
+      await expect(executor(fetchMock).capture(captureReq())).rejects.toBeInstanceOf(PayPalUnknownOutcome);
+    });
+
+    it("stays unknown if the order can't then be read", async () => {
+      const { fetchMock } = fakePayPal([inProgress, { status: 500, raw: "oops" }]);
+      await expect(executor(fetchMock).capture(captureReq())).rejects.toBeInstanceOf(PayPalUnknownOutcome);
+    });
+
+    it("stays unknown if PayPal refuses the read as well", async () => {
+      const { fetchMock } = fakePayPal([inProgress, { status: 403, body: refusal("NOT_AUTHORIZED", "PERMISSION_DENIED") }]);
+      await expect(executor(fetchMock).capture(captureReq())).rejects.toBeInstanceOf(PayPalUnknownOutcome);
+    });
+
+    it("spots the code when it isn't the first one PayPal names", async () => {
+      const body = { name: "UNPROCESSABLE_ENTITY", details: [{ issue: "TRANSACTION_REFUSED" }, { issue }] };
+      const { fetchMock } = fakePayPal([{ status: 422, body }, { status: 200, body: documentedCapture("COMPLETED") }]);
+      expect(await executor(fetchMock).capture(captureReq())).toMatchObject({ status: "captured" });
+    });
+  });
+
+  it("treats PayPal's other in-progress answer, a 409, as unknown too", async () => {
+    const { fetchMock } = fakePayPal([{ status: 409, body: refusal("RESOURCE_CONFLICT", "PREVIOUS_REQUEST_IN_PROGRESS") }]);
+    await expect(executor(fetchMock).capture(captureReq())).rejects.toBeInstanceOf(PayPalUnknownOutcome);
+  });
+
   it.each(["DECLINED", "FAILED"])("reports a %s capture as failed, even inside a 201", async (status) => {
     const { fetchMock } = fakePayPal([{ status: 201, body: documentedCapture(status) }]);
     const outcome = await executor(fetchMock).capture(captureReq());
