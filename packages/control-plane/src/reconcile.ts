@@ -1,7 +1,7 @@
 import { prisma } from "@praman/db";
 import { append, readCurrency } from "@praman/ledger";
 import { isRail, minorFromDb, minorToJSON } from "@praman/shared";
-import { acceptOutcome, type ExecutorRouter } from "@praman/exec-core";
+import { acceptOutcome, outcomeFields, type ExecutorRouter } from "@praman/exec-core";
 import { RECONCILE_MIN_AGE_MS } from "./run-intent.js";
 
 /**
@@ -60,14 +60,15 @@ export async function reconcilePending(route: ExecutorRouter, now: Date): Promis
       const executor = route(rec.rail);
       if (executor === null) throw new Error(`no executor for rail ${rec.rail}`);
 
+      const authorised = minorFromDb(amountMinor);
       const rawFound = await executor.findOrder({
         receipt,
         idempotency_key: rec.key,
         order_id: null,
-        amount_minor: minorFromDb(amountMinor),
+        amount_minor: authorised,
         currency,
       });
-      const found = rawFound === null ? null : acceptOutcome(rawFound, currency);
+      const found = rawFound === null ? null : acceptOutcome(rawFound, { amount_minor: authorised, currency });
 
       await prisma.$transaction(async (tx) => {
         await append(tx, {
@@ -78,13 +79,10 @@ export async function reconcilePending(route: ExecutorRouter, now: Date): Promis
           payload: {
             mandate_id: mandateId,
             merchant_id: merchantId,
-            rail: executor.rail,
-            status: found ? found.status : "failed",
-            order_id: found?.order_id ?? null,
-            payment_id: found?.payment_id ?? null,
-            failure_code: found?.failure_code ?? null,
-            amount_minor: minorToJSON(minorFromDb(amountMinor)),
-            currency: found?.currency ?? currency,
+            // Found nothing means no order exists, so it holds nothing.
+            ...(found !== null
+              ? outcomeFields(found)
+              : { rail: executor.rail, status: "failed", order_id: null, payment_id: null, failure_code: null, amount_minor: minorToJSON(authorised), currency }),
             idempotency_key: rec.key,
             reconciled: true,
           },

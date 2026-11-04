@@ -40,7 +40,10 @@ const result = await resolveApproval(approvalId, verdict, signed, publicKeyPem, 
 
 switch (result.kind) {
   case "EXECUTED":
-    if (result.order_status === "failed") {
+    if (result.order_status === "mismatch") {
+      console.log(`✗ the rail answered about something other than what was asked — order ${result.order_id}`);
+      console.log(`  it is held against the budget until a human looks at this trace`);
+    } else if (result.order_status === "failed") {
       console.log(`✗ the rail did not take this order — ${result.order_id || "no order exists"} (failed)`);
     } else {
       console.log(`✓ executed — order ${result.order_id} (${result.order_status})`);
@@ -63,4 +66,4 @@ switch (result.kind) {
 }
 
 await prisma.$disconnect();
-process.exit(result.kind === "EXECUTED" && result.order_status !== "failed" ? 0 : 1);
+process.exit(result.kind === "EXECUTED" && result.order_status !== "failed" && result.order_status !== "mismatch" ? 0 : 1);

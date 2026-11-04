@@ -1,4 +1,4 @@
-import type { Currency, Minor, Rail } from "@praman/shared";
+import { minorToJSON, type Currency, type Minor, type Rail } from "@praman/shared";
 
 export type { Rail } from "@praman/shared";
 
@@ -60,12 +60,55 @@ export function routeByRail(executors: readonly Executor[]): ExecutorRouter {
 }
 
 /**
- * The rail's answer only counts if it is about the currency Praman asked for.
- * 1250 minor units of USD and 1250 of INR are not the same money, and a rail
- * can answer with success about something else (D-26). Keeps what the rail
- * said, so the ledger records it, and marks it failed so it holds no budget.
+ * An order the rail says exists, but not the one Praman asked for. amount_minor
+ * and currency are what T1 authorised, because that is the only money Praman can
+ * vouch for. The rail_ fields keep what the rail said, for the human who has to
+ * look at it. Never a success: nobody is sent to pay it. Never a failure either:
+ * the order exists, so it holds budget (D-17, D-33).
  */
-export function acceptOutcome(outcome: ExecOutcome, requested: Currency): ExecOutcome {
-  if (outcome.currency === requested) return outcome;
-  return { ...outcome, status: "failed", approve_url: null, failure_code: "RAIL_CURRENCY_MISMATCH" };
+export interface MismatchedOutcome extends Omit<ExecOutcome, "status" | "failure_code"> {
+  readonly status: "mismatch";
+  readonly failure_code: "RAIL_CURRENCY_MISMATCH";
+  readonly rail_status: "created" | "captured";
+  readonly rail_amount_minor: Minor;
+  readonly rail_currency: Currency;
+}
+
+export type AcceptedOutcome = ExecOutcome | MismatchedOutcome;
+
+/**
+ * The rail's answer only counts if it is about the money Praman asked for. 1250
+ * minor units of USD and 1250 of INR are not the same money, and a rail can answer
+ * with success about something else (D-26). A failure is passed through: it says
+ * no order exists, so what it reports about money doesn't matter.
+ */
+export function acceptOutcome(outcome: ExecOutcome, requested: { readonly amount_minor: Minor; readonly currency: Currency }): AcceptedOutcome {
+  if (outcome.status === "failed" || outcome.currency === requested.currency) return outcome;
+  return {
+    ...outcome,
+    status: "mismatch",
+    amount_minor: requested.amount_minor,
+    currency: requested.currency,
+    approve_url: null,
+    failure_code: "RAIL_CURRENCY_MISMATCH",
+    rail_status: outcome.status,
+    rail_amount_minor: outcome.amount_minor,
+    rail_currency: outcome.currency,
+  };
+}
+
+/** The ledger fields for an outcome. One place, so T2 and the reconciler can't record an order differently. */
+export function outcomeFields(outcome: AcceptedOutcome) {
+  return {
+    rail: outcome.rail,
+    status: outcome.status,
+    order_id: outcome.order_id,
+    payment_id: outcome.payment_id,
+    failure_code: outcome.failure_code,
+    amount_minor: minorToJSON(outcome.amount_minor),
+    currency: outcome.currency,
+    ...(outcome.status === "mismatch"
+      ? { rail_status: outcome.rail_status, rail_amount_minor: minorToJSON(outcome.rail_amount_minor), rail_currency: outcome.rail_currency }
+      : {}),
+  };
 }

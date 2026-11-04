@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { minor, type Rail } from "@praman/shared";
-import { acceptOutcome, routeAllTo, routeByRail, type ExecOutcome, type Executor } from "../src/index.js";
+import { acceptOutcome, outcomeFields, routeAllTo, routeByRail, type ExecOutcome, type Executor } from "../src/index.js";
 import { SimulatedExecutor } from "../src/simulated.js";
 
 const OUTCOME: ExecOutcome = {
@@ -46,16 +46,60 @@ describe("routeByRail", () => {
 });
 
 describe("acceptOutcome", () => {
-  it("returns an outcome in the requested currency untouched", () => {
-    expect(acceptOutcome(OUTCOME, "USD")).toBe(OUTCOME);
+  const ASKED_USD = { amount_minor: minor(1250n), currency: "USD" } as const;
+  const ASKED_INR = { amount_minor: minor(1250n), currency: "INR" } as const;
+
+  it("returns an outcome matching the request untouched", () => {
+    expect(acceptOutcome(OUTCOME, ASKED_USD)).toBe(OUTCOME);
   });
 
-  it("turns an outcome in another currency into a typed failure, keeping what the rail said", () => {
-    expect(acceptOutcome(OUTCOME, "INR")).toEqual({
+  it("marks an order in another currency as a mismatch, at the authorised money, keeping what the rail said", () => {
+    expect(acceptOutcome(OUTCOME, ASKED_INR)).toEqual({
       ...OUTCOME,
-      status: "failed",
+      status: "mismatch",
+      currency: "INR",
       approve_url: null,
       failure_code: "RAIL_CURRENCY_MISMATCH",
+      rail_status: "created",
+      rail_amount_minor: 1250n,
+      rail_currency: "USD",
+    });
+  });
+
+  it("keeps the fact that a mismatched order was captured", () => {
+    const captured: ExecOutcome = { ...OUTCOME, status: "captured", payment_id: "pay_1" };
+    expect(acceptOutcome(captured, ASKED_INR)).toMatchObject({ status: "mismatch", rail_status: "captured", payment_id: "pay_1" });
+  });
+
+  it("leaves a failure alone: no order exists, so there is nothing to mismatch, and the rail's code stands", () => {
+    const failed: ExecOutcome = { ...OUTCOME, status: "failed", approve_url: null, failure_code: "CURRENCY_NOT_SUPPORTED" };
+    expect(acceptOutcome(failed, ASKED_INR)).toBe(failed);
+  });
+});
+
+describe("outcomeFields", () => {
+  it("writes the outcome's fields with its amount as a string, and no rail_ fields when they agree", () => {
+    expect(outcomeFields(OUTCOME)).toEqual({
+      rail: "simulated",
+      status: "created",
+      order_id: "order_1",
+      payment_id: null,
+      failure_code: null,
+      amount_minor: "1250",
+      currency: "USD",
+    });
+  });
+
+  it("adds what the rail said on a mismatch, next to the authorised money", () => {
+    const fields = outcomeFields(acceptOutcome(OUTCOME, { amount_minor: minor(1250n), currency: "INR" }));
+    expect(fields).toMatchObject({
+      status: "mismatch",
+      amount_minor: "1250",
+      currency: "INR",
+      failure_code: "RAIL_CURRENCY_MISMATCH",
+      rail_status: "created",
+      rail_amount_minor: "1250",
+      rail_currency: "USD",
     });
   });
 });

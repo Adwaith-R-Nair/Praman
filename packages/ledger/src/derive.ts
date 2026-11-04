@@ -61,10 +61,11 @@ interface OrderFold {
   readonly merchants: string[];
   captured: boolean;
   released: boolean;
+  mismatch: boolean;
 }
 
 function newOrderFold(firstSeen: Date): OrderFold {
-  return { firstSeen, amount: 0n, merchants: [], captured: false, released: false };
+  return { firstSeen, amount: 0n, merchants: [], captured: false, released: false, mismatch: false };
 }
 
 /**
@@ -134,7 +135,10 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
           break;
         }
 
-        if (status !== "created" && status !== "captured") break;
+        // A "mismatch" is an order that exists but isn't the one that was asked
+        // for. It is still an obligation, so it holds budget and velocity like
+        // any order. See the counting below for what it doesn't get (D-33).
+        if (status !== "created" && status !== "captured" && status !== "mismatch") break;
 
         const amount = BigInt(readAmount(row.payload, row.seq));
         let order: OrderFold;
@@ -151,6 +155,7 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
         // can never be rewritten, so it would break the mandate permanently.
         if (amount > order.amount) order.amount = amount;
         if (status === "captured") order.captured = true;
+        if (status === "mismatch") order.mismatch = true;
 
         const merchant = row.payload["merchant_id"];
         if (typeof merchant === "string") order.merchants.push(merchant);
@@ -183,9 +188,13 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
 
     // A release only frees an order whose money didn't move. If a capture is
     // on record too, that money is gone, whichever row came first.
-    if (order.released && !order.captured) continue;
+    // The same goes for a mismatch, since the rail's word on it can't be trusted.
+    if (order.released && !order.captured && !order.mismatch) continue;
 
     spent += order.amount;
+
+    // An order that came back wrong is no reason to trust the merchant next time.
+    if (order.mismatch) continue;
     for (const merchant of order.merchants) merchants.add(merchant);
   }
 

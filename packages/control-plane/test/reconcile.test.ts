@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@praman/db";
-import { append } from "@praman/ledger";
+import { append, deriveState } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
 import { routeAllTo, routeByRail, SimulatedExecutor, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
@@ -280,9 +280,19 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
 
       await reconcilePending(routeAllTo(lying), now);
 
-      expect((await prisma.idempotencyRecord.findFirst({ where: { traceId } }))?.status).toBe("failed");
+      expect((await prisma.idempotencyRecord.findFirst({ where: { traceId } }))?.status).toBe("succeeded");
       const outcome = await prisma.ledgerEntry.findFirst({ where: { traceId, eventType: "outcome" } });
-      expect(outcome?.payload).toMatchObject({ status: "failed", currency: "USD", failure_code: "RAIL_CURRENCY_MISMATCH" });
+      expect(outcome?.payload).toMatchObject({
+        status: "mismatch",
+        amount_minor: "5000",
+        currency: "INR",
+        rail_currency: "USD",
+        failure_code: "RAIL_CURRENCY_MISMATCH",
+        reconciled: true,
+      });
+      // Same answer as if T2 had seen it: the seeded history plus the order that exists.
+      const state = await prisma.$transaction((tx) => deriveState(tx, "mnd_crash_currency"));
+      expect(state.spent_minor).toBe(6000n);
     });
   });
 });

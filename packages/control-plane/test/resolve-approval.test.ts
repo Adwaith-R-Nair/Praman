@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@praman/db";
-import { append } from "@praman/ledger";
+import { append, deriveState } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument, type SignedMandate } from "@praman/mandate";
 import { routeAllTo, routeByRail, SimulatedExecutor, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
@@ -138,9 +138,14 @@ describe("resolveApproval routing", () => {
       capture: (req) => inner.capture(req),
     };
 
-    const result = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), new Date("2026-09-01T01:00:00.000Z"));
+    const now = new Date("2026-09-01T01:00:00.000Z");
+    const result = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), now);
 
-    expect(result).toMatchObject({ kind: "EXECUTED", order_status: "failed" });
+    expect(result).toMatchObject({ kind: "EXECUTED", order_status: "mismatch", approve_url: null });
+    const state = await prisma.$transaction((tx) => deriveState(tx, mandateId));
+    expect(state.spent_minor).toBe(5000n);
+    const again = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), now);
+    expect(again).toEqual(result);
   });
 });
 

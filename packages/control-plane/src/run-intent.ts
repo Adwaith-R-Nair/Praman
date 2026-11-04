@@ -3,7 +3,7 @@ import { prisma, loadCatalogSnapshot } from "@praman/db";
 import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, redact, type PurchaseIntent, type AgentVisibleDecision } from "@praman/policy";
 import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/mandate";
-import { acceptOutcome, idempotencyKey, receiptFor, type ExecOutcome, type ExecutorRouter } from "@praman/exec-core";
+import { acceptOutcome, idempotencyKey, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
 import { canonical, minorFromDb, minorToJSON } from "@praman/shared";
 import { gateOnRail, routeMerchant } from "./route-merchant.js";
 
@@ -19,8 +19,12 @@ export type RunResult =
       readonly agent_visible: AgentVisibleDecision;
       readonly internal_reason_code: string;
       readonly order_id: string | null;
-      /** null when nothing was ever attempted (DENY/STEP_UP before execution). */
-      readonly order_status: ExecOutcome["status"] | null;
+      /**
+       * null when nothing was ever attempted (DENY/STEP_UP before execution).
+       * "mismatch" means an order exists that isn't what was asked for: not paid
+       * for by a buyer, not to be retried, and a human needs to look (D-33).
+       */
+      readonly order_status: AcceptedOutcome["status"] | null;
       /** Set only on a fresh STEP_UP — pass to resolveApproval() to approve or reject. */
       readonly approval_id: string | null;
       /** Set when the rail has a checkout: where the buyer goes to approve the order. */
@@ -41,7 +45,7 @@ export type RunResult =
 export function parseCachedOutcome(
   record: { readonly status: string; readonly outcome: unknown },
   key: string,
-): { orderId: string | null; status: ExecOutcome["status"]; approveUrl: string | null } {
+): { orderId: string | null; status: AcceptedOutcome["status"]; approveUrl: string | null } {
   const { outcome } = record;
   if (record.status === "failed") {
     const orderId = outcome !== null && typeof outcome === "object" && "order_id" in outcome && typeof outcome.order_id === "string" ? outcome.order_id : null;
@@ -51,7 +55,7 @@ export function parseCachedOutcome(
     throw new TypeError(`idempotency record ${key} is succeeded but its outcome is malformed`);
   }
   const raw = outcome as { order_id: unknown; status: unknown; approve_url?: unknown };
-  if (raw.status !== "created" && raw.status !== "captured" && raw.status !== "failed") {
+  if (raw.status !== "created" && raw.status !== "captured" && raw.status !== "failed" && raw.status !== "mismatch") {
     throw new TypeError(`idempotency record ${key} has an unrecognised cached status: ${String(raw.status)}`);
   }
   return { orderId: String(raw.order_id), status: raw.status, approveUrl: typeof raw.approve_url === "string" ? raw.approve_url : null };
@@ -309,11 +313,11 @@ export async function runIntent(
   if (!phase1.go) return phase1.result;
 
   // ── The external call. Outside any transaction, by necessity. ──
-  let outcome: ExecOutcome;
+  let outcome: AcceptedOutcome;
   try {
     outcome = acceptOutcome(
       await phase1.executor.createOrder({ amount_minor: phase1.amount, currency: phase1.currency, idempotency_key: phase1.key, receipt: phase1.receipt }),
-      phase1.currency,
+      { amount_minor: phase1.amount, currency: phase1.currency },
     );
   } catch (err) {
     // We do NOT know whether the order was created. Leave the record pending.
@@ -335,13 +339,7 @@ export async function runIntent(
       eventType: "outcome",
       payload: {
         mandate_id: phase1.mandateId,
-        rail: outcome.rail,
-        status: outcome.status,
-        order_id: outcome.order_id,
-        payment_id: outcome.payment_id,
-        failure_code: outcome.failure_code,
-        amount_minor: minorToJSON(outcome.amount_minor),
-        currency: outcome.currency,
+        ...outcomeFields(outcome),
         merchant_id: intent.merchant_id,
         idempotency_key: phase1.key,
       },

@@ -325,6 +325,25 @@ describe("deriveState folding outcomes by order", () => {
     expect(s.seen_idempotency_keys.size).toBe(0);
   });
 
+  it("a mismatch holds budget and velocity and keeps its key seen, but earns the merchant no trust", async () => {
+    await outcome("mismatch", "k1", { rail_status: "created", rail_currency: "USD", rail_amount_minor: "5000" });
+
+    const s = await state();
+    expect(s.spent_minor).toBe(5000n);
+    expect(s.txn_timestamps).toEqual([TS]);
+    expect([...s.seen_idempotency_keys]).toEqual(["k1"]);
+    expect(s.merchants_transacted.size).toBe(0);
+  });
+
+  it("a release can't free a mismatch, because what the rail holds is unknown", async () => {
+    await outcome("mismatch", "k1", { rail_status: "created", rail_currency: "USD", rail_amount_minor: "5000" });
+    await outcome("released", "k1", { amount_minor: undefined });
+
+    const s = await state();
+    expect(s.spent_minor).toBe(5000n);
+    expect(s.merchants_transacted.size).toBe(0);
+  });
+
   it("released frees budget but keeps the velocity timestamp", async () => {
     await outcome("created", "k1");
     await outcome("released", "k1", {}, new Date("2026-09-04T10:10:00.000Z"));

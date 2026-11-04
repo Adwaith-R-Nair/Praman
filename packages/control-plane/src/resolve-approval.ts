@@ -2,7 +2,7 @@ import { prisma, loadCatalogSnapshot } from "@praman/db";
 import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, type PurchaseIntent } from "@praman/policy";
 import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/mandate";
-import { acceptOutcome, idempotencyKey, receiptFor, type ExecOutcome, type ExecutorRouter } from "@praman/exec-core";
+import { acceptOutcome, idempotencyKey, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
 import { minorFromDb, minorToJSON } from "@praman/shared";
 import { gateOnRail, routeMerchant } from "./route-merchant.js";
 import { MANDATE_LOCK_NS, parseCachedOutcome } from "./run-intent.js";
@@ -16,7 +16,8 @@ export type ResolveResult =
       readonly trace_id: string;
       /** Null only when a repeat finds a failed attempt whose order never existed. */
       readonly order_id: string | null;
-      readonly order_status: ExecOutcome["status"];
+      /** "mismatch" means an order exists that isn't what was asked for, and a human needs to look (D-33). */
+      readonly order_status: AcceptedOutcome["status"];
       /** Set when the rail has a checkout: where the buyer goes to approve the order. */
       readonly approve_url: string | null;
     }
@@ -213,11 +214,11 @@ export async function resolveApproval(
 
   // Same two-phase structure as runIntent (D-22) — the external call cannot
   // be inside a transaction, so the outbox record was committed before it.
-  let outcome: ExecOutcome;
+  let outcome: AcceptedOutcome;
   try {
     outcome = acceptOutcome(
       await phase1.executor.createOrder({ amount_minor: phase1.amount, currency: phase1.currency, idempotency_key: phase1.key, receipt: phase1.receipt }),
-      phase1.currency,
+      { amount_minor: phase1.amount, currency: phase1.currency },
     );
   } catch (err) {
     return { kind: "IN_FLIGHT", trace_id: phase1.traceId, detail: `call failed with unknown outcome: ${String(err)}` };
@@ -232,13 +233,7 @@ export async function resolveApproval(
       eventType: "outcome",
       payload: {
         mandate_id: phase1.mandateId,
-        rail: outcome.rail,
-        status: outcome.status,
-        order_id: outcome.order_id,
-        payment_id: outcome.payment_id,
-        failure_code: outcome.failure_code,
-        amount_minor: minorToJSON(outcome.amount_minor),
-        currency: outcome.currency,
+        ...outcomeFields(outcome),
         merchant_id: phase1.merchantId,
         idempotency_key: phase1.key,
       },

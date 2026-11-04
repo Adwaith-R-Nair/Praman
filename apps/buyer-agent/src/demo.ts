@@ -154,6 +154,11 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
   }
   console.log();
 
+  if (result.order_status === "mismatch") {
+    console.log(`▸ the rail answered about something other than what was asked — stopping, not retrying`);
+    console.log(`  the order is held against the budget until a human looks at trace ${result.trace_id}\n`);
+    break;
+  }
   if (result.order_status === "failed" && attempt < MAX_ATTEMPTS) {
     console.log(`▸ payment declined — one re-plan permitted\n`);
     continue;
