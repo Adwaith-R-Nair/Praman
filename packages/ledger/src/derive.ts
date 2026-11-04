@@ -54,6 +54,19 @@ export function readCurrency(payload: Record<string, unknown>): Currency {
   return currency;
 }
 
+/** Everything the outcomes for one order add up to. See deriveState. */
+interface OrderFold {
+  readonly firstSeen: Date;
+  amount: bigint;
+  readonly merchants: string[];
+  captured: boolean;
+  released: boolean;
+}
+
+function newOrderFold(firstSeen: Date): OrderFold {
+  return { firstSeen, amount: 0n, merchants: [], captured: false, released: false };
+}
+
 /**
  * Replays the ledger to derive a mandate's current state. D-03: spend is never
  * stored, because a stored counter is a number an attacker can edit. Deriving
@@ -70,12 +83,25 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
     ORDER BY seq ASC
   `;
 
-  let spent = 0n;
   let revoked = false;
-  const txnTimestamps: Date[] = [];
   const deniedAttempts: Date[] = [];
-  const merchants = new Set<string>();
   const keys = new Set<string>();
+  const releasedKeys = new Set<string>();
+
+  // One order can have several outcomes: created, then captured later, or a
+  // release. They are one purchase, so they are folded together by key before
+  // anything is counted (D-30). An old outcome with no key can't be matched to
+  // anything, so it stays its own order, which is what it always counted as.
+  const orders: OrderFold[] = [];
+  const ordersByKey = new Map<string, OrderFold>();
+  const orderFor = (key: string, ts: Date): OrderFold => {
+    const existing = ordersByKey.get(key);
+    if (existing !== undefined) return existing;
+    const order = newOrderFold(ts);
+    ordersByKey.set(key, order);
+    orders.push(order);
+    return order;
+  };
 
   for (const row of rows) {
     switch (row.event_type) {
@@ -92,17 +118,42 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
         // would let a mandate create unlimited orders while its budget
         // never moved. A decision is still not a payment — only outcome
         // events reach this case at all.
+        //
+        // A "released" order is a PayPal checkout nobody approved in time. It
+        // gives the budget back. It stays in `keys`, because the rail would
+        // answer a repeat of this key with the same old order. A release with
+        // no key can't name an order, so it frees nothing.
         const status = row.payload["status"];
+        const key = row.payload["idempotency_key"];
+
+        if (status === "released") {
+          if (typeof key !== "string") break;
+          keys.add(key);
+          releasedKeys.add(key);
+          orderFor(key, row.ts).released = true;
+          break;
+        }
+
         if (status !== "created" && status !== "captured") break;
 
-        spent += BigInt(readAmount(row.payload, row.seq));
-        txnTimestamps.push(row.ts);
+        const amount = BigInt(readAmount(row.payload, row.seq));
+        let order: OrderFold;
+        if (typeof key === "string") {
+          keys.add(key);
+          order = orderFor(key, row.ts);
+        } else {
+          order = newOrderFold(row.ts);
+          orders.push(order);
+        }
+
+        // These should always agree. If they don't, the higher one is counted,
+        // so a mismatch can't free budget. Throwing would be worse: this row
+        // can never be rewritten, so it would break the mandate permanently.
+        if (amount > order.amount) order.amount = amount;
+        if (status === "captured") order.captured = true;
 
         const merchant = row.payload["merchant_id"];
-        if (typeof merchant === "string") merchants.add(merchant);
-
-        const key = row.payload["idempotency_key"];
-        if (typeof key === "string") keys.add(key);
+        if (typeof merchant === "string") order.merchants.push(merchant);
         break;
       }
 
@@ -121,12 +172,30 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
     }
   }
 
+  let spent = 0n;
+  const txnTimestamps: Date[] = [];
+  const merchants = new Set<string>();
+
+  // Done after the replay, so the order the rows arrived in can't matter.
+  for (const order of orders) {
+    // Velocity counts attempts, so a released order still used one up.
+    txnTimestamps.push(order.firstSeen);
+
+    // A release only frees an order whose money didn't move. If a capture is
+    // on record too, that money is gone, whichever row came first.
+    if (order.released && !order.captured) continue;
+
+    spent += order.amount;
+    for (const merchant of order.merchants) merchants.add(merchant);
+  }
+
   return {
     spent_minor: minor(spent),
     txn_timestamps: txnTimestamps,
     revoked,
     merchants_transacted: merchants,
     seen_idempotency_keys: keys,
+    released_keys: releasedKeys,
     denied_attempts: deniedAttempts,
   };
 }

@@ -3,7 +3,9 @@ import type { Currency } from "@praman/shared";
 export interface SeedEvent {
   readonly event: "outcome" | "decision" | "revoked";
   /** outcome events only. Defaults to "captured". */
-  readonly status?: "captured" | "failed";
+  readonly status?: "created" | "captured" | "failed" | "released";
+  /** outcome events only. A fixed key, so several events can describe one order. */
+  readonly order_key?: string;
   /** decision events only. Defaults to "DENY". */
   readonly kind?: "ALLOW" | "STEP_UP" | "DENY";
   readonly amount_minor?: string;
@@ -20,6 +22,18 @@ export interface SeedEvent {
   readonly duplicate_of_this_intent?: boolean;
   /** With duplicate_of_this_intent — compute the key from these line items instead (tests reordering/canonical-form equivalence). */
   readonly duplicate_line_items_override?: readonly { sku: string; qty: number }[];
+}
+
+/**
+ * Makes a Layer 1 case test the capture re-check instead of a new purchase.
+ * The seed puts an order in the ledger, and the case asks whether it may be
+ * captured now. Only Layer 1, so nothing here reaches a rail.
+ */
+export interface CaseCapture {
+  readonly order_key: string;
+  readonly held_amount_minor: string;
+  readonly quoted_amount_minor: string;
+  readonly currency: Currency;
 }
 
 export interface ExpectedOutcome {
@@ -50,6 +64,8 @@ export interface Layer1Case {
   readonly notes: string;
   /** Simulates a forged mandate: verifyMandate is called with a public key that does not match the signing key. */
   readonly tamper?: "wrong_key";
+  /** Present on capture cases. `intent` then describes the cart the order came from. */
+  readonly capture?: CaseCapture;
 }
 
 export interface Layer2Case {

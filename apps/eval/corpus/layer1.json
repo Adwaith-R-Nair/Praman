@@ -1417,5 +1417,318 @@
     },
     "money_at_risk_minor": "0",
     "notes": "A correctly signed mandate in a currency Praman doesn't support. Refused before any amount is resolved, and as AMOUNT_INVALID rather than a signature failure, because the signature is good."
+  },
+  {
+    "case_id": "adv_hold_capture_after_release",
+    "layer": 1,
+    "family": "order_hold",
+    "severity": "high",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [
+      {
+        "event": "outcome",
+        "status": "created",
+        "amount_minor": "18000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 20,
+        "order_key": "order_hold_1"
+      },
+      {
+        "event": "outcome",
+        "status": "released",
+        "amount_minor": "18000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 5,
+        "order_key": "order_hold_1"
+      }
+    ],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        {
+          "sku": "SKU_FOOD_001",
+          "qty": 1
+        }
+      ]
+    },
+    "capture": {
+      "order_key": "order_hold_1",
+      "held_amount_minor": "18000",
+      "quoted_amount_minor": "18000",
+      "currency": "INR"
+    },
+    "expected": {
+      "money_moves": false,
+      "acceptable_reason_codes": [
+        "ORDER_RELEASED"
+      ]
+    },
+    "money_at_risk_minor": "18000",
+    "notes": "A buyer finishes checkout after the 10-minute release. The budget has already gone back, so capturing now would spend money nothing is holding. The mandate is live and the amounts match, so only the release stops it."
+  },
+  {
+    "case_id": "adv_hold_capture_after_revocation",
+    "layer": 1,
+    "family": "order_hold",
+    "severity": "high",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [
+      {
+        "event": "outcome",
+        "status": "created",
+        "amount_minor": "18000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 5,
+        "order_key": "order_hold_1"
+      },
+      {
+        "event": "revoked",
+        "minutes_ago": 1
+      }
+    ],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        {
+          "sku": "SKU_FOOD_001",
+          "qty": 1
+        }
+      ]
+    },
+    "capture": {
+      "order_key": "order_hold_1",
+      "held_amount_minor": "18000",
+      "quoted_amount_minor": "18000",
+      "currency": "INR"
+    },
+    "expected": {
+      "money_moves": false,
+      "acceptable_reason_codes": [
+        "MANDATE_REVOKED"
+      ]
+    },
+    "money_at_risk_minor": "18000",
+    "notes": "The mandate is revoked while the buyer is at checkout. Creating the order was allowed. Capturing it must not be, and this is the case D-17's reasoning does not cover."
+  },
+  {
+    "case_id": "adv_hold_unreleased_order_holds_budget",
+    "layer": 1,
+    "family": "order_hold",
+    "severity": "high",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [
+      {
+        "event": "outcome",
+        "status": "captured",
+        "amount_minor": "1000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 30
+      },
+      {
+        "event": "outcome",
+        "status": "created",
+        "amount_minor": "490000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 5,
+        "order_key": "order_hold_2"
+      }
+    ],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        {
+          "sku": "SKU_FOOD_001",
+          "qty": 1
+        }
+      ]
+    },
+    "expected": {
+      "money_moves": false,
+      "acceptable_reason_codes": [
+        "MANDATE_BUDGET_EXHAUSTED"
+      ]
+    },
+    "money_at_risk_minor": "18000",
+    "notes": "An order sitting at checkout has not moved money yet, but it still holds budget. Without that, a mandate could open any number of checkouts and have all of them approved."
+  },
+  {
+    "case_id": "adv_hold_released_merchant_not_trusted",
+    "layer": 1,
+    "family": "order_hold",
+    "severity": "medium",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [
+      {
+        "event": "outcome",
+        "status": "created",
+        "amount_minor": "18000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 20,
+        "order_key": "order_hold_3"
+      },
+      {
+        "event": "outcome",
+        "status": "released",
+        "amount_minor": "18000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 5,
+        "order_key": "order_hold_3"
+      }
+    ],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        {
+          "sku": "SKU_FOOD_001",
+          "qty": 1
+        }
+      ]
+    },
+    "expected": {
+      "money_moves": false,
+      "acceptable_reason_codes": [
+        "STEP_UP_FIRST_MERCHANT"
+      ]
+    },
+    "money_at_risk_minor": "18000",
+    "notes": "The only order at this merchant was abandoned, so it never earned trust. Opening a checkout and walking away must not skip the first-merchant step-up."
+  },
+  {
+    "case_id": "benign_hold_capture_live_order",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [
+      {
+        "event": "outcome",
+        "status": "created",
+        "amount_minor": "18000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 5,
+        "order_key": "order_hold_1"
+      }
+    ],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        {
+          "sku": "SKU_FOOD_001",
+          "qty": 1
+        }
+      ]
+    },
+    "capture": {
+      "order_key": "order_hold_1",
+      "held_amount_minor": "18000",
+      "quoted_amount_minor": "18000",
+      "currency": "INR"
+    },
+    "expected": {
+      "money_moves": true,
+      "acceptable_reason_codes": [
+        "OK"
+      ]
+    },
+    "money_at_risk_minor": "18000",
+    "notes": "Control. A live mandate, a live hold and matching amounts: the re-check must not get in the way of an ordinary capture."
+  },
+  {
+    "case_id": "benign_hold_release_frees_budget",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [
+      {
+        "event": "outcome",
+        "status": "captured",
+        "amount_minor": "1000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 30
+      },
+      {
+        "event": "outcome",
+        "status": "created",
+        "amount_minor": "490000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 20,
+        "order_key": "order_hold_2"
+      },
+      {
+        "event": "outcome",
+        "status": "released",
+        "amount_minor": "490000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 5,
+        "order_key": "order_hold_2"
+      }
+    ],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        {
+          "sku": "SKU_FOOD_001",
+          "qty": 1
+        }
+      ]
+    },
+    "expected": {
+      "money_moves": true,
+      "acceptable_reason_codes": [
+        "OK"
+      ]
+    },
+    "money_at_risk_minor": "18000",
+    "notes": "Control. Only the release leaves room for this purchase. If the abandoned order still counted, this would be MANDATE_BUDGET_EXHAUSTED."
+  },
+  {
+    "case_id": "benign_hold_created_then_captured_counts_once",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "lunch_5000",
+    "catalog": "food_basic",
+    "seed": [
+      {
+        "event": "outcome",
+        "status": "created",
+        "amount_minor": "300000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 20,
+        "order_key": "order_hold_4"
+      },
+      {
+        "event": "outcome",
+        "status": "captured",
+        "amount_minor": "300000",
+        "merchant_id": "MERCH_001",
+        "minutes_ago": 10,
+        "order_key": "order_hold_4"
+      }
+    ],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        {
+          "sku": "SKU_FOOD_001",
+          "qty": 1
+        }
+      ]
+    },
+    "expected": {
+      "money_moves": true,
+      "acceptable_reason_codes": [
+        "OK"
+      ]
+    },
+    "money_at_risk_minor": "18000",
+    "notes": "Control. One order with two outcomes. Counted twice it would be 600000 against a budget of 500000, and this purchase would be wrongly refused."
   }
 ]

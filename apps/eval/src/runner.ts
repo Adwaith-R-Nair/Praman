@@ -6,13 +6,18 @@ import { performance } from "node:perf_hooks";
 import "./db.js";
 import { propagateAttributes } from "@langfuse/tracing";
 import { runIntent } from "@praman/control-plane";
+import { deriveState } from "@praman/ledger";
+import { verifyMandate } from "@praman/mandate";
+import { evaluateCapture } from "@praman/policy";
+import { minorFromJSON } from "@praman/shared";
 import { SimulatedExecutor } from "@praman/razorpay-exec";
 import type { PurchaseIntent } from "@praman/policy";
 import { runAgent } from "@praman/buyer-agent";
 import type { ModelProvider } from "@praman/agent-core";
+import { prisma } from "./db.js";
 import { seedCase } from "./seed.js";
 import { writeTranscript } from "./transcript.js";
-import type { CaseResult, Layer1Case, Layer2Case } from "./types.js";
+import type { CaseCapture, CaseResult, Layer1Case, Layer2Case } from "./types.js";
 
 /** Best-effort — a shallow CI checkout or a missing git binary must never fail an eval run over a tagging nicety. */
 function gitShaOrUnknown(): string {
@@ -23,7 +28,53 @@ function gitShaOrUnknown(): string {
   }
 }
 
+/** Asks evaluateCapture about a seeded order. A case's money_moved here means the capture would have been allowed. */
+async function runCaptureCase(c: Layer1Case, capture: CaseCapture): Promise<CaseResult> {
+  const { signed, publicKeyPem, now, currency } = await seedCase(c);
+
+  const t0 = performance.now();
+  const verified = verifyMandate(signed, publicKeyPem);
+  if (!verified.ok) throw new Error(`${c.case_id}: capture cases need a mandate that verifies, got ${verified.reason}`);
+  const mandate = verified.mandate;
+  const state = await prisma.$transaction((tx) => deriveState(tx, mandate.mandate_id));
+  const decision = evaluateCapture({
+    mandate,
+    state,
+    now,
+    order: {
+      idempotency_key: capture.order_key,
+      held_amount_minor: minorFromJSON(capture.held_amount_minor),
+      quoted_amount_minor: minorFromJSON(capture.quoted_amount_minor),
+      currency: capture.currency,
+    },
+  });
+  const latency_ms = performance.now() - t0;
+
+  const moneyMoved = decision.kind === "ALLOW_CAPTURE";
+  const outcomeMatches = moneyMoved === c.expected.money_moves;
+  const reasonExpected = c.expected.acceptable_reason_codes.includes(decision.reason_code);
+
+  return {
+    case_id: c.case_id,
+    family: c.family,
+    layer: 1,
+    money_moved: moneyMoved,
+    expected_money_moves: c.expected.money_moves,
+    amount_moved_minor: moneyMoved ? decision.amount_minor : 0n,
+    reason_code: decision.reason_code,
+    decision_kind: decision.kind,
+    passed: outcomeMatches && reasonExpected,
+    incidental: outcomeMatches && !reasonExpected,
+    money_at_risk_minor: BigInt(c.money_at_risk_minor),
+    currency,
+    latency_ms,
+    detail: reasonExpected ? "" : `unexpected reason ${decision.reason_code} (money_moved=${String(moneyMoved)})`,
+  };
+}
+
 export async function runLayer1(c: Layer1Case): Promise<CaseResult> {
+  if (c.capture !== undefined) return runCaptureCase(c, c.capture);
+
   const { signed, publicKeyPem, now, currency } = await seedCase(c);
 
   const intent: PurchaseIntent = {

@@ -19,6 +19,7 @@ export const REASON_CODES = [
   "DUPLICATE_INTENT",
   "AMOUNT_CHANGED_SINCE_APPROVAL",
   "CURRENCY_MISMATCH",
+  "ORDER_RELEASED",
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];

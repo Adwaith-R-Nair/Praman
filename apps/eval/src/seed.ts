@@ -68,7 +68,9 @@ async function seedEvents(mandateId: string, currency: string, defaultMerchantId
       }
       if (ev.event === "outcome") {
         const status = ev.status ?? "captured";
-        const key = ev.duplicate_of_this_intent === true ? computeDuplicateKey(mandateId, c, ev) : `seed_${mandateId}_${i.toString()}`;
+        const key =
+          ev.order_key ??
+          (ev.duplicate_of_this_intent === true ? computeDuplicateKey(mandateId, c, ev) : `seed_${mandateId}_${i.toString()}`);
         return append(tx, {
           traceId,
           ts,

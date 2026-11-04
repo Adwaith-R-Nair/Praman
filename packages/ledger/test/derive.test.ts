@@ -241,6 +241,206 @@ describe("deriveState", () => {
   });
 });
 
+describe("deriveState folding outcomes by order", () => {
+  const TS = new Date("2026-09-04T10:00:00.000Z");
+
+  /** A field passed as undefined is left out of the row, the way an old row simply doesn't have it. */
+  async function outcome(status: string, key: string | null, fields: Record<string, unknown> = {}, ts: Date = TS): Promise<void> {
+    const payload = {
+      mandate_id: MANDATE,
+      status,
+      amount_minor: "5000",
+      merchant_id: "MERCH_001",
+      ...(key === null ? {} : { idempotency_key: key }),
+      ...fields,
+    };
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t1",
+        ts,
+        actor: "system",
+        eventType: "outcome",
+        payload: Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined)),
+      }),
+    );
+  }
+
+  const state = () => prisma.$transaction((tx) => deriveState(tx, MANDATE));
+
+  it("counts created then captured with one key once", async () => {
+    await outcome("created", "k1");
+    await outcome("captured", "k1", {}, new Date("2026-09-04T10:05:00.000Z"));
+
+    const s = await state();
+    expect(s.spent_minor).toBe(5000n);
+    // The time the budget was first committed, not the time it settled.
+    expect(s.txn_timestamps).toEqual([TS]);
+    expect([...s.merchants_transacted]).toEqual(["MERCH_001"]);
+    expect([...s.seen_idempotency_keys]).toEqual(["k1"]);
+    expect(s.released_keys.size).toBe(0);
+  });
+
+  it("counts a repeated outcome on one key once, so a reconciler racing T2 can't double spend", async () => {
+    await outcome("created", "k1");
+    await outcome("created", "k1", { reconciled: true });
+
+    const s = await state();
+    expect(s.spent_minor).toBe(5000n);
+    expect(s.txn_timestamps).toHaveLength(1);
+  });
+
+  it("counts different keys separately", async () => {
+    await outcome("created", "k1");
+    await outcome("captured", "k2", { amount_minor: "700" });
+
+    const s = await state();
+    expect(s.spent_minor).toBe(5700n);
+    expect(s.txn_timestamps).toHaveLength(2);
+  });
+
+  it("keeps the higher amount if one key's outcomes disagree, so a mismatch never frees budget", async () => {
+    await outcome("created", "k1", { amount_minor: "5000" });
+    await outcome("captured", "k1", { amount_minor: "6000" });
+    await outcome("created", "k2", { amount_minor: "300" });
+    await outcome("captured", "k2", { amount_minor: "200" });
+
+    expect((await state()).spent_minor).toBe(6300n);
+  });
+
+  it("still refuses a malformed amount on the second outcome of a key", async () => {
+    await outcome("created", "k1");
+    await outcome("captured", "k1", { amount_minor: "not-a-number" });
+
+    await expect(state()).rejects.toThrow(/amount_minor is malformed/);
+  });
+
+  it("old outcomes with no idempotency key still count individually", async () => {
+    await outcome("captured", null, { amount_minor: undefined, amount_paise: "5000" });
+    await outcome("captured", null, { amount_minor: undefined, amount_paise: "5000" });
+    await outcome("created", null, { amount_minor: "700" });
+
+    const s = await state();
+    expect(s.spent_minor).toBe(10700n);
+    expect(s.txn_timestamps).toHaveLength(3);
+    expect(s.seen_idempotency_keys.size).toBe(0);
+  });
+
+  it("released frees budget but keeps the velocity timestamp", async () => {
+    await outcome("created", "k1");
+    await outcome("released", "k1", {}, new Date("2026-09-04T10:10:00.000Z"));
+
+    const s = await state();
+    expect(s.spent_minor).toBe(0n);
+    expect(s.txn_timestamps).toEqual([TS]);
+    expect([...s.released_keys]).toEqual(["k1"]);
+  });
+
+  it("a released order does not count as a merchant transacted", async () => {
+    await outcome("created", "k1");
+    await outcome("released", "k1");
+
+    expect((await state()).merchants_transacted.size).toBe(0);
+  });
+
+  it("a merchant stays transacted through another order that wasn't released", async () => {
+    await outcome("created", "k1");
+    await outcome("released", "k1");
+    await outcome("created", "k2", { amount_minor: "700" });
+
+    const s = await state();
+    expect(s.spent_minor).toBe(700n);
+    expect([...s.merchants_transacted]).toEqual(["MERCH_001"]);
+  });
+
+  it("a released key stays seen, so the same intent can't be run again", async () => {
+    await outcome("created", "k1");
+    await outcome("released", "k1");
+
+    expect([...(await state()).seen_idempotency_keys]).toEqual(["k1"]);
+  });
+
+  it("applies a release whichever order the rows arrive in", async () => {
+    await outcome("released", "k1");
+    await outcome("created", "k1");
+
+    const s = await state();
+    expect(s.spent_minor).toBe(0n);
+    expect(s.txn_timestamps).toHaveLength(1);
+    expect(s.merchants_transacted.size).toBe(0);
+  });
+
+  it.each([
+    ["captured then released", ["captured", "released"]],
+    ["released then captured", ["released", "captured"]],
+  ])("money that moved is never freed: %s", async (_name, statuses) => {
+    for (const status of statuses) await outcome(status, "k1");
+
+    const s = await state();
+    expect(s.spent_minor).toBe(5000n);
+    expect([...s.merchants_transacted]).toEqual(["MERCH_001"]);
+    // Still recorded, so evaluateCapture refuses a further capture on it.
+    expect([...s.released_keys]).toEqual(["k1"]);
+  });
+
+  it("a release with no key frees nothing, because it can't name an order", async () => {
+    await outcome("created", "k1");
+    await outcome("released", null);
+
+    const s = await state();
+    expect(s.spent_minor).toBe(5000n);
+    expect(s.released_keys.size).toBe(0);
+    expect(s.txn_timestamps).toHaveLength(1);
+  });
+
+  it("a release never reads an amount, so one without an amount is fine", async () => {
+    await outcome("created", "k1");
+    await outcome("released", "k1", { amount_minor: undefined });
+
+    expect((await state()).spent_minor).toBe(0n);
+  });
+
+  it("a failed outcome after created leaves the hold in place", async () => {
+    await outcome("created", "k1");
+    await outcome("failed", "k1");
+
+    const s = await state();
+    expect(s.spent_minor).toBe(5000n);
+    expect(s.txn_timestamps).toHaveLength(1);
+  });
+
+  it("a capture_decision denial is not a denied attempt", async () => {
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t1",
+        ts: TS,
+        actor: "system",
+        eventType: "capture_decision",
+        payload: { mandate_id: MANDATE, kind: "DENY", reason_code: "ORDER_RELEASED", detail: "released" },
+      }),
+    );
+
+    const s = await state();
+    expect(s.denied_attempts).toEqual([]);
+    expect(s.spent_minor).toBe(0n);
+  });
+
+  it("a settlement event moves nothing on its own", async () => {
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "t1",
+        ts: TS,
+        actor: "system",
+        eventType: "settlement",
+        payload: { mandate_id: MANDATE, status: "captured", amount_minor: "5000", idempotency_key: "k1" },
+      }),
+    );
+
+    const s = await state();
+    expect(s.spent_minor).toBe(0n);
+    expect(s.txn_timestamps).toEqual([]);
+  });
+});
+
 describe("readAmount", () => {
   it("reads either shape", () => {
     expect(readAmount({ amount_paise: "5000" }, 1n)).toBe("5000");
