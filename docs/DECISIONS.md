@@ -585,6 +585,8 @@ to stop a legitimate-looking attacker from burning through probes cheaply,
 not to be a free lockout lever for anyone who knows a public ID.
 ### D-26 · What PayPal's sandbox actually guarantees · Accepted
 
+Status: decision 1 is changed by D-33. The comparison moved out of `paypal-exec`, and a difference is recorded as a mismatch that holds budget, not as a failure.
+
 D-22 taught this project not to trust a provider's documented behaviour
 without testing it, so PayPal got the same treatment before any rail code was
 written. Tested on 2026-11-04 against Orders v2 in the sandbox, with a merchant
@@ -918,6 +920,8 @@ small policy change, preparing for a checkout took another, and adding the rail 
 
 ### D-32 · Rail comes from merchant configuration · Accepted
 
+Status: the section "The rail's currency is checked on return" is replaced by D-33. The rest holds.
+
 Praman needs to pay on two rails without the control plane caring which. Three things could
 choose the rail: the intent, the mandate, or the server's own record of the merchant. An intent
 is model output, and a model must never reach a rail (`CLAUDE.md`, and the design's anti-goals).
@@ -984,3 +988,81 @@ migration instead, as Razorpay in INR, which is the only thing they could have b
 item's currency is what `evaluate()` checks (D-29), and policy is frozen, so a merchant row
 that disagrees with its own catalog isn't caught here. The rail's refusal or `acceptOutcome` is
 the backstop. `seed-catalog` always writes the two together.
+
+### D-33 · An order the rail misreports still holds budget · Accepted
+
+Found in independent review of Task 5, and reproduced before fixing. D-32 turned an outcome in the wrong
+currency into `failed`, and left amounts to each rail. Together that gave two ways past a signed budget:
+
+- A rail reporting `captured` in the wrong currency was recorded as `failed`, so six such orders moved
+  nothing in `spent_minor` or `txn_timestamps`. That contradicts D-17: an order that exists is a payable
+  obligation.
+- T2 wrote the rail's `amount_minor` into the ledger with no comparison, and `deriveState` counts that row.
+  A rail reporting 1 minor unit on a 5000 order made six purchases cost 6 of a 12000 budget. D-26 shows the
+  trigger is real: PayPal answers a reused key with a 200 and the old order's amount. Razorpay's outcome
+  didn't "record the amount it was given", as D-32 said. It recorded whatever came back.
+
+**Decision: `acceptOutcome` compares both currency and amount, for every rail, and a difference becomes
+its own status, `mismatch`.** The caller, T2 and the reconciler all go through it, and all write the row
+through `outcomeFields`, so one order can't be counted differently depending on the path it took.
+
+| Rail says | Recorded `status` | `amount_minor`, `currency` | Budget and velocity | Merchant trusted |
+|---|---|---|---|---|
+| `created` or `captured`, matching | as reported | as asked | held | yes |
+| `failed`, whatever it reports | `failed` | as reported | none | no |
+| `created` or `captured`, different | `mismatch` | what T1 authorised | held | no |
+
+The row also keeps `rail_status`, `rail_amount_minor` and `rail_currency`, so nothing the rail said is lost,
+and `failure_code` is `RAIL_CURRENCY_MISMATCH` or `RAIL_AMOUNT_MISMATCH`. Those stay executor vocabulary, as
+D-32 says of failure codes.
+
+Each part of that answers a question:
+
+- **Why a new status, not `created` with a flag?** A caller that only reads the status would see a healthy
+  order. `RunResult.order_status` is a typed union, so `mismatch` can't be mistaken for either a success or
+  a decline. The demo loop retries a decline with a new intent and key. On a mismatch it stops, since a
+  retry could leave a second order at the rail.
+- **Why not `failed`?** That is the bug. The order exists.
+- **Which amount is held?** The authorised one, or the rail's if that is higher and in the same currency.
+  This is the rule D-30 already uses when two rows disagree: a mismatch can't free budget. In another
+  currency the numbers can't be compared, so the authorised one stands, because Praman does no FX.
+- **Why does `amount_minor` stay the authorised figure when the higher one is counted?** Capture reads the
+  ledger's amount and refuses when the rail quotes anything else (D-31). If the rail's inflated figure
+  became `amount_minor`, a capture at that figure would pass the comparison. So `deriveState` reads
+  `rail_amount_minor` for counting only.
+- **Why no `approve_url`?** Nobody should be sent to pay an order Praman doesn't recognise.
+- **Why does a release not free it?** What the rail holds is unknown, so this follows the same reasoning as
+  a capture beating a release in D-30.
+- **Why no merchant trust?** An order that came back wrong shouldn't skip the first-merchant step-up.
+- **What does the idempotency record say?** `succeeded`, meaning an order exists and the call is settled. A
+  repeat of the intent gets `mismatch` back with no second call.
+
+**A failed outcome passes through untouched.** A failure says no order exists, so what it reports about
+money doesn't matter, and the rail's own code (`CURRENCY_NOT_SUPPORTED`) is more useful than ours.
+
+**A repeat of a failed key gets the recorded answer.** Found in the same review, and already there at
+`3394f5c`: T1 handled `succeeded` and `pending`, so a repeat of a declined intent fell through to the
+outbox insert and threw a primary key error, with no reason code. `pnpm approve` run twice after a decline
+did the same. Now `failed` is treated as settled, like `succeeded`. The same intent gets the same answer
+and the rail isn't called again. A new attempt is a new intent with a new key, which is what the demo's
+re-plan already does. A failed record from the reconciler has no order at all, so `order_id` can be null
+on this path.
+
+**Rejected: letting a repeat of a failed key try again.** It would mean moving the record from `failed`
+back to `pending`, and the same key on PayPal returns the same old order anyway (D-26).
+
+**Rejected: refusing further purchases on the mandate after a mismatch.** That would be a new rule about
+what a mandate permits, and policy is frozen (D-31). Budget and velocity already limit the damage, since
+every mismatch uses up both.
+
+**Rejected: comparing inside each rail.** D-26 assigned this to `paypal-exec`. A rail that marks a mismatch
+`failed` brings back the first bug, and each new rail would have to remember the check. A rail's job is to
+report what it was told, and `paypal-exec` should do that.
+
+**Limits.** Nothing tells a human yet beyond the demo's message, `pnpm approve`'s exit code and the trace
+page, which shows "Allowed (mismatch)". Real Razorpay echoes the amount and currency today, so this is a
+guard against a misreporting rail, not a fix for something seen in production.
+
+**Consequence for Task 7.** `captureOrder` must refuse an order whose outcome is `mismatch`. The amount
+comparison in `evaluateCapture` catches a rail still quoting the wrong figure, but not one that later quotes
+the right one, and `evaluateCapture` is frozen.

@@ -196,7 +196,8 @@ The rejected alternative was executing the stored intent directly on approval, w
 - `seq` is a Postgres identity column; a gap means tampering.
 - New events carry amounts as `amount_minor`. Rows written before the rename carry `amount_paise`, and always will, because `payload_hash` covers those bytes. Readers accept both through `readAmount` and `amountIfPresent` in `packages/ledger/src/derive.ts` (D-28).
 - New `decision`, `api_call` and `outcome` events with an amount also carry `currency`. Older rows have none and are INR, because nothing else was accepted when they were written. `readCurrency` in the same file reads both (D-29).
-- `outcome` status is `created`, `captured`, `failed` or `released`. Spend is counted per order, not per row: rows with one `idempotency_key` fold together, and a `released` order with no capture frees its budget but keeps its velocity timestamp. Old rows with no key each count on their own (D-30).
+- `outcome` status is `created`, `captured`, `failed`, `released` or `mismatch`. Spend is counted per order, not per row: rows with one `idempotency_key` fold together, and a `released` order with no capture frees its budget but keeps its velocity timestamp. Old rows with no key each count on their own (D-30).
+- A `mismatch` outcome is an order the rail reported with a different amount or currency from the request. Its `amount_minor` and `currency` are what was authorised, and `rail_status`, `rail_amount_minor` and `rail_currency` keep what the rail said. It holds budget and velocity, a release doesn't free it, and it earns the merchant no trust (D-33).
 - `entry_hash` chains to `prev_hash`. Genesis entry uses 64 zeros.
 - Every 100 entries (or hourly), compute a Merkle root over `entry_hash` values and append a `checkpoint` entry containing it. The checkpoint is what you'd anchor externally in production — say this in the pitch, and be clear you didn't anchor it in the demo.
 - Immutability enforced in migration:

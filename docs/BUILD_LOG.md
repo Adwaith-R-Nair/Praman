@@ -2119,3 +2119,60 @@ on the simulated rail. `pnpm lint:policy-freeze` passes: this took no change to 
   demo avoids it because a re-plan always has a new `intent_id`. Task 7's capture path should not inherit it.
 - The gitignored `smoke-*.ts` and `scratch.ts` files were updated too, because `pnpm typecheck` covers them. They won't
   appear in the commit.
+
+### Phase P5 · 2026-11-05 · review fixes: repeats, and rails that misreport
+
+Independent reviewers found three blocking problems in the executor work. I reproduced all three with a
+failing test before changing anything, and all three were real. D-33 has the reasoning.
+
+**1. Repeating a failed attempt crashed.** `runIntent` and `resolveApproval` knew what to do when an intent's
+record was `succeeded` or `pending`. A `failed` one fell through to inserting the same key again, and Postgres
+threw. So a declined purchase repeated, or `pnpm approve` run twice after a decline, ended in an uncaught
+exception with no reason code. The last entry listed this as a known gap, and it was worse than I wrote there,
+because the approve path can reach it without any re-plan. Now a repeat gets the recorded answer and the rail
+isn't called again. `pnpm approve` also stopped printing "executed" on a failed order, and exits non-zero.
+
+**2. A rail could shrink what a purchase cost.** T2 copied the rail's amount into the ledger, and spend is
+derived from that row. In the reviewers' run, an executor reporting 1 minor unit on every 5000 order got six purchases on a
+12000 budget all went through and spent 6. `MANDATE_BUDGET_EXHAUSTED` never fired. The ledger's amount now
+comes from T1, and the rail's figure sits next to it in `rail_amount_minor`.
+
+**3. An order in the wrong currency held nothing.** My earlier fix marked these `failed`. But the order exists,
+and D-17 says that is an obligation. In the reviewers' run, six orders reported as `captured` in USD on an INR mandate left the budget
+and velocity limit untouched, and the demo read each one as a decline and retried.
+
+**The fix for 2 and 3 is one new status, `mismatch`.** Walking a bad answer through:
+
+1. T1 authorises 5000 INR and commits the outbox row, as always.
+2. The rail answers `created`, 1 minor unit.
+3. `acceptOutcome` sees the difference and returns `status: "mismatch"`, `amount_minor: 5000`,
+   `rail_amount_minor: 1`, `failure_code: "RAIL_AMOUNT_MISMATCH"`, with no approve URL.
+4. T2 writes that row. The record says `succeeded`, because the call is settled and an order exists.
+5. `deriveState` counts 5000 of budget and one velocity slot, and doesn't trust the merchant.
+6. The caller sees `order_status: "mismatch"`. The demo stops instead of retrying.
+
+The reconciler goes through the same function and the same `outcomeFields`, so a lost response that gets
+reconciled ends up the same as one T2 saw directly. If the rail reports *more* than was authorised, the higher
+figure is counted, and `amount_minor` still stays the authorised one so that capture will refuse it.
+
+**Tests I changed, not just added.** Four existing tests asserted the wrong-currency order was `failed` and held
+no budget, which was the bug itself: one in each of `executor.test.ts`, `run-intent.test.ts`,
+`resolve-approval.test.ts` and `reconcile.test.ts`. They now assert the budget is held, so they are stricter.
+The `run-intent` and `resolve-approval` ones also check that a repeat makes no second call.
+
+**A slip in the history.** Commit `19a5ee2` went in with a missing import in a test file, because I ran the
+commit without stopping on the failed test run. No test or logic was wrong, and the next commit adds the import.
+I left it visible rather than rewriting history.
+
+**Checks.** 320 tests in 28 files. No change to `packages/policy`, so `pnpm lint:policy-freeze` still passes. No
+schema change, and old ledger rows are untouched.
+
+**Worth checking:**
+
+- **`RunResult.agent_visible` stays `ALLOW` and `internal_reason_code` stays `OK` on a mismatch.** That is true
+  of the decision, which is what those fields report. `order_status` carries the bad news. A new reason code would
+  mix up what policy decided with what a rail said (D-32).
+- **The plan's Task 6 test needs to change.** It says `paypal-exec` treats a different amount as a failure. It
+  should report what PayPal said and let `acceptOutcome` decide, or the budget hole comes back.
+- **Task 7 must refuse to capture a `mismatch`.** D-33 explains why the frozen `evaluateCapture` alone isn't enough.
+
