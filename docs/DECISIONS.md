@@ -806,6 +806,8 @@ sum of paise and cents means nothing. Its JSON shape changed from a string to an
 
 ### D-30 · Budget during checkout · Accepted
 
+Status: the fold is corrected by D-34. A key groups rows, and two order ids under one key count as two orders.
+
 Decided by the builder on 2026-11-04. On PayPal an order is created, the buyer goes off
 to approve it, and only then does Praman capture. That can take minutes, or never finish,
 and PayPal's order can't be cancelled by API (D-26). So what does an order at checkout do
@@ -1066,3 +1068,48 @@ guard against a misreporting rail, not a fix for something seen in production.
 **Consequence for Task 7.** `captureOrder` must refuse an order whose outcome is `mismatch`. The amount
 comparison in `evaluateCapture` catches a rail still quoting the wrong figure, but not one that later quotes
 the right one, and `evaluateCapture` is frozen.
+
+### D-34 · One key can mean two orders · Accepted
+
+Found in independent review of Task 4, and reproduced with a failing test before fixing. An implementer's decision
+for the builder to check, not one the builder made.
+
+D-30 folded outcomes by `idempotency_key`, on the reasoning that one key is one order. D-22 says that isn't
+something this project can assume: Razorpay does not enforce receipt uniqueness, so a retry whose first response
+was lost can leave two real orders under one key. Those are two payable obligations (D-17), and the fold counted
+one of them. A mandate could overspend its signed budget and the ledger would show it within limits.
+
+**Decision: a key groups rows, and the order id says which order each row is about.**
+
+| Rows on one key | Budget | Velocity |
+|---|---|---|
+| Same order id, any number of rows, such as a reconciler racing T2 | once | 1 |
+| Two order ids | both | 2 |
+| No order ids at all (old rows) | once, as before | 1, as before |
+| One order id plus rows with none | once | 1 |
+| Two order ids plus a row with none | both, and the row joins the first | 2 |
+| A release naming one order of two | frees that order only | 2 |
+| A release naming no order, on a key with two | frees nothing | 2 |
+| A `failed` row with another order id | doesn't count, as before: a failure says no order exists | unchanged |
+
+A row with no order id belongs to the key's order, because that is how it has always counted, and one row that can't
+name an order must not create a third. A release that can't name an order frees nothing, the same rule D-30 applies to
+a release with no key. Merchant trust and the capture and mismatch rules are now per order inside the key.
+
+**Rejected: throwing when a key has two order ids.** The rows can never be rewritten, so one such key would break the
+mandate permanently, including its revocation check. D-30 refused this for disagreeing amounts for the same reason.
+
+**Rejected: refusing further purchases once it happens.** That is a new rule about what a mandate permits, and policy
+is frozen (D-31). Counting both already uses up budget and velocity.
+
+**Checked.** On the dev ledger, by a read-only query: 30 outcome rows and no key with more than one order id, so its
+figures don't change. A fixture did change. The Layer 1 seed gave every row its own `order_SEED_<index>`, so fixtures
+that meant one order at two stages read as two orders. The seed now uses the fixture's `order_key`. Nothing in the
+fixtures' expected results moved. See the build log for how that slipped through a commit.
+
+**Limits.** `released_keys` and `seen_idempotency_keys` stay per key, and `evaluateCapture` is frozen. So a release
+on one of two orders also refuses a capture of the other. That is the careful direction, and it needs a human anyway.
+Nothing raises an alarm when a key has two orders yet.
+
+**Consequence for Task 7.** Capture and release outcomes must carry the order's `order_id`, or a release can't free
+the right order on a key that has two.
