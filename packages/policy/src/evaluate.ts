@@ -1,4 +1,4 @@
-import { addMinor, mulMinor, subMinor, ZERO_MINOR } from "@praman/shared";
+import { addMinor, isCurrency, mulMinor, subMinor, ZERO_MINOR } from "@praman/shared";
 import type { Decision, EvaluateInput } from "./types.js";
 
 export function evaluate(input: EvaluateInput): Decision {
@@ -69,18 +69,18 @@ export function evaluate(input: EvaluateInput): Decision {
     };
   }
 
-  // 5b. Mandate currency — defensive. VerifiedMandate types this "INR"
-  // at compile time, but that guarantee only holds for callers that went
-  // through the type; a mandate hydrated from an untyped boundary (a raw
-  // DB row, a JSON body) could carry anything. Widened to `string` rather
-  // than compared directly, so this is a real runtime check and not a
-  // comparison the compiler proves unreachable.
+  // 5b. Mandate currency — defensive. VerifiedMandate limits this to the
+  // supported currencies at compile time, but that guarantee only holds for
+  // callers that went through the type; a mandate hydrated from an untyped
+  // boundary (a raw DB row, a JSON body) could carry anything. Widened to
+  // `string` rather than compared directly, so this is a real runtime check
+  // and not a comparison the compiler proves unreachable.
   const currency: string = mandate.scope.currency;
-  if (currency !== "INR") {
+  if (!isCurrency(currency)) {
     return {
       kind: "DENY",
       reason_code: "AMOUNT_INVALID",
-      detail: `Mandate currency ${currency} is not supported; only INR is.`,
+      detail: `Mandate currency ${currency} is not supported.`,
     };
   }
 
@@ -139,6 +139,16 @@ export function evaluate(input: EvaluateInput): Decision {
         kind: "DENY",
         reason_code: "SKU_UNKNOWN",
         detail: `SKU ${sku} is not in the merchant catalog.`,
+      };
+    }
+    // A price is only a number until its currency is known: 50000 is ₹500 or
+    // $500. Before anything uses this price, it must be in the mandate's
+    // currency. There is no conversion, so a different currency is a refusal.
+    if (catalogItem.currency !== currency) {
+      return {
+        kind: "DENY",
+        reason_code: "CURRENCY_MISMATCH",
+        detail: `SKU ${sku} is priced in ${catalogItem.currency}; this mandate is in ${currency}.`,
       };
     }
     if (!mandate.scope.categories.includes(catalogItem.category)) {

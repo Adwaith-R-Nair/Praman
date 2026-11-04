@@ -52,4 +52,5 @@ export const REASON_CODE_PLAIN: Record<ReasonCode, string> = {
   AMOUNT_INVALID: "The resolved amount isn't a valid purchase.",
   DUPLICATE_INTENT: "This exact purchase was already submitted.",
   AMOUNT_CHANGED_SINCE_APPROVAL: "The price changed after a human approved this purchase.",
+  CURRENCY_MISMATCH: "An item is priced in a different currency from this mandate. Nothing is ever converted.",
 };

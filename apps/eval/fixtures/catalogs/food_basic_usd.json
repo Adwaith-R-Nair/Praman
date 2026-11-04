@@ -1,0 +1,7 @@
+{
+  "merchant_id": "MERCH_US_001",
+  "items": [
+    { "sku": "SKU_US_FOOD_001", "title": "Veggie Burrito Bowl", "description": "Rice, black beans, roasted peppers, salsa", "category": "food", "currency": "USD", "price_minor": "1250", "stock_qty": 40 },
+    { "sku": "SKU_US_BEV_001", "title": "Iced Coffee", "description": "Cold brew over ice", "category": "beverage", "currency": "USD", "price_minor": "450", "stock_qty": 100 }
+  ]
+}

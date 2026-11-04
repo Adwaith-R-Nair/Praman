@@ -275,23 +275,140 @@ describe("evaluate", () => {
 
   // ── 5b. AMOUNT_INVALID (mandate currency) ─────────────────────
   describe("AMOUNT_INVALID — mandate currency", () => {
-    it("denies when mandate currency is not INR", () => {
-      // scope.currency is typed as the literal "INR" — the only way to
-      // construct a non-INR mandate is to bypass the type, which is exactly
+    it("still denies an unsupported mandate currency", () => {
+      // scope.currency only allows supported currencies at compile time. The
+      // only way to construct another is to bypass the type, which is exactly
       // the untyped-hydration boundary this check defends against.
       const mandate = makeMandate({
         scope: {
           merchant_ids: [MERCHANT],
           categories: [CATEGORY],
-          currency: "USD" as VerifiedMandate["scope"]["currency"],
+          currency: "JPY" as VerifiedMandate["scope"]["currency"],
         },
       });
       const result = evaluate({ ...makeInput(), mandate });
       expect(result).toEqual({
         kind: "DENY",
         reason_code: "AMOUNT_INVALID",
-        detail: expect.stringContaining("USD"),
+        detail: expect.stringContaining("JPY"),
       });
+    });
+  });
+
+  // ── 10b. CURRENCY_MISMATCH ────────────────────────────────────
+  describe("CURRENCY_MISMATCH", () => {
+    const SKU_B = "SKU_FOOD_002";
+    const SKU_C = "SKU_FOOD_003";
+
+    function itemIn(sku: string, currency: "INR" | "USD", price: bigint, category = CATEGORY) {
+      return [sku, { sku, category, price_minor: minor(price), currency, stock_qty: 10 }] as const;
+    }
+
+    function mandateIn(currency: "INR" | "USD"): VerifiedMandate {
+      return makeMandate({ scope: { merchant_ids: [MERCHANT], categories: [CATEGORY], currency } });
+    }
+
+    const transacted = makeState({ merchants_transacted: new Set([MERCHANT]) });
+
+    it("allows a USD mandate buying a USD item, with the exact amount", () => {
+      const result = evaluate({
+        ...makeInput(),
+        mandate: mandateIn("USD"),
+        state: transacted,
+        catalog: makeCatalog({ items: new Map([itemIn(SKU, "USD", 1250n)]) }),
+      });
+      expect(result.kind).toBe("ALLOW");
+      expect(result.kind !== "DENY" && result.amount_minor).toBe(1250n);
+    });
+
+    it("steps up a USD purchase at a new merchant exactly as it would in INR", () => {
+      const result = evaluate({
+        ...makeInput(),
+        mandate: mandateIn("USD"),
+        catalog: makeCatalog({ items: new Map([itemIn(SKU, "USD", 1250n)]) }),
+      });
+      expect(result).toEqual({ kind: "STEP_UP", amount_minor: 1250n, reason_code: "STEP_UP_FIRST_MERCHANT" });
+    });
+
+    it("denies a USD mandate buying an INR item", () => {
+      // The case this exists for: 50000 means ₹500 here, and would read as $500.
+      const result = evaluate({
+        ...makeInput(),
+        mandate: mandateIn("USD"),
+        state: transacted,
+        catalog: makeCatalog({ items: new Map([itemIn(SKU, "INR", 50000n)]) }),
+      });
+      expect(result).toEqual({ kind: "DENY", reason_code: "CURRENCY_MISMATCH", detail: expect.stringContaining(SKU) });
+    });
+
+    it("denies an INR mandate buying a USD item", () => {
+      const result = evaluate({
+        ...makeInput(),
+        mandate: mandateIn("INR"),
+        state: transacted,
+        catalog: makeCatalog({ items: new Map([itemIn(SKU, "USD", 1250n)]) }),
+      });
+      expect(result).toEqual({ kind: "DENY", reason_code: "CURRENCY_MISMATCH", detail: expect.stringContaining(SKU) });
+    });
+
+    it("denies a cart where only one item is in the wrong currency", () => {
+      const result = evaluate({
+        ...makeInput(),
+        intent: makeIntent({
+          line_items: [
+            { sku: SKU, qty: 1 },
+            { sku: SKU_B, qty: 1 },
+          ],
+        }),
+        mandate: mandateIn("USD"),
+        state: transacted,
+        catalog: makeCatalog({ items: new Map([itemIn(SKU, "USD", 1250n), itemIn(SKU_B, "INR", 1250n)]) }),
+      });
+      expect(result).toEqual({ kind: "DENY", reason_code: "CURRENCY_MISMATCH", detail: expect.stringContaining(SKU_B) });
+    });
+
+    it("reports the mismatch deterministically across cart order", () => {
+      // SKU_B is the wrong currency, SKU_C is unknown. Sorted order reaches SKU_B
+      // first, however the agent happened to list the cart.
+      const catalog = makeCatalog({ items: new Map([itemIn(SKU, "USD", 1250n), itemIn(SKU_B, "INR", 1250n)]) });
+      const carts = [
+        [SKU, SKU_B, SKU_C],
+        [SKU_C, SKU_B, SKU],
+        [SKU_B, SKU_C, SKU],
+      ];
+      const results = carts.map((order) =>
+        evaluate({
+          ...makeInput(),
+          intent: makeIntent({ line_items: order.map((sku) => ({ sku, qty: 1 })) }),
+          mandate: mandateIn("USD"),
+          state: transacted,
+          catalog,
+        }),
+      );
+      for (const result of results) {
+        expect(result).toEqual(results[0]);
+        expect(result).toEqual({ kind: "DENY", reason_code: "CURRENCY_MISMATCH", detail: expect.stringContaining(SKU_B) });
+      }
+    });
+
+    it("an unknown SKU still reports SKU_UNKNOWN, since it has no currency to compare", () => {
+      const result = evaluate({
+        ...makeInput(),
+        intent: makeIntent({ line_items: [{ sku: "SKU_MISSING", qty: 1 }] }),
+        mandate: mandateIn("USD"),
+        catalog: makeCatalog({ items: new Map([itemIn(SKU, "INR", 1250n)]) }),
+      });
+      expect(result).toMatchObject({ kind: "DENY", reason_code: "SKU_UNKNOWN" });
+    });
+
+    it("is checked before category, so a wrong-currency item never reaches the amount", () => {
+      const result = evaluate({
+        ...makeInput(),
+        mandate: mandateIn("USD"),
+        state: transacted,
+        catalog: makeCatalog({ items: new Map([itemIn(SKU, "INR", 1250n, "giftcard")]) }),
+      });
+      expect(result).toMatchObject({ kind: "DENY", reason_code: "CURRENCY_MISMATCH" });
     });
   });
 

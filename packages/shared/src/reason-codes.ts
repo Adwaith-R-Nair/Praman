@@ -18,6 +18,7 @@ export const REASON_CODES = [
   "AMOUNT_INVALID",
   "DUPLICATE_INTENT",
   "AMOUNT_CHANGED_SINCE_APPROVAL",
+  "CURRENCY_MISMATCH",
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];

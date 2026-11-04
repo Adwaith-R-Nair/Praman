@@ -48,6 +48,7 @@ A mandate is a signed grant of bounded spend authority from a human issuer to an
 - `merchant_ids` and `categories` are closed allowlists. There is no wildcard. Absence of a value denies.
 - Signature covers the canonical JSON of every field except `signature` itself. Canonicalisation: sorted keys, no whitespace, UTF-8, integers only (`packages/shared/canonical.ts`).
 - `version` selects the field names, and it is inside the signed bytes. Version 2 uses `_minor` names. Version 1 uses `max_per_txn_paise`, `max_total_paise` and `threshold_paise`; it verifies over its original bytes and is then hydrated to the same in-memory `_minor` fields. Any other version, or names that don't match the version, is refused as `MALFORMED_DOCUMENT`, signed or not. New mandates are version 2. See D-28.
+- `scope.currency` is the only source of currency, and it is inside the signed bytes. It is `INR` or `USD`, and never inferred from region or merchant. Limits are counted in that currency, and nothing is converted. A version 2 document in any other currency, or with none, fails with `UNSUPPORTED_CURRENCY` and is recorded as `AMOUNT_INVALID`, because its signature is good. A version 1 document is always INR, and one that claims anything else is malformed.
 - Spend consumed is **not** stored on the mandate. It is derived by replaying the ledger, so a tampered mandate row can't grant extra budget.
 - Revocation is an append to the ledger (`event_type: "mandate_revoked"`), not a field flip.
 
@@ -110,12 +111,12 @@ export type Decision =
 3. `now` ≥ validity.not_before → else `MANDATE_NOT_YET_VALID`
 4. `now` ≤ validity.not_after → else `MANDATE_EXPIRED`
 5. `intent.mandate_id === mandate.mandate_id` → else `MANDATE_SUBJECT_MISMATCH`
-5b. `mandate.scope.currency === "INR"` → else `AMOUNT_INVALID` *(defensive — the type guarantees this for callers that went through it, but a mandate hydrated from an untyped boundary might not have)*
+5b. `mandate.scope.currency` is in `CURRENCIES` (`INR`, `USD`) → else `AMOUNT_INVALID` *(defensive — the type guarantees this for callers that went through it, but a mandate hydrated from an untyped boundary might not have)*
 6. merchant in scope → else `MERCHANT_OUT_OF_SCOPE`
 7. catalog's own `merchant_id` matches the intent's → else `MERCHANT_OUT_OF_SCOPE` *(a second, distinct check from #6 — the caller could pass a catalog snapshot for the wrong merchant even when the intent itself is in scope)*
 8. cart is non-empty and every line item has a positive integer qty → else `AMOUNT_INVALID`
 9. quantities aggregated per SKU (a SKU split across two line items is one demand on stock, not two independent checks)
-10–12. for each distinct SKU, sorted (so reason codes never depend on line-item order): exists in catalog → else `SKU_UNKNOWN`; category in scope → else `CATEGORY_OUT_OF_SCOPE`; qty ≤ stock → else `INSUFFICIENT_STOCK`; then **resolve amount** — `amount_minor = Σ(catalog[sku].price_minor × qty)`
+10–12. for each distinct SKU, sorted (so reason codes never depend on line-item order): exists in catalog → else `SKU_UNKNOWN`; item currency equals `mandate.scope.currency` → else `CURRENCY_MISMATCH`; category in scope → else `CATEGORY_OUT_OF_SCOPE`; qty ≤ stock → else `INSUFFICIENT_STOCK`; then **resolve amount** — `amount_minor = Σ(catalog[sku].price_minor × qty)`
 13. `amount_minor > 0` → else `AMOUNT_INVALID`
 14. `amount_minor ≤ max_per_txn_minor` → else `MANDATE_AMOUNT_EXCEEDED`
 15. `state.spent_minor + amount_minor ≤ max_total_minor` → else `MANDATE_BUDGET_EXHAUSTED`
@@ -157,7 +158,8 @@ Write this function first, on paper, before any other code in the repo.
 | `INSUFFICIENT_STOCK` | DENY | requested qty unavailable |
 | `AMOUNT_INVALID` | DENY | non-positive or absurd resolved amount |
 | `DUPLICATE_INTENT` | DENY | idempotency key already resolved |
-| `AMOUNT_CHANGED_SINCE_APPROVAL` | DENY | catalog price moved between step-up and approval; the human approved a different rupee figure (D-24) |
+| `AMOUNT_CHANGED_SINCE_APPROVAL` | DENY | catalog price moved between step-up and approval; the human approved a different figure (D-24) |
+| `CURRENCY_MISMATCH` | DENY | a catalog item is priced in a currency other than the mandate's. Nothing is converted (D-29) |
 
 Every code must appear in at least one eval fixture. A code with no fixture is untested surface. `AMOUNT_CHANGED_SINCE_APPROVAL` is a known gap here — the Layer 1 eval corpus tests `evaluate()` directly and has no seeding path for an approval/resolution cycle yet.
 
@@ -167,7 +169,7 @@ A `STEP_UP` persists a pending `Approval` row (`run-intent.ts`) rather than exec
 
 - **Reject or expire** (15 minutes, `APPROVAL_TTL_MS`) → the approval is marked `rejected`/`expired`, a `step_up_resolved` ledger event records it, nothing executes.
 - **Approve** → `evaluate()` runs again, fresh, against the mandate and ledger state *as they are now*, not as they were at step-up time. Revocation, expiry, budget and velocity are all re-checked. A `DENY` here refuses the approval outright (`REFUSED`), even though a human already said yes — approval cannot revive a mandate that died in the meantime.
-- **Amount binding** — the human approved a specific rupee figure. If the catalog moved between step-up and approval, the re-evaluated amount won't match what was approved, and the approval is refused with `AMOUNT_CHANGED_SINCE_APPROVAL` rather than silently executing a different amount than what was shown.
+- **Amount binding** — the human approved a specific figure. If the catalog moved between step-up and approval, the re-evaluated amount won't match what was approved, and the approval is refused with `AMOUNT_CHANGED_SINCE_APPROVAL` rather than silently executing a different amount than what was shown.
 - **Idempotent** — approving twice returns the same cached order the second time; exactly one Razorpay call ever happens per approval.
 
 The rejected alternative was executing the stored intent directly on approval, without re-evaluating. That's a bypass: park a `STEP_UP`, wait for the mandate to expire or be revoked, then approve, and money moves under dead authority.

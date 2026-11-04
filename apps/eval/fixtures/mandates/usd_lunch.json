@@ -1,0 +1,26 @@
+{
+  "mandate_id": "mnd_eval_usd_lunch",
+  "version": 2,
+  "issuer_id": "usr_eval",
+  "subject_id": "agt_eval",
+  "scope": {
+    "merchant_ids": ["MERCH_US_001", "MERCH_001"],
+    "categories": ["food", "beverage"],
+    "currency": "USD"
+  },
+  "limits": {
+    "max_per_txn_minor": "5000",
+    "max_total_minor": "30000",
+    "max_txns_per_window": 5,
+    "window_seconds": 3600,
+    "max_denials_per_window": 5
+  },
+  "step_up": {
+    "threshold_minor": "4000"
+  },
+  "validity": {
+    "not_before": "2026-01-01T00:00:00.000Z",
+    "not_after": "2027-01-01T00:00:00.000Z"
+  },
+  "nonce": "eval_fixture_usd_lunch"
+}

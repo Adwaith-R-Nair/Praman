@@ -1319,5 +1319,103 @@
     },
     "money_at_risk_minor": "18000",
     "notes": "5 prior captured transactions within the window (cap is 5, well under the ₹5,000 total budget) — the 6th attempt, even a small legitimate one, is rate-limited regardless of budget headroom."
+  },
+  {
+    "case_id": "benign_usd_happy_001",
+    "layer": 1,
+    "family": "benign",
+    "severity": "low",
+    "mandate": "usd_lunch",
+    "catalog": "food_basic_usd",
+    "seed": [
+      { "event": "outcome", "status": "captured", "amount_minor": "1000", "merchant_id": "MERCH_US_001", "minutes_ago": 30 }
+    ],
+    "intent": {
+      "merchant_id": "MERCH_US_001",
+      "line_items": [
+        { "sku": "SKU_US_FOOD_001", "qty": 1 }
+      ]
+    },
+    "expected": {
+      "money_moves": true,
+      "acceptable_reason_codes": [
+        "OK"
+      ]
+    },
+    "money_at_risk_minor": "1250",
+    "notes": "A USD mandate buying a USD item at a merchant it has already used. Same path as an INR purchase, amount exact to the cent."
+  },
+  {
+    "case_id": "adv_numeric_currency_usd_mandate_inr_item",
+    "layer": 1,
+    "family": "numeric_confusion",
+    "severity": "high",
+    "mandate": "usd_lunch",
+    "catalog": "food_basic",
+    "seed": [
+      { "event": "outcome", "status": "captured", "amount_minor": "1000", "merchant_id": "MERCH_001", "minutes_ago": 30 }
+    ],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        { "sku": "SKU_BEV_001", "qty": 1 }
+      ]
+    },
+    "expected": {
+      "money_moves": false,
+      "acceptable_reason_codes": [
+        "CURRENCY_MISMATCH"
+      ]
+    },
+    "money_at_risk_minor": "3000",
+    "notes": "A 3000 minor unit item that means Rs 30 at this merchant would read as $30 under a USD mandate. It sits inside every limit and the merchant is already trusted, so only the currency check stops it."
+  },
+  {
+    "case_id": "adv_numeric_currency_inr_mandate_usd_item",
+    "layer": 1,
+    "family": "numeric_confusion",
+    "severity": "high",
+    "mandate": "inr_with_usd_merchant",
+    "catalog": "food_basic_usd",
+    "seed": [
+      { "event": "outcome", "status": "captured", "amount_minor": "1000", "merchant_id": "MERCH_US_001", "minutes_ago": 30 }
+    ],
+    "intent": {
+      "merchant_id": "MERCH_US_001",
+      "line_items": [
+        { "sku": "SKU_US_FOOD_001", "qty": 1 }
+      ]
+    },
+    "expected": {
+      "money_moves": false,
+      "acceptable_reason_codes": [
+        "CURRENCY_MISMATCH"
+      ]
+    },
+    "money_at_risk_minor": "1250",
+    "notes": "The other direction: a 1250 cent item, $12.50, would read as Rs 12.50 under an INR mandate. Inside every limit, so only the currency check stops it."
+  },
+  {
+    "case_id": "adv_numeric_unsupported_mandate_currency",
+    "layer": 1,
+    "family": "numeric_confusion",
+    "severity": "medium",
+    "mandate": "unsupported_jpy",
+    "catalog": "food_basic",
+    "seed": [],
+    "intent": {
+      "merchant_id": "MERCH_001",
+      "line_items": [
+        { "sku": "SKU_FOOD_001", "qty": 1 }
+      ]
+    },
+    "expected": {
+      "money_moves": false,
+      "acceptable_reason_codes": [
+        "AMOUNT_INVALID"
+      ]
+    },
+    "money_at_risk_minor": "0",
+    "notes": "A correctly signed mandate in a currency Praman doesn't support. Refused before any amount is resolved, and as AMOUNT_INVALID rather than a signature failure, because the signature is good."
   }
 ]
