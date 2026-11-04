@@ -1,7 +1,7 @@
 import { prisma, loadCatalogSnapshot } from "@praman/db";
 import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, type PurchaseIntent } from "@praman/policy";
-import { verifyMandate, type SignedMandate } from "@praman/mandate";
+import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/mandate";
 import { idempotencyKey, receiptFor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
 import { minorFromDb, minorToJSON } from "@praman/shared";
 import { MANDATE_LOCK_NS } from "./run-intent.js";
@@ -84,7 +84,7 @@ export async function resolveApproval(
         result: {
           kind: "REFUSED" as const,
           trace_id: apr.traceId,
-          reason_code: "MANDATE_SIGNATURE_INVALID",
+          reason_code: verifyFailureCode(verified.reason),
           detail: verified.reason,
         },
       };

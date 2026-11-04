@@ -1,3 +1,21 @@
+/**
+ * The currencies a signed mandate can name. Both have two decimal places, and
+ * formatMoney relies on that. A zero-decimal currency like JPY stays refused.
+ */
+export const CURRENCIES = ["INR", "USD"] as const;
+
+export type Currency = (typeof CURRENCIES)[number];
+
+export function isCurrency(value: unknown): value is Currency {
+  return CURRENCIES.some((c) => c === value);
+}
+
+/** A database column → Currency. Refuses rather than guesses, same as minorFromDb. */
+export function currencyFromDb(value: string): Currency {
+  if (!isCurrency(value)) throw new TypeError(`Not a supported currency: ${value}`);
+  return value;
+}
+
 declare const MinorBrand: unique symbol;
 
 /** An integer amount in the minor unit of its currency. Construct only via `minor()`. */
@@ -38,6 +56,16 @@ export function formatINR(value: Minor): string {
   const rupees = value / 100n;
   const fraction = value % 100n;
   return `₹${rupees.toString()}.${fraction.toString().padStart(2, "0")}`;
+}
+
+const CURRENCY_SYMBOL: Readonly<Record<Currency, string>> = { INR: "₹", USD: "$" };
+
+/** Display only. Never parse this back. Rejects negatives for the same reason formatINR does. */
+export function formatMoney(value: Minor, currency: Currency): string {
+  if (value < 0n) throw new RangeError(`Negative Minor reached formatMoney: ${value}`);
+  const whole = value / 100n;
+  const fraction = value % 100n;
+  return `${CURRENCY_SYMBOL[currency]}${whole.toString()}.${fraction.toString().padStart(2, "0")}`;
 }
 
 /** JSON has no bigint, and JSON.parse corrupts integers above 2^53. Amounts cross the wire as strings. */

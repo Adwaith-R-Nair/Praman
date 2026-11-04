@@ -15,6 +15,7 @@ interface CatalogFixtureItem {
   readonly description: string;
   readonly category: string;
   readonly price_minor: string;
+  readonly currency: string;
   readonly stock_qty: number;
 }
 interface CatalogFixture {
@@ -128,6 +129,7 @@ export async function seedCase(c: Layer1Case | Layer2Case): Promise<SeededCase> 
         description: i.description,
         category: i.category,
         priceMinor: BigInt(i.price_minor),
+        currency: i.currency,
         stockQty: i.stock_qty,
       })),
     });

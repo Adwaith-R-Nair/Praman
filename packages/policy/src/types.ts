@@ -1,4 +1,4 @@
-import type { Minor, StepUpCode, DenyCode, LedgerDerivedState } from "@praman/shared";
+import type { Currency, Minor, StepUpCode, DenyCode, LedgerDerivedState } from "@praman/shared";
 
 export type { LedgerDerivedState };
 
@@ -23,7 +23,7 @@ export interface VerifiedMandate {
   readonly scope: {
     readonly merchant_ids: readonly string[];
     readonly categories: readonly string[];
-    readonly currency: "INR";
+    readonly currency: Currency;
   };
   readonly limits: {
     readonly max_per_txn_minor: Minor;
@@ -52,6 +52,8 @@ export interface CatalogItem {
   readonly sku: string;
   readonly category: string;
   readonly price_minor: Minor;
+  /** What price_minor is counted in. evaluate() refuses an item whose currency isn't the mandate's. */
+  readonly currency: Currency;
   readonly stock_qty: number;
 }
 

@@ -5,6 +5,7 @@ import {
   generateKeypair,
   signMandate,
   verifyMandate,
+  verifyFailureCode,
   type MandateDocument,
   type MandateDocumentV1,
   type MandateDocumentV2,
@@ -151,6 +152,49 @@ const FROZEN_V1_SIGNED: SignedMandate = {
     value: "B8Z3LaO_cBHPJukI-kOxwKiYAnA4q_ksAkvP8B63s7_rQZAj906ApO635DN4pt5O4gX49G0xqZJwCd7o422RAQ",
   },
 };
+
+describe("mandate currency", () => {
+  it("v1 mandates normalise to INR", () => {
+    const result = verifyMandate(signMandate({ ...V1_DOC }, privateKeyPem, "k1"), publicKeyPem);
+    expect(result.ok && result.mandate.scope.currency).toBe("INR");
+  });
+
+  it("refuses a v1 mandate that claims any other currency", () => {
+    // v1 amounts are paise by name, so a v1 document in USD can't mean anything.
+    const doc = { ...V1_DOC, scope: { ...V1_DOC.scope, currency: "USD" } } as unknown as MandateDocument;
+    expect(verifyMandate(signMandate(doc, privateKeyPem, "k1"), publicKeyPem)).toEqual({ ok: false, reason: "MALFORMED_DOCUMENT" });
+  });
+
+  it("a v2 mandate keeps the currency it was signed with", () => {
+    const doc: MandateDocumentV2 = { ...BASE_DOC, scope: { ...BASE_DOC.scope, currency: "USD" } };
+    const result = verifyMandate(signMandate(doc, privateKeyPem, "k1"), publicKeyPem);
+    expect(result.ok && result.mandate.scope.currency).toBe("USD");
+  });
+
+  it("refuses a correctly signed v2 mandate in an unsupported currency", () => {
+    const doc = { ...BASE_DOC, scope: { ...BASE_DOC.scope, currency: "JPY" } } as unknown as MandateDocument;
+    expect(verifyMandate(signMandate(doc, privateKeyPem, "k1"), publicKeyPem)).toEqual({ ok: false, reason: "UNSUPPORTED_CURRENCY" });
+  });
+
+  it("refuses a v2 mandate with no currency rather than assuming one", () => {
+    const { currency: _dropped, ...scope } = BASE_DOC.scope;
+    const doc = { ...BASE_DOC, scope } as unknown as MandateDocument;
+    expect(verifyMandate(signMandate(doc, privateKeyPem, "k1"), publicKeyPem)).toEqual({ ok: false, reason: "UNSUPPORTED_CURRENCY" });
+  });
+
+  it("checks the signature before looking at the currency", () => {
+    const doc = { ...BASE_DOC, scope: { ...BASE_DOC.scope, currency: "JPY" } } as unknown as MandateDocument;
+    const other = generateKeypair();
+    expect(verifyMandate(signMandate(doc, other.privateKeyPem, "k1"), publicKeyPem)).toEqual({ ok: false, reason: "SIGNATURE_INVALID" });
+  });
+
+  it("names the right reason code for each verify failure", () => {
+    expect(verifyFailureCode("UNSUPPORTED_CURRENCY")).toBe("AMOUNT_INVALID");
+    expect(verifyFailureCode("SIGNATURE_INVALID")).toBe("MANDATE_SIGNATURE_INVALID");
+    expect(verifyFailureCode("UNSUPPORTED_ALG")).toBe("MANDATE_SIGNATURE_INVALID");
+    expect(verifyFailureCode("MALFORMED_DOCUMENT")).toBe("MANDATE_SIGNATURE_INVALID");
+  });
+});
 
 describe("mandate schema versions", () => {
   it("verifies a v1 mandate signed before the rename, hydrated to minor units", () => {

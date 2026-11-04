@@ -31,7 +31,7 @@ beforeEach(async () => {
   await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record, approval RESTART IDENTITY`;
   await prisma.$executeRaw`DELETE FROM catalog_item WHERE merchant_id = ${MERCHANT}`;
   await prisma.catalogItem.create({
-    data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", priceMinor: 5000n, stockQty: 10 },
+    data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", currency: "INR", priceMinor: 5000n, stockQty: 10 },
   });
 });
 

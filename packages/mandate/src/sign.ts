@@ -5,7 +5,7 @@ import {
   createPublicKey,
   generateKeyPairSync,
 } from "node:crypto";
-import { canonical, minorFromJSON } from "@praman/shared";
+import { canonical, isCurrency, minorFromJSON, type Currency, type DenyCode } from "@praman/shared";
 import type { VerifiedMandate } from "@praman/policy";
 
 /** Everything that did not change between schema versions. */
@@ -13,9 +13,14 @@ interface MandateDocumentCommon {
   readonly mandate_id: string;
   readonly issuer_id: string;
   readonly subject_id: string;
-  readonly scope: { readonly merchant_ids: string[]; readonly categories: string[]; readonly currency: "INR" };
   readonly validity: { readonly not_before: string; readonly not_after: string };
   readonly nonce: string;
+}
+
+interface MandateScope<C extends Currency> {
+  readonly merchant_ids: string[];
+  readonly categories: string[];
+  readonly currency: C;
 }
 
 interface MandateRateLimits {
@@ -31,6 +36,7 @@ interface MandateRateLimits {
  */
 export interface MandateDocumentV1 extends MandateDocumentCommon {
   readonly version: 1;
+  readonly scope: MandateScope<"INR">;
   readonly limits: MandateRateLimits & {
     readonly max_per_txn_paise: string;
     readonly max_total_paise: string;
@@ -40,6 +46,7 @@ export interface MandateDocumentV1 extends MandateDocumentCommon {
 
 export interface MandateDocumentV2 extends MandateDocumentCommon {
   readonly version: 2;
+  readonly scope: MandateScope<Currency>;
   readonly limits: MandateRateLimits & {
     readonly max_per_txn_minor: string;
     readonly max_total_minor: string;
@@ -94,7 +101,27 @@ function readAmountLimits(d: MandateDocument): { maxPerTxn: string; maxTotal: st
   }
 }
 
-export type VerifyFailure = "SIGNATURE_INVALID" | "UNSUPPORTED_ALG" | "MALFORMED_DOCUMENT";
+/**
+ * The signed currency is the only source of currency, so a missing one is never
+ * assumed. A v1 document counts in paise by name, so anything but INR there
+ * can't mean what it says and is malformed. A v2 document in a currency we don't
+ * support is well formed but unusable, which is why it gets its own failure.
+ */
+function readCurrency(d: MandateDocument): Currency | "UNSUPPORTED" {
+  if (d.version === 1 && d.scope.currency !== "INR") throw new TypeError("a v1 mandate can only be in INR");
+  return isCurrency(d.scope.currency) ? d.scope.currency : "UNSUPPORTED";
+}
+
+export type VerifyFailure = "SIGNATURE_INVALID" | "UNSUPPORTED_ALG" | "MALFORMED_DOCUMENT" | "UNSUPPORTED_CURRENCY";
+
+/**
+ * What a caller records when verification fails. An unsupported currency has a
+ * good signature, so calling it MANDATE_SIGNATURE_INVALID would be false: it
+ * gets the same AMOUNT_INVALID that evaluate() gives it.
+ */
+export function verifyFailureCode(reason: VerifyFailure): DenyCode {
+  return reason === "UNSUPPORTED_CURRENCY" ? "AMOUNT_INVALID" : "MANDATE_SIGNATURE_INVALID";
+}
 
 /**
  * Verifies, then hydrates into the policy's VerifiedMandate. The type name is a
@@ -118,6 +145,8 @@ export function verifyMandate(
   try {
     const d = signed.document;
     const amounts = readAmountLimits(d);
+    const currency = readCurrency(d);
+    if (currency === "UNSUPPORTED") return { ok: false, reason: "UNSUPPORTED_CURRENCY" };
 
     const notBefore = new Date(d.validity.not_before);
     const notAfter = new Date(d.validity.not_after);
@@ -134,7 +163,7 @@ export function verifyMandate(
       ok: true,
       mandate: {
         mandate_id: d.mandate_id,
-        scope: { merchant_ids: d.scope.merchant_ids, categories: d.scope.categories, currency: "INR" },
+        scope: { merchant_ids: d.scope.merchant_ids, categories: d.scope.categories, currency },
         limits: {
           max_per_txn_minor: minorFromJSON(amounts.maxPerTxn),
           max_total_minor: minorFromJSON(amounts.maxTotal),

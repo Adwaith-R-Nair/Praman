@@ -5,10 +5,54 @@ import {
   subMinor,
   mulMinor,
   formatINR,
+  formatMoney,
+  isCurrency,
+  currencyFromDb,
+  CURRENCIES,
   minorFromJSON,
   minorFromDb,
   minorFromRazorpay,
 } from "../src/money.js";
+
+describe("Currency", () => {
+  it("supports exactly INR and USD", () => {
+    expect(CURRENCIES).toEqual(["INR", "USD"]);
+  });
+
+  it.each(["INR", "USD"])("recognises %s", (value) => {
+    expect(isCurrency(value)).toBe(true);
+  });
+
+  it.each(["JPY", "inr", "usd", "", " INR", null, undefined, 840])("refuses %s", (value) => {
+    expect(isCurrency(value)).toBe(false);
+  });
+
+  it("reads a database value only if it is a supported currency", () => {
+    expect(currencyFromDb("USD")).toBe("USD");
+    expect(() => currencyFromDb("JPY")).toThrow(TypeError);
+  });
+});
+
+describe("formatMoney", () => {
+  it("renders 50000n INR as ₹500.00 and 1250n USD as $12.50", () => {
+    expect(formatMoney(minor(50000n), "INR")).toBe("₹500.00");
+    expect(formatMoney(minor(1250n), "USD")).toBe("$12.50");
+  });
+
+  it("keeps two decimal places for small amounts", () => {
+    expect(formatMoney(minor(5n), "USD")).toBe("$0.05");
+    expect(formatMoney(minor(0n), "INR")).toBe("₹0.00");
+  });
+
+  it("is exact above the range a float can hold", () => {
+    expect(formatMoney(minor(9007199254740993n), "USD")).toBe("$90071992547409.93");
+  });
+
+  it("rejects a forged negative Minor at the display boundary", () => {
+    // @ts-expect-error - deliberately bypassing minor() to simulate a forged value
+    expect(() => formatMoney(-100n, "USD")).toThrow(RangeError);
+  });
+});
 
 describe("Minor", () => {
   it("rejects negative construction", () => {

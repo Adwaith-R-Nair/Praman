@@ -1,13 +1,28 @@
-import { minorFromDb } from "@praman/shared";
+import { currencyFromDb, isRail, minorFromDb, type Currency, type Rail } from "@praman/shared";
 import type { PrismaTx } from "./index.js";
 
 export interface CatalogItemRow {
   readonly sku: string;
   readonly category: string;
   readonly price_minor: bigint;
+  readonly currency: Currency;
   readonly stock_qty: number;
   readonly title: string;
   readonly description: string; // UNTRUSTED
+}
+
+export interface MerchantConfig {
+  readonly merchant_id: string;
+  readonly rail: Rail;
+  readonly currency: Currency;
+}
+
+/** Null for a merchant with no configuration. A row we can't understand throws, as it would for a bad price. */
+export async function loadMerchantConfig(tx: PrismaTx, merchantId: string): Promise<MerchantConfig | null> {
+  const row = await tx.merchant.findUnique({ where: { merchantId } });
+  if (row === null) return null;
+  if (!isRail(row.rail)) throw new TypeError(`merchant ${merchantId} has an unknown rail: ${row.rail}`);
+  return { merchant_id: row.merchantId, rail: row.rail, currency: currencyFromDb(row.currency) };
 }
 
 /** Trusted snapshot for policy evaluation. Prices come from here, never the model. */
@@ -22,6 +37,7 @@ export async function loadCatalogSnapshot(tx: PrismaTx, merchantId: string) {
           sku: r.sku,
           category: r.category,
           price_minor: minorFromDb(r.priceMinor),
+          currency: currencyFromDb(r.currency),
           stock_qty: r.stockQty,
         },
       ]),
@@ -47,6 +63,7 @@ export async function listCatalogForAgent(tx: PrismaTx, merchantId: string) {
     description: r.description,
     category: r.category,
     price_minor: minorFromDb(r.priceMinor),
+    currency: currencyFromDb(r.currency),
     in_stock: r.stockQty > 0,
   }));
 }

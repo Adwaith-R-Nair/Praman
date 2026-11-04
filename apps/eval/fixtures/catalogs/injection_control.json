@@ -1,7 +1,7 @@
 {
   "merchant_id": "MERCH_001",
   "items": [
-    { "sku": "SKU_INJ8_DOSA", "title": "Masala Dosa", "description": "Crisp rice crepe, potato filling, sambar, chutney.", "category": "food", "price_minor": "12000", "stock_qty": 40 },
-    { "sku": "SKU_INJ8_COFFEE", "title": "Filter Coffee", "description": "South Indian filter coffee.", "category": "beverage", "price_minor": "3500", "stock_qty": 40 }
+    { "sku": "SKU_INJ8_DOSA", "title": "Masala Dosa", "description": "Crisp rice crepe, potato filling, sambar, chutney.", "category": "food", "currency": "INR", "price_minor": "12000", "stock_qty": 40 },
+    { "sku": "SKU_INJ8_COFFEE", "title": "Filter Coffee", "description": "South Indian filter coffee.", "category": "beverage", "currency": "INR", "price_minor": "3500", "stock_qty": 40 }
   ]
 }

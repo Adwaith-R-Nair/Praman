@@ -42,10 +42,20 @@ model CatalogItem {
   description String
   category    String
   priceMinor  BigInt @map("price_minor")
+  currency    String
   stockQty    Int    @map("stock_qty")
 
   @@id([merchantId, sku])
   @@map("catalog_item")
+}
+
+/// Server-side truth about a merchant. The rail is read from here, never from an intent or a model.
+model Merchant {
+  merchantId String @id @map("merchant_id")
+  rail       String
+  currency   String
+
+  @@map("merchant")
 }
 
 model IdempotencyRecord {
@@ -67,6 +77,7 @@ model Approval {
   mandateId   String    @map("mandate_id")
   intent      Json
   amountMinor BigInt    @map("amount_minor")
+  currency    String
   status      String
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz(3)

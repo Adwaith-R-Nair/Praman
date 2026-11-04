@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@praman/db";
 import { append } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
@@ -13,7 +13,7 @@ beforeEach(async () => {
   await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record RESTART IDENTITY`;
   await prisma.$executeRaw`DELETE FROM catalog_item WHERE merchant_id = ${MERCHANT}`;
   await prisma.catalogItem.create({
-    data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", priceMinor: 5000n, stockQty: 10 },
+    data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", currency: "INR", priceMinor: 5000n, stockQty: 10 },
   });
 });
 
@@ -36,6 +36,36 @@ function buildSignedMandate(mandateId: string) {
   };
   return { signed: signMandate(doc, privateKeyPem, "k1"), publicKeyPem };
 }
+
+describe("runIntent with a mandate in an unsupported currency", () => {
+  it("denies AMOUNT_INVALID, not a signature failure, and never calls the executor", async () => {
+    const { privateKeyPem, publicKeyPem } = generateKeypair();
+    const { signed: valid } = buildSignedMandate("mnd_jpy_test");
+    const doc = { ...valid.document, scope: { ...valid.document.scope, currency: "JPY" } } as unknown as MandateDocument;
+    const executor = new SimulatedExecutor();
+    const createOrder = vi.spyOn(executor, "createOrder");
+
+    const result = await runIntent(
+      {
+        intent_id: "int_jpy_1",
+        mandate_id: "mnd_jpy_test",
+        merchant_id: MERCHANT,
+        line_items: [{ sku: SKU, qty: 1 }],
+        requested_at: "2026-09-01T01:00:00.000Z",
+        agent_rationale: "test",
+      },
+      signMandate(doc, privateKeyPem, "k1"),
+      publicKeyPem,
+      executor,
+      new Date("2026-09-01T01:00:00.000Z"),
+      "test-model",
+    );
+
+    expect(result.kind === "DECIDED" && result.internal_reason_code).toBe("AMOUNT_INVALID");
+    expect(result.kind === "DECIDED" && result.order_id).toBeNull();
+    expect(createOrder).not.toHaveBeenCalled();
+  });
+});
 
 describe("runIntent against a revoked mandate", () => {
   it("denies MANDATE_REVOKED for a fresh intent, exactly what scripts/revoke.ts relies on", async () => {

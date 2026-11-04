@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { prisma, loadCatalogSnapshot } from "@praman/db";
 import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, redact, type PurchaseIntent, type AgentVisibleDecision } from "@praman/policy";
-import { verifyMandate, type SignedMandate } from "@praman/mandate";
+import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/mandate";
 import { idempotencyKey, receiptFor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
 import { canonical, minorFromDb, minorToJSON } from "@praman/shared";
 
@@ -73,7 +73,7 @@ export async function runIntent(
 
     const verified = verifyMandate(signed, publicKeyPem);
     if (!verified.ok) {
-      const decision = { kind: "DENY", reason_code: "MANDATE_SIGNATURE_INVALID", detail: verified.reason } as const;
+      const decision = { kind: "DENY" as const, reason_code: verifyFailureCode(verified.reason), detail: verified.reason };
       // claimed_mandate_id, not mandate_id — the signature never proved the
       // caller owns intent.mandate_id, so this entry must not be queryable as
       // belonging to that mandate. See D-xx.
@@ -205,6 +205,7 @@ export async function runIntent(
           mandateId: mandate.mandate_id,
           intent: JSON.parse(canonical(intent)) as object,
           amountMinor: decision.amount_minor,
+          currency: mandate.scope.currency,
           status: "pending",
         },
       });

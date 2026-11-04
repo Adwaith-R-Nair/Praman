@@ -6,8 +6,11 @@ import { config } from "dotenv";
 config({ path: fileURLToPath(new URL("../.env", import.meta.url)) });
 
 const { prisma } = await import("@praman/db");
+const { isCurrency } = await import("@praman/shared");
 
 const MERCHANT_ID = process.argv[2] ?? "MERCH_001";
+const CURRENCY = process.argv[3] ?? "INR";
+if (!isCurrency(CURRENCY)) throw new Error(`Unsupported currency: ${CURRENCY}`);
 
 interface Item {
   sku: string;
@@ -18,7 +21,7 @@ interface Item {
   stockQty: number;
 }
 
-const ITEMS: Item[] = [
+const INR_ITEMS: Item[] = [
   { sku: "SKU_FOOD_001", title: "Veg Thali", description: "Rice, dal, two seasonal sabzis, roti, salad, pickle", category: "food", priceMinor: 18000n, stockQty: 40 },
   { sku: "SKU_FOOD_002", title: "Paneer Butter Masala + Rice", description: "Creamy tomato-paneer curry with steamed basmati", category: "food", priceMinor: 22000n, stockQty: 30 },
   { sku: "SKU_FOOD_003", title: "Chicken Biryani", description: "Hyderabadi-style dum biryani, raita included", category: "food", priceMinor: 26000n, stockQty: 25 },
@@ -74,12 +77,34 @@ const ITEMS: Item[] = [
   },
 ];
 
+// Priced for this currency, not converted from the rupee menu. The cents are
+// real cents: these are the prices PayPal's sandbox will be asked to charge.
+const USD_ITEMS: Item[] = [
+  { sku: "SKU_US_FOOD_001", title: "Veggie Burrito Bowl", description: "Rice, black beans, roasted peppers, salsa", category: "food", priceMinor: 1250n, stockQty: 40 },
+  { sku: "SKU_US_FOOD_002", title: "Chicken Sandwich", description: "Grilled chicken, lettuce, tomato, house sauce", category: "food", priceMinor: 1100n, stockQty: 30 },
+  { sku: "SKU_US_FOOD_003", title: "Margherita Pizza", description: "Tomato, mozzarella, basil, personal size", category: "food", priceMinor: 1400n, stockQty: 25 },
+  { sku: "SKU_US_FOOD_004", title: "Garden Salad", description: "Mixed greens, cucumber, vinaigrette", category: "food", priceMinor: 850n, stockQty: 35 },
+  { sku: "SKU_US_BEV_001", title: "Iced Coffee", description: "Cold brew over ice", category: "beverage", priceMinor: 450n, stockQty: 100 },
+  { sku: "SKU_US_BEV_002", title: "Sparkling Water", description: "Sealed 500ml bottle", category: "beverage", priceMinor: 250n, stockQty: 100 },
+  // Outside any food/beverage mandate's category allowlist, same as SKU_GIFT_500.
+  { sku: "SKU_US_GIFT_100", title: "$100 Gift Card", description: "Digital gift card, redeemable storewide.", category: "giftcard", priceMinor: 10000n, stockQty: 500 },
+];
+
 async function main() {
+  // The rail is server-side configuration, set here and never read from an intent.
+  const rail = CURRENCY === "USD" ? "paypal" : "razorpay";
+  const items = CURRENCY === "USD" ? USD_ITEMS : INR_ITEMS;
+
+  await prisma.merchant.upsert({
+    where: { merchantId: MERCHANT_ID },
+    create: { merchantId: MERCHANT_ID, rail, currency: CURRENCY },
+    update: { rail, currency: CURRENCY },
+  });
   await prisma.catalogItem.deleteMany({ where: { merchantId: MERCHANT_ID } });
   const { count } = await prisma.catalogItem.createMany({
-    data: ITEMS.map((item) => ({ merchantId: MERCHANT_ID, ...item })),
+    data: items.map((item) => ({ merchantId: MERCHANT_ID, currency: CURRENCY, ...item })),
   });
-  console.log(`Seeded ${count} catalog items for merchant ${MERCHANT_ID}`);
+  console.log(`Seeded ${count} ${CURRENCY} catalog items for merchant ${MERCHANT_ID} on ${rail}`);
   await prisma.$disconnect();
 }
 
