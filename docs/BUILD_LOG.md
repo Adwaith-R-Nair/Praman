@@ -1779,3 +1779,26 @@ rather than scattered inline notes.
 Tagged `v1.0-submission` at the exact commit Razorpay's panel evaluated
 (`4b38243`), before `main` moved any further — a fixed reference point
 independent of everything after it.
+## PayPal Hackathon
+
+### Phase P0 · 2026-11-04 · testing PayPal before trusting it
+
+The project is now entered in the PayPal AI Hackathon, from this same repo. The
+design and the plan are in `docs/superpowers/`. Before writing any rail code I
+ran throwaway scripts against the PayPal sandbox, the same habit that found
+D-22's receipt problem on Razorpay. Full table in D-26.
+
+The result worth remembering: reuse a `PayPal-Request-Id` with a different
+amount and PayPal returns 200 with the *original* order. No error. A caller that
+only checks the status code would believe a $99 order exists when PayPal holds
+one for $20. So the rail has to compare what came back, not just whether the
+call worked.
+
+Also learned: INR is refused here, so PayPal merchants run in USD. Orders can't
+be searched or voided, which shaped two designs: reconciliation repeats the
+create call with the same key, and "release" means Praman refuses to capture.
+Saved payment methods and direct cards are refused on this app, so a purchase
+with no buyer present stays conditional.
+
+Still untested because it needs a real buyer or a public URL: capture after
+approval, and webhook delivery. Those get tested when that code is written.

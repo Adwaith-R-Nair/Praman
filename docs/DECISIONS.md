@@ -581,3 +581,65 @@ mandate's ID with bad signatures costs the prober nothing and the mandate
 holder nothing — which is the correct shape, since a denial-rate cap exists
 to stop a legitimate-looking attacker from burning through probes cheaply,
 not to be a free lockout lever for anyone who knows a public ID.
+### D-26 · What PayPal's sandbox actually guarantees · Accepted
+
+D-22 taught this project not to trust a provider's documented behaviour
+without testing it, so PayPal got the same treatment before any rail code was
+written. Tested on 2026-11-04 against Orders v2 in the sandbox, with a merchant
+app created from an Indian developer account. Throwaway scripts, nothing kept
+in the repo but this record.
+
+| Question | Observed |
+|---|---|
+| Does the sandbox work from this account? | Yes. OAuth 200, orders 201. |
+| USD order | 201, status `CREATED`, with `approve` and `capture` links. |
+| INR order | 422 `CURRENCY_NOT_SUPPORTED`. PayPal runs in USD here. |
+| Same `PayPal-Request-Id`, same payload | 200, the same order. The first call is 201. |
+| Same key, **different** payload (99.00 after 20.00) | **200 and the original 20.00 order, with no error.** |
+| Five simultaneous requests, one key | One 201, four 200, one order. Better than the docs' "might fail". |
+| No key, called twice | Two distinct orders. The header really is what dedupes. |
+| Key length | 108 chars works. 109 returns a 500. 200 returns a 422. |
+| Capture before buyer approval | 422 `ORDER_NOT_APPROVED`. No money can move early. |
+| Value `12.5` | Accepted and normalised to `12.50`. |
+| Value `12.500` | 422 `DECIMALS_NOT_SUPPORTED`. |
+| Find an order by `custom_id` | 404. There is no order search. |
+| Transaction search | 403 `NOT_AUTHORIZED` on this app. |
+| Delete or void an unapproved order | 405. Unapproved orders cannot be cancelled by API. |
+| Vault setup token | 403 `NOT_AUTHORIZED` on this app. |
+| Direct card with no buyer | 422 `PAYEE_NOT_ENABLED_FOR_CARD_PROCESSING` on this app. |
+
+**Not yet tested,** because they need a real buyer approval or a public URL:
+capture after approval, capture retry with a repeated key, and real webhook
+delivery. These are tested as those parts get built, and recorded forward.
+
+**Decisions that follow.**
+
+1. **The rail compares what it got back.** The most important row is the
+   different-payload one. If a bug ever reused a key for a new amount, PayPal
+   would answer with a success and an order for the *old* amount. So
+   `paypal-exec` treats any response whose amount or currency differs from the
+   request as a failure, never as success. Praman's keys are derived from the
+   intent, so this should be unreachable. It is checked because it fails
+   silently if it is ever reached.
+2. **Reconciliation repeats the create call with the same key** (design
+   candidate (a)). There is no search to use, and transaction search is
+   unavailable. If the first response was lost, this returns the same order. If
+   the order never existed, or the key has expired from PayPal's store, it
+   creates a new unapproved order, which is harmless: no money moves until
+   Praman's own capture call, and Praman only captures an order it recorded.
+3. **The derived key fits.** It is 64 hex characters, under the 108 limit.
+   `toPayPalValue` always sends two decimals, so normalisation never matters.
+4. **Release cannot rely on PayPal.** Unapproved orders can't be voided by API,
+   so "released" is Praman refusing to capture. D-17's "the gate sits before
+   creation" does not hold on this rail, which is why capture is re-checked.
+5. **No-buyer purchases are not available by default.** Vault and direct card
+   are both refused on this app. Plan Task 14 stays conditional on whether the
+   dashboard can enable them. The demo works without it, with a buyer approving
+   each PayPal checkout.
+6. **The INR row is expected, not a blocker.** A PayPal merchant runs in USD and
+   a Razorpay merchant in INR. One signed mandate does not span rails, as the
+   design already states.
+
+**Limits.** This is one app on one sandbox account on one day. Key retention is
+still undocumented and untested, which decision 2 is built to tolerate. Sandbox
+behaviour may differ from production. Live keys are out of scope for this repo.
