@@ -526,7 +526,7 @@ Let an agent hand a strictly smaller slice of its authority to a sub-agent. The 
 
 1. **Sub-mandates.** Issued by the parent's *subject*, signed with its Phase 14 agent key, carrying `parent_mandate_id`. **Attenuation only:** merchants and categories must be subsets, limits no higher, validity inside the parent's window, and a depth cap of 2.
 2. **Checked twice.** Attenuation is checked at issuance (in `packages/mandate`) **and** at evaluation, because a parent can be revoked or can expire after the child was issued.
-3. **Evaluation design, for the builder to choose and write.**
+3. **Evaluation design, for the builder to choose.**
    - (a) A new `evaluateChain()` in its own file that calls the existing `evaluate()` once per level, with the intent re-bound to that level's `mandate_id` and a derived state that sums spend across the level's subtree. Deny if any level denies, and record which level did. This leaves `evaluate.ts` untouched.
    - (b) Make `evaluate()` itself aware of chains.
    The recommendation is (a). Either way it's decision logic, so rule 2 applies.

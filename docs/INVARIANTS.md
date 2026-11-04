@@ -4,7 +4,7 @@
 
 ## What this project is
 
-Praman is a control plane for agent-initiated payments. It gates, bounds, and records every money action an AI agent takes against a Razorpay test-mode merchant. It is a submission for the Razorpay AI Buildathon 2026 (Track 01). It will be read by payments engineers who will look for exactly the failure modes listed below.
+Praman is a control plane for agent-initiated payments. It gates, bounds, and records every money action an AI agent takes against Razorpay test-mode and PayPal sandbox merchants. It began as a submission for the Razorpay AI Buildathon 2026 (Track 01), and is now also a submission to the PayPal AI Hackathon. It will be read by payments engineers who will look for exactly the failure modes listed below.
 
 ## Hard invariants
 

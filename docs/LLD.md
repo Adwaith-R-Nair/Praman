@@ -121,6 +121,14 @@ CREATE TABLE catalog_item (
   PRIMARY KEY (merchant_id, sku)
 );
 
+-- The rail comes from here and nowhere else (D-32). A currency that differs from
+-- the signed mandate's is refused, never used instead of it (D-35).
+CREATE TABLE merchant (
+  merchant_id   TEXT PRIMARY KEY,
+  rail          TEXT NOT NULL CHECK (rail IN ('razorpay', 'paypal', 'simulated')),
+  currency      TEXT NOT NULL CHECK (currency IN ('INR', 'USD'))
+);
+
 CREATE TABLE ledger_entry (
   seq           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   trace_id      TEXT        NOT NULL,
@@ -147,8 +155,14 @@ CREATE RULE ledger_no_delete AS ON DELETE TO ledger_entry DO INSTEAD NOTHING;
 CREATE TABLE idempotency_record (
   key           CHAR(64) PRIMARY KEY,       -- sha256 hex
   trace_id      TEXT        NOT NULL,
-  outcome       JSONB       NOT NULL,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  status        TEXT        NOT NULL DEFAULT 'pending',  -- pending | succeeded | failed
+  receipt       TEXT,
+  amount_minor  BIGINT,
+  rail          TEXT        NOT NULL,       -- the rail that was called; a reconcile asks only this one
+  currency      TEXT        NOT NULL,       -- what a reconcile asks in (D-32)
+  outcome       JSONB,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE approval (
@@ -157,6 +171,7 @@ CREATE TABLE approval (
   mandate_id    TEXT        NOT NULL,
   intent        JSONB       NOT NULL,
   amount_minor  BIGINT      NOT NULL,
+  currency      TEXT        NOT NULL,       -- with the amount, what the human approved (D-36)
   status        TEXT        NOT NULL,       -- pending | approved | rejected | expired
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   resolved_at   TIMESTAMPTZ
