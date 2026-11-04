@@ -165,6 +165,24 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
     expect(idempotencyRecords).toBe(0);
   });
 
+  it("refuses an approval when the catalog's currency changed since step-up, even at the same number", async () => {
+    // 5000 paise and 5000 cents have the same digits, so the amount check alone
+    // would pass. The human approved ₹50, not $50.
+    const mandateId = "mnd_apr_currency";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_currency");
+
+    await prisma.catalogItem.update({
+      where: { merchantId_sku: { merchantId: MERCHANT, sku: SKU } },
+      data: { currency: "USD" },
+    });
+
+    const result = await resolveApproval(approvalId, "approve", signed, publicKeyPem, new SimulatedExecutor(), new Date("2026-09-01T01:00:00.000Z"));
+
+    expect(result.kind === "REFUSED" && result.reason_code).toBe("CURRENCY_MISMATCH");
+    expect(await prisma.idempotencyRecord.count()).toBe(0);
+  });
+
   it("approving twice returns the cached outcome and calls the executor exactly once", async () => {
     const mandateId = "mnd_apr_twice";
     const { signed, publicKeyPem } = buildSignedMandate(mandateId);
