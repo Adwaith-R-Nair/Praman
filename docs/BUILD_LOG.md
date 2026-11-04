@@ -2349,3 +2349,37 @@ from a mid-task run, since Task 11 regenerates them.
 - `failure_code` strings reach the trace page, and came from PayPal, so they are checked as codes here and still need escaping there.
 
 **For Task 12:** there is no `return_url` in the request, because `CreateOrderRequest` has nowhere to carry one. The sandbox accepts that. A redirect checkout will need one, while a JavaScript SDK checkout may not. The design left that choice open.
+
+### Phase P6 · 2026-11-05 · review fix: a capture that is still happening
+
+A review found a real money bug in the capture code, and it reproduced. Nothing was hurt, because no entrypoint calls this rail yet.
+
+**The bug.** The rule was "if PayPal names a reason for refusing a capture, the capture took no money". PayPal's error reference lists
+two 422s under capture where that isn't true:
+
+- `ORDER_COMPLETION_IN_PROGRESS`: PayPal is still capturing the order.
+- `AUTO_CAPTURE_ENABLED`: the order is being auto-captured.
+
+Both came back as `failed`. So the buyer would be charged a moment later, the ledger would say the capture failed, and the record would
+already be closed. The reconciler only looks at pending records, so it would never find out. An executed payment with no ledger entry
+is the critical bug in invariant 5.
+
+**The fix.** These two now do what `ORDER_ALREADY_CAPTURED` already did: read the order and report what it says. If the capture has
+finished, it's `captured`. If the order shows no finished capture yet, or the read fails, it throws and the record stays pending.
+D-39 has the table. The check also finds the code when PayPal lists it after another one.
+
+**Tests.** 13 new, and 12 failed before the fix: six for each code. The thirteenth pins `PREVIOUS_REQUEST_IN_PROGRESS`, which comes as a
+409 and already threw. 473 tests now, up from 460. No test was changed or removed, and there was no schema or policy change.
+
+**A correction to what I wrote earlier.** The P6 entry and D-38 both say a failed capture took no money, and that was wrong for these
+two codes when I wrote it. Those entries stay as written, and D-38 now has a pointer to D-39.
+
+**Still open, worth your look:**
+
+- The evidence is PayPal's documentation. Neither code has been seen live, because nothing has been captured live.
+- I read the other capture codes in the reference and none says money moved. But a code PayPal adds later that means "under way" would
+  still be read as `failed`. Reading the order after every capture refusal would close that gap, for one extra call per refusal. I left
+  this alone because it goes past the finding, so it's your call.
+
+**For Task 7:** a capture can now throw for a reason that resolves itself in seconds. A record left pending this way has to be checked by
+order id, as the earlier note says, or the reconciler repeats the create and learns nothing about the capture.
