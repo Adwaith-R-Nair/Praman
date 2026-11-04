@@ -2176,3 +2176,85 @@ schema change, and old ledger rows are untouched.
   should report what PayPal said and let `acceptOutcome` decide, or the budget hole comes back.
 - **Task 7 must refuse to capture a `mismatch`.** D-33 explains why the frozen `evaluateCapture` alone isn't enough.
 
+
+### Phase P5 · 2026-11-05 · review fixes: approvals, the fold, reconcile and the gate
+
+Independent reviewers left six findings open on Tasks 1 to 5. Each one was checked against the code, and every
+code finding got a test that failed first. All of them turned out to be real. D-34, D-35 and D-36 have the reasoning.
+The sections below say what could go wrong, not just what changed.
+
+**1. A rupee approval could pay in dollars.** `approval.currency` was written and never read. Walk it through: a
+human approves 5000 INR. The mandate is re-signed with the same id in USD, and the merchant and catalog move to USD.
+Before this fix the re-check passed, because the digits still said 5000, and the executor was called with 5000 USD. Now the
+approval's currency is compared with the mandate's first, and it refuses with `CURRENCY_MISMATCH`. A test also walks
+a USD purchase through approval, and another through reconcile, because neither path had one.
+
+**2. Approvals, in three parts.**
+
+- *The refusal wasn't recorded.* A repriced purchase returned `AMOUNT_CHANGED_SINCE_APPROVAL`, while the only ledger
+  row said the re-check had passed. The check now runs before that row is written, so the row names the refusal, and
+  the trace page and dispute bundle show it with no change of their own.
+- *The status was read before the lock.* Two callers could both read `pending`. The test holds the lock itself, so
+  this is deterministic. Before the fix, a reject waiting behind an approve wrote `rejected` over a call that was under way, and
+  an approve waiting behind a reject went on to call the rail. Now the first read only finds the lock, and the status
+  is read again under it.
+- *A bad signature could change the status.* It turned any row to `rejected` with no ledger row, including an
+  `approved` one whose money had moved. While testing this I found another mandate's valid signature did the same
+  thing through `evaluate()`, which the reviewers hadn't listed. Now anyone who hasn't proved they hold this mandate
+  changes nothing, and the attempt is recorded as a claim, as D-25 does in `runIntent`.
+
+**3. Two orders on one key counted as one.** D-22 says Razorpay doesn't enforce receipts, so a retry can leave two real
+orders. `deriveState` grouped by key alone, so the second was free. Now the key groups rows, and the order id says which order each is
+about:
+
+| Rows on one key | Budget |
+|---|---|
+| `created` order_A, `created` order_A (reconciler racing T2) | counted once |
+| `created` order_A, `created` order_B | both counted |
+| `created` with no order id, twice (old rows) | counted once, as before |
+
+Old rows behave as before, and a read-only query on the dev ledger found 30 outcome rows and no key with two
+order ids, so its numbers don't move.
+
+**4. A reconcile could answer from the wrong place.** Two separate bugs, in two commits:
+
+- It took mandate, merchant and currency from the first rows on the trace. A trace id comes from the intent id, and two
+  mandates can propose the same one, so an order could be charged to the wrong mandate. In the failing test, a USD record's
+  outcome landed on an INR mandate. It now finds the intent by idempotency key, and the currency comes from the record.
+- `route(rec.rail)` wasn't checked. With `routeAllTo`, a simulator asked about a PayPal order says "not found", which
+  writes `failed`, and the real order stops holding budget. Now a router handing back another rail leaves the record
+  pending. No production caller does this today, since only tests and evals use `routeAllTo`, and they don't reconcile.
+
+The one pending record on the dev database has the key on its intent row, so it is still reachable.
+
+**5. A merchant's currency was never compared.** D-29 and the design both claimed it was. The gate from D-32 now compares it with
+the mandate's and denies `CURRENCY_MISMATCH`, and `packages/policy` wasn't touched. D-35 corrects the claim, and D-29 and D-32 gain `Status:`
+pointers.
+
+**6. Small docs.** The roadmap no longer says the builder must write the chain evaluator. `INVARIANTS.md` names both rails and
+hackathons. The LLD schema has `approval.currency`, the `merchant` table, and the real `idempotency_record` columns, which
+went beyond what was asked because a reader of the old table couldn't have followed the reconcile fix. Plan Task 6's test
+now follows D-33, and Task 7 gained a note on `mismatch` and `order_id`. The `_paise` transition clause from Task 1
+was already gone. Task 2 removed it, so nothing needed changing there.
+
+**A slip in the history, again.** Commit `c8fbc86` (the fold) broke three Layer 1 eval cases. The eval seed gave every row
+its own order id, so one order at two stages read as two orders. The done-check doesn't run Layer 1, though CI does, so
+nothing stopped the commit. I noticed on the next run of the eval, fixed the seed in `898e88c`, and ran Layer 1 before every
+later commit. The expected results in the corpus didn't change. It's left visible rather than rewritten. Layer 1 belongs in the done-check.
+
+**Tests I changed, not just added.** Three tests in `run-intent.test.ts` had a USD mandate buying from a merchant row in
+INR, which was finding 5 sitting in a fixture. Their setup now makes the merchant USD, and no assertion moved.
+
+**Checks.** 350 tests in 28 files, up from 320. Layer 1 is 46 of 46. No schema change, no policy change, and no ledger row
+touched.
+
+**Worth checking:**
+
+- **A bad signature no longer rejects a pending approval.** That was a choice, and D-36 says why. A mandate that really is
+  broken leaves its approval pending until the 15 minutes pass, and it can't execute during that time.
+- **A currency change at approval is `CURRENCY_MISMATCH`, not `AMOUNT_CHANGED_SINCE_APPROVAL`.** Either could be argued. I
+  followed D-31's order.
+- **A `reject` still needs no proof of anything.** Fine while `pnpm approve` is the only caller. It isn't fine for a public
+  page, so the hosted demo has to handle it.
+- **Task 7 must write `order_id` on capture and release rows.** Without one, a release can't free the right order on a key
+  that has two.

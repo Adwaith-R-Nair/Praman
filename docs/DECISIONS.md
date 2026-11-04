@@ -1122,6 +1122,8 @@ the right order on a key that has two.
 
 ### D-35 · A merchant in another currency is refused · Accepted
 
+Status: the remark that these columns are edited by hand in a demo is not something the repo shows. The reasoning holds without it.
+
 Corrects D-29, which says `merchant.currency` "can only ever disagree into a refusal, because each of its items still
 has to match the mandate", and the design, which says a merchant whose currency differs from the mandate's is denied.
 Neither was true. Nothing compared `merchant.currency` to anything, as D-32's last paragraph admits. A merchant row in
