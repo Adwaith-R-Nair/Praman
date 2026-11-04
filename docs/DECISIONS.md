@@ -491,6 +491,8 @@ own existence doesn't answer.
 
 ### D-24 · Approval satisfies only the step-up gate; everything else is re-checked live · Accepted
 
+Status: D-36 adds the currency to what an approval is bound to, and says who can change one.
+
 A `STEP_UP` persists a pending `Approval` row instead of executing. Resolving
 it — `resolveApproval()` — does not execute the stored intent on a bare
 "approved" verdict. Approval satisfies **only** the condition that produced
@@ -1146,3 +1148,45 @@ together. A check that holds because one script behaves is not a check, and thes
 
 **Consequence.** Three tests had a USD mandate buying from a merchant row in INR. That was the gap itself, in a fixture.
 They now configure the merchant as USD, and their assertions didn't change.
+
+### D-36 · What an approval is bound to, and who can change it · Accepted
+
+Found in independent review of Tasks 3 and 5, and each part reproduced with a failing test before fixing. These are
+an implementer's decisions for the builder to check. Four things were wrong with `resolveApproval`:
+
+1. `approval.currency` was written and never read. A mandate re-signed with the same id in USD, with the merchant and
+   catalog moved to USD, got past a rupee approval at the same digits, and money moved.
+2. `AMOUNT_CHANGED_SINCE_APPROVAL` was returned to the caller, while the ledger said the re-check had passed.
+3. The status was read before the lock. A reject waiting behind an approve still saw `pending`, and wrote `rejected`
+   over a call that was already under way. An approve waiting behind a reject went on to call the rail.
+4. A failed `verifyMandate` turned the row to `rejected` whatever its status, with no ledger row, including an
+   `approved` one whose money had moved. Another mandate's valid signature could do the same through `evaluate()`.
+
+**An approval is for an amount in a currency.** The mandate's currency is compared with `approval.currency`, and a
+difference is `CURRENCY_MISMATCH`. It comes before the amount, because D-31 gives the same order: amounts in two
+currencies can't be compared. `AMOUNT_CHANGED_SINCE_APPROVAL` would say the figure moved, and it hadn't.
+
+**Both refusals are decided before anything is recorded.** So there is one `step_up_resolved` row, carrying
+`revalidated_kind: DENY`, the code and a `detail`. The trace page and the dispute bundle already read those fields, so
+they show the right answer with no change of their own. Old rows from this path still say the re-check passed, and
+aren't rewritten. They stay readable as a step-up with no outcome.
+
+**It doesn't count toward the denial-rate cap.** A merchant repricing isn't an agent probing the policy (D-20), and the
+other denials at approval were never counted either.
+
+**The status is read twice.** The first read only finds which lock to take, since `mandate_id` never changes. The status
+is read again under the lock. Postgres's default isolation sees what the last lock holder committed.
+
+**A caller who hasn't proved they hold the mandate changes nothing.** That covers a bad signature and a good signature
+on a different mandate, which is `MANDATE_SUBJECT_MISMATCH`. The status stays as it was, and the attempt is a `decision`
+row under `claimed_mandate_id`, the shape D-25 gives `runIntent`. So it is on the trace and isn't counted against the
+mandate.
+
+**Rejected: flipping only a pending row, and writing a ledger row for it.** It stops the false `rejected` on money that
+moved. It still lets anyone who has an approval id and a bad signature kill a real approval, which is the lockout D-25
+closed for denials. The cost of what was chosen: a mandate that really is broken leaves its approval pending until the
+15 minutes run out, and it can't execute in that time anyway.
+
+**Limits.** A `reject` verdict is still accepted without any mandate check, as it always was. The only callers are the
+issuer's CLI scripts, so that is fine today. A public approval endpoint would have to prove who is asking. The hosted
+demo needs to deal with this in Task 12 or 13.
