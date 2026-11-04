@@ -2352,6 +2352,8 @@ from a mid-task run, since Task 11 regenerates them.
 
 ### Phase P6 · 2026-11-05 · review fix: a capture that is still happening
 
+Status: "resolves itself in seconds" in the Task 7 note is a guess. PayPal doesn't say how long a capture under way takes, and none has been seen live.
+
 A review found a real money bug in the capture code, and it reproduced. Nothing was hurt, because no entrypoint calls this rail yet.
 
 **The bug.** The rule was "if PayPal names a reason for refusing a capture, the capture took no money". PayPal's error reference lists

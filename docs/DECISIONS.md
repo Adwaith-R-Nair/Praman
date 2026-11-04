@@ -1311,6 +1311,8 @@ get `DUPLICATE_INVOICE_ID` at capture, which is the safe side.
 
 ### D-39 · A capture PayPal says is under way isn't a failed capture · Accepted
 
+Status: "the capture has often finished by the time PayPal answers" is a guess, since PayPal doesn't say how long this takes and nothing has been captured live. The case for reading first is only that it can report a finished capture sooner. The table also leaves out a `VOIDED` order, which is reported as `failed`, `PAYPAL_ORDER_VOIDED`.
+
 An implementer's decision for the builder to check, after a review found the bug in D-38. D-38 treated every named refusal on a
 capture as "this capture took no money", with one exception, `ORDER_ALREADY_CAPTURED`. PayPal's Orders v2 error reference lists two
 more 422s under capture that don't fit that reading:
