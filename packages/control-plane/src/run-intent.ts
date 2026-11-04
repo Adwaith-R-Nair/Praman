@@ -3,12 +3,13 @@ import { prisma, loadCatalogSnapshot } from "@praman/db";
 import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, redact, type PurchaseIntent, type AgentVisibleDecision } from "@praman/policy";
 import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/mandate";
-import { idempotencyKey, receiptFor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
+import { acceptOutcome, idempotencyKey, receiptFor, type ExecOutcome, type ExecutorRouter } from "@praman/exec-core";
 import { canonical, minorFromDb, minorToJSON } from "@praman/shared";
+import { gateOnRail, routeMerchant } from "./route-merchant.js";
 
 /** Shared with resolve-approval.ts — the same mandate must serialise through the same lock regardless of which path is mutating its state. */
 export const MANDATE_LOCK_NS = 42;
-/** Below this age, findByReceipt may not yet see a just-created order. See D-22. */
+/** Below this age, findOrder may not yet see a just-created order. See D-22. */
 export const RECONCILE_MIN_AGE_MS = 60_000;
 
 export type RunResult =
@@ -22,6 +23,8 @@ export type RunResult =
       readonly order_status: ExecOutcome["status"] | null;
       /** Set only on a fresh STEP_UP — pass to resolveApproval() to approve or reject. */
       readonly approval_id: string | null;
+      /** Set when the rail has a checkout: where the buyer goes to approve the order. */
+      readonly approve_url: string | null;
     }
   | {
       readonly kind: "IN_FLIGHT";
@@ -30,16 +33,16 @@ export type RunResult =
       readonly detail: string;
     };
 
-/** Reads a settled idempotency record's cached order id out of its JSON outcome. */
-function parseCachedOutcome(outcome: unknown, key: string): { orderId: string; status: ExecOutcome["status"] } {
+/** Reads a settled idempotency record's cached order out of its JSON outcome. Rows from before rails have no approve_url. */
+export function parseCachedOutcome(outcome: unknown, key: string): { orderId: string; status: ExecOutcome["status"]; approveUrl: string | null } {
   if (outcome === null || typeof outcome !== "object" || !("order_id" in outcome) || !("status" in outcome)) {
     throw new TypeError(`idempotency record ${key} is succeeded but its outcome is malformed`);
   }
-  const raw = outcome as { order_id: unknown; status: unknown };
+  const raw = outcome as { order_id: unknown; status: unknown; approve_url?: unknown };
   if (raw.status !== "created" && raw.status !== "captured" && raw.status !== "failed") {
     throw new TypeError(`idempotency record ${key} has an unrecognised cached status: ${String(raw.status)}`);
   }
-  return { orderId: String(raw.order_id), status: raw.status };
+  return { orderId: String(raw.order_id), status: raw.status, approveUrl: typeof raw.approve_url === "string" ? raw.approve_url : null };
 }
 
 /**
@@ -53,7 +56,7 @@ export async function runIntent(
   intent: PurchaseIntent,
   signed: SignedMandate,
   publicKeyPem: string,
-  executor: Executor,
+  route: ExecutorRouter,
   now: Date,
   /**
    * Which model proposed this intent. Not part of PurchaseIntent itself —
@@ -94,6 +97,7 @@ export async function runIntent(
           order_id: null,
           order_status: null,
           approval_id: null,
+          approve_url: null,
         },
       };
     }
@@ -126,6 +130,7 @@ export async function runIntent(
           order_id: null,
           order_status: null,
           approval_id: null,
+          approve_url: null,
         },
       };
     }
@@ -148,6 +153,7 @@ export async function runIntent(
           order_id: cached.orderId,
           order_status: cached.status,
           approval_id: null,
+          approve_url: cached.approveUrl,
         },
       };
     }
@@ -164,9 +170,10 @@ export async function runIntent(
       };
     }
 
-    const [state, catalog] = await Promise.all([
+    const [state, catalog, routed] = await Promise.all([
       deriveState(tx, mandate.mandate_id),
       loadCatalogSnapshot(tx, intent.merchant_id),
+      routeMerchant(tx, intent.merchant_id, route),
     ]);
 
     await append(tx, {
@@ -177,7 +184,8 @@ export async function runIntent(
       payload: { ...intent, mandate_id: mandate.mandate_id, idempotency_key: key, model_id: modelId },
     });
 
-    const decision = evaluate({ intent, mandate, state, catalog, now, idempotency_key: key });
+    const gate = gateOnRail(evaluate({ intent, mandate, state, catalog, now, idempotency_key: key }), routed);
+    const decision = gate.decision;
 
     await append(tx, {
       traceId,
@@ -222,32 +230,35 @@ export async function runIntent(
           order_id: null,
           order_status: null,
           approval_id: approvalId,
+          approve_url: null,
         },
       };
     }
 
-    if (decision.kind === "DENY") {
+    if (gate.executor === null) {
       await maybeCheckpoint(tx, now);
       return {
         go: false as const,
         result: {
           kind: "DECIDED" as const,
           trace_id: traceId,
-          agent_visible: redact(decision),
-          internal_reason_code: decision.reason_code,
+          agent_visible: redact(gate.decision),
+          internal_reason_code: gate.decision.reason_code,
           order_id: null,
           order_status: null,
           approval_id: null,
+          approve_url: null,
         },
       };
     }
 
+    const executor = gate.executor;
     const receipt = receiptFor(key);
 
     // The outbox row. Committed BEFORE any external call, so an orphaned
     // order is always accompanied by a record naming its receipt and amount.
     await tx.idempotencyRecord.create({
-      data: { key, traceId, status: "pending", receipt, amountMinor: decision.amount_minor, outcome: {} },
+      data: { key, traceId, status: "pending", receipt, amountMinor: gate.decision.amount_minor, rail: executor.rail, currency: mandate.scope.currency, outcome: {} },
     });
     await append(tx, {
       traceId,
@@ -256,10 +267,12 @@ export async function runIntent(
       eventType: "api_call",
       payload: {
         mandate_id: mandate.mandate_id,
-        provider: "razorpay",
+        merchant_id: intent.merchant_id,
+        rail: executor.rail,
         operation: "orders.create",
+        idempotency_key: key,
         receipt,
-        amount_minor: minorToJSON(decision.amount_minor),
+        amount_minor: minorToJSON(gate.decision.amount_minor),
         currency: mandate.scope.currency,
         status: "attempted",
       },
@@ -270,9 +283,10 @@ export async function runIntent(
       key,
       receipt,
       mandateId: mandate.mandate_id,
-      amount: decision.amount_minor,
+      executor,
+      amount: gate.decision.amount_minor,
       currency: mandate.scope.currency,
-      decision,
+      decision: gate.decision,
     };
   });
 
@@ -281,7 +295,10 @@ export async function runIntent(
   // ── The external call. Outside any transaction, by necessity. ──
   let outcome: ExecOutcome;
   try {
-    outcome = await executor.createOrder(phase1.amount, phase1.receipt, phase1.currency);
+    outcome = acceptOutcome(
+      await phase1.executor.createOrder({ amount_minor: phase1.amount, currency: phase1.currency, idempotency_key: phase1.key, receipt: phase1.receipt }),
+      phase1.currency,
+    );
   } catch (err) {
     // We do NOT know whether the order was created. Leave the record pending.
     return {
@@ -302,11 +319,13 @@ export async function runIntent(
       eventType: "outcome",
       payload: {
         mandate_id: phase1.mandateId,
+        rail: outcome.rail,
         status: outcome.status,
         order_id: outcome.order_id,
         payment_id: outcome.payment_id,
+        failure_code: outcome.failure_code,
         amount_minor: minorToJSON(outcome.amount_minor),
-        currency: phase1.currency,
+        currency: outcome.currency,
         merchant_id: intent.merchant_id,
         idempotency_key: phase1.key,
       },
@@ -315,7 +334,7 @@ export async function runIntent(
       where: { key: phase1.key },
       data: {
         status: outcome.status === "failed" ? "failed" : "succeeded",
-        outcome: { order_id: outcome.order_id, status: outcome.status },
+        outcome: { order_id: outcome.order_id, status: outcome.status, approve_url: outcome.approve_url },
         updatedAt: new Date(),
       },
     });
@@ -330,5 +349,6 @@ export async function runIntent(
     order_id: outcome.order_id,
     order_status: outcome.status,
     approval_id: null,
+    approve_url: outcome.approve_url,
   };
 }

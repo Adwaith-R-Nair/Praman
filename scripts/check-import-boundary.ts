@@ -9,7 +9,7 @@ import { join } from "node:path";
  * observability-adjacent — including Langfuse, ahead of Phase 10, so it can
  * never be wired in here even by accident.
  */
-const PROTECTED_DIRS = ["packages/policy/src", "packages/ledger/src", "packages/razorpay-exec/src"];
+const PROTECTED_DIRS = ["packages/policy/src", "packages/ledger/src", "packages/exec-core/src", "packages/razorpay-exec/src"];
 const FORBIDDEN = ["@praman/agent-core", "@google/genai", "@anthropic-ai/sdk", "@langfuse/", "@opentelemetry/"];
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));

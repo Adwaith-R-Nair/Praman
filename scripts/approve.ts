@@ -24,17 +24,19 @@ const mandatePath = fileURLToPath(new URL("../mandate.json", import.meta.url));
 const signed = JSON.parse(readFileSync(mandatePath, "utf8")) as SignedMandate;
 
 const { resolveApproval } = await import("@praman/control-plane");
-const { LiveExecutor, SimulatedExecutor } = await import("@praman/razorpay-exec");
+const { routeAllTo, routeByRail, SimulatedExecutor } = await import("@praman/exec-core");
+const { LiveExecutor } = await import("@praman/razorpay-exec");
 const { prisma } = await import("@praman/db");
 
 const live = process.env["PRAMAN_LIVE"] === "1";
-const executor = live
-  ? new LiveExecutor(process.env["RAZORPAY_KEY_ID"] ?? "", process.env["RAZORPAY_KEY_SECRET"] ?? "")
-  : new SimulatedExecutor();
+// Live pays only on the merchant's own rail, and refuses a merchant on any other.
+const route = live
+  ? routeByRail([new LiveExecutor(process.env["RAZORPAY_KEY_ID"] ?? "", process.env["RAZORPAY_KEY_SECRET"] ?? "")])
+  : routeAllTo(new SimulatedExecutor());
 
 console.log(`▸ ${verdict === "approve" ? "approving" : "rejecting"} ${approvalId}${live ? " (LIVE)" : ""}...\n`);
 
-const result = await resolveApproval(approvalId, verdict, signed, publicKeyPem, executor, new Date());
+const result = await resolveApproval(approvalId, verdict, signed, publicKeyPem, route, new Date());
 
 switch (result.kind) {
   case "EXECUTED":

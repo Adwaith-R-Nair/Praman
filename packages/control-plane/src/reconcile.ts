@@ -1,7 +1,7 @@
 import { prisma } from "@praman/db";
 import { append, readCurrency } from "@praman/ledger";
-import { minorFromDb, minorToJSON } from "@praman/shared";
-import type { Executor } from "@praman/razorpay-exec";
+import { isRail, minorFromDb, minorToJSON } from "@praman/shared";
+import { acceptOutcome, type ExecutorRouter } from "@praman/exec-core";
 import { RECONCILE_MIN_AGE_MS } from "./run-intent.js";
 
 /**
@@ -11,8 +11,12 @@ import { RECONCILE_MIN_AGE_MS } from "./run-intent.js";
  * lookup lags creation by seconds, so an early reconcile would see nothing,
  * conclude no order exists, and create a duplicate — the exact double-charge
  * this whole structure exists to prevent. Waiting is the correct behaviour.
+ *
+ * Asks the rail named on the record, which is the one that was called. A record
+ * whose rail has no executor here stays pending, because "I can't ask" is not
+ * "it didn't happen".
  */
-export async function reconcilePending(executor: Executor, now: Date): Promise<number> {
+export async function reconcilePending(route: ExecutorRouter, now: Date): Promise<number> {
   const stale = await prisma.idempotencyRecord.findMany({
     where: { status: "pending", createdAt: { lt: new Date(now.getTime() - RECONCILE_MIN_AGE_MS) } },
   });
@@ -52,7 +56,18 @@ export async function reconcilePending(executor: Executor, now: Date): Promise<n
       if (apiCallRow === null) throw new Error(`no api_call ledger entry found for trace ${rec.traceId}`);
       const currency = readCurrency(apiCallRow.payload as Record<string, unknown>);
 
-      const found = await executor.findByReceipt(receipt);
+      if (!isRail(rec.rail)) throw new TypeError(`record ${rec.key} has an unknown rail: ${rec.rail}`);
+      const executor = route(rec.rail);
+      if (executor === null) throw new Error(`no executor for rail ${rec.rail}`);
+
+      const rawFound = await executor.findOrder({
+        receipt,
+        idempotency_key: rec.key,
+        order_id: null,
+        amount_minor: minorFromDb(amountMinor),
+        currency,
+      });
+      const found = rawFound === null ? null : acceptOutcome(rawFound, currency);
 
       await prisma.$transaction(async (tx) => {
         await append(tx, {
@@ -63,11 +78,13 @@ export async function reconcilePending(executor: Executor, now: Date): Promise<n
           payload: {
             mandate_id: mandateId,
             merchant_id: merchantId,
+            rail: executor.rail,
             status: found ? found.status : "failed",
             order_id: found?.order_id ?? null,
             payment_id: found?.payment_id ?? null,
+            failure_code: found?.failure_code ?? null,
             amount_minor: minorToJSON(minorFromDb(amountMinor)),
-            currency,
+            currency: found?.currency ?? currency,
             idempotency_key: rec.key,
             reconciled: true,
           },
@@ -76,7 +93,7 @@ export async function reconcilePending(executor: Executor, now: Date): Promise<n
           where: { key: rec.key },
           data: {
             status: found && found.status !== "failed" ? "succeeded" : "failed",
-            outcome: found ? { order_id: found.order_id, status: found.status } : {},
+            outcome: found ? { order_id: found.order_id, status: found.status, approve_url: found.approve_url } : {},
             updatedAt: now,
           },
         });

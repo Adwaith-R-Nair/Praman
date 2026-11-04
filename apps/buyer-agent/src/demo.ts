@@ -25,7 +25,8 @@ if (env["LANGFUSE_SECRET_KEY"] && env["LANGFUSE_PUBLIC_KEY"]) {
 }
 
 const { runIntent } = await import("@praman/control-plane");
-const { LiveExecutor, SimulatedExecutor } = await import("@praman/razorpay-exec");
+const { routeAllTo, routeByRail, SimulatedExecutor } = await import("@praman/exec-core");
+const { LiveExecutor } = await import("@praman/razorpay-exec");
 const { formatMoney } = await import("@praman/shared");
 const { GeminiProvider, TracedProvider } = await import("@praman/agent-core");
 const { propagateAttributes, startObservation } = await import("@langfuse/tracing");
@@ -105,9 +106,10 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     agent_rationale: agent.cart.rationale,
   };
 
-  const executor = live
-    ? new LiveExecutor(env["RAZORPAY_KEY_ID"] ?? "", env["RAZORPAY_KEY_SECRET"] ?? "")
-    : new SimulatedExecutor(failWith);
+  // Live pays only on the merchant's own rail, and refuses a merchant on any other.
+  const route = live
+    ? routeByRail([new LiveExecutor(env["RAZORPAY_KEY_ID"] ?? "", env["RAZORPAY_KEY_SECRET"] ?? "")])
+    : routeAllTo(new SimulatedExecutor(failWith));
 
   // Output is the agent-visible decision plus the internal reason code only
   // — RunResult never carries the internal Decision.detail string (that
@@ -115,7 +117,7 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
   // could quote a mandate limit even by accident.
   const result = await propagateAttributes({ tags: ["praman"], metadata: { praman_trace_id: traceId } }, async () => {
     const intentSpan = startObservation("run-intent", { input: intent }, { asType: "span" });
-    const r = await runIntent(intent, signed, publicKeyPem, executor, new Date(), agent.modelId);
+    const r = await runIntent(intent, signed, publicKeyPem, route, new Date(), agent.modelId);
     intentSpan
       .update({
         output: r.kind === "DECIDED" ? { agent_visible: r.agent_visible, internal_reason_code: r.internal_reason_code } : { kind: r.kind, detail: r.detail },

@@ -19,7 +19,8 @@ praman/
 │   ├── shared/        types, Money, Result, canonical.ts, untrusted.ts, reason-codes.ts
 │   ├── policy/        evaluate.ts  ← hand-written up to v1.0-submission, see D-27
 │   ├── ledger/        append.ts, chain.ts, derive.ts, verify.ts
-│   ├── razorpay-exec/ execute.ts, idempotency.ts, reconcile.ts
+│   ├── exec-core/     executor.ts, idempotency.ts, simulated.ts
+│   ├── razorpay-exec/ executor.ts
 │   └── dispute/       bundle.ts
 ├── apps/
 │   ├── control-plane/ Express API
@@ -233,7 +234,7 @@ test("monotone: once budget-denied, identical intent never allows")
 
 ---
 
-## 6. Idempotency & concurrency (`packages/razorpay-exec`)
+## 6. Idempotency & concurrency (`packages/exec-core`)
 
 ```ts
 export const idempotencyKey = (mandateId: string, intent: PurchaseIntent): string =>

@@ -915,3 +915,72 @@ commit and `pnpm lint:policy-freeze` fails if the package differs from it, so th
 PayPal took no policy change is checked rather than asserted. `evaluateCapture()` is written for
 PayPal's flow, but it lands before the freeze, so the honest wording is: adding a currency took a
 small policy change, preparing for a checkout took another, and adding the rail itself took none.
+
+### D-32 · Rail comes from merchant configuration · Accepted
+
+Praman needs to pay on two rails without the control plane caring which. Three things could
+choose the rail: the intent, the mandate, or the server's own record of the merchant. An intent
+is model output, and a model must never reach a rail (`CLAUDE.md`, and the design's anti-goals).
+A mandate is one currency, and says what may be spent, not how a merchant gets paid.
+
+**Decision: the `merchant` table decides. `runIntent`, `resolveApproval` and `reconcilePending`
+take an `ExecutorRouter`, and `@praman/exec-core` holds the rail-neutral `Executor`.** The control
+plane no longer depends on `@praman/razorpay-exec` outside its tests.
+
+**A merchant Praman can't pay is denied, fail closed.** No merchant row, or a rail with no
+executor in this process, returns `MERCHANT_OUT_OF_SCOPE` with no outbox row and no call. There
+is no default rail and no fallback to another one, because paying a PayPal merchant through
+Razorpay would be a silent wrong payment.
+
+- **Policy answers first.** `gateOnRail` looks only at what `evaluate()` already allowed. An
+  expired mandate at an unconfigured merchant still says `MANDATE_EXPIRED`, and the eval corpus's
+  reasons don't change.
+- **A `STEP_UP` is denied too.** A human shouldn't be asked to approve what can't happen. It's
+  checked again at approval, since configuration may have changed in the 15 minutes between.
+- **It lives in the control plane, not `packages/policy`.** That package is frozen (D-31). This
+  also isn't a question of whether the mandate permits the purchase. It can only turn a yes into
+  a no, so it can't widen anything `evaluate()` decided.
+- **The denial counts toward the denial-rate cap.** It's a real `decision` row. An agent that
+  keeps trying a merchant nobody can pay should stop.
+
+**`MERCHANT_OUT_OF_SCOPE`, not a new code.** The closest existing meaning, and the agent's next
+move is the same: this merchant is not available to you. The cost is that the code's name is
+slightly off for a merchant that is in the mandate's scope, so the ledger row's `detail` says
+which case it was, and the docs table and trace-page wording now cover both. If the demo ever
+needs to explain this differently from a scope denial, that's the moment to add a code.
+
+**The rail recorded is the one that was called.** `idempotency_record.rail`, and `rail` on the
+`api_call` and `outcome` events, come from the executor, replacing the hard-coded
+`provider: "razorpay"` that was false for every simulated run. Old rows keep `provider`, and
+nothing reads either field to compute state. In an eval, `routeAllTo` sends a merchant to the
+simulator and the ledger says `simulated`, which is true.
+
+**The rail's currency is checked on return.** D-26 showed that a provider can answer with success
+about something other than what was asked. `acceptOutcome` marks an outcome in another currency
+as `failed`, with `failure_code: "RAIL_CURRENCY_MISMATCH"`, and the ledger keeps the currency the
+rail actually reported. A failed outcome holds no budget. This needs a human to look at it, since
+the order does exist at the rail, and that is why the row keeps its `order_id`. Comparing amounts
+is left to each rail for now: D-26 assigns it to `paypal-exec`, and Razorpay's outcome already
+records the amount it was given.
+
+**Failure codes are executor vocabulary, not reason codes.** `CURRENCY_NOT_SUPPORTED`,
+`CAPTURE_NOT_SUPPORTED`, `RAIL_CURRENCY_MISMATCH` and a rail's own error codes are what a rail
+said about one call, on a purchase policy had already allowed. They stay a string on the outcome
+and don't join the closed enum, which is what Praman's own decisions are made of.
+
+**`LiveExecutor.capture` now refuses, with a typed failure and no call.** The new interface
+captures by order id, and Razorpay's endpoint takes a payment id that this flow never has. Nothing
+called the old method outside tests, and Razorpay auto-captures (D-17). Looking the payment up
+first would be new, untested money-moving code with no caller.
+
+**Rejected: the rail on the signed mandate.** It would let one mandate say which rail, but the
+merchant is what has a rail, and moving a merchant would invalidate every signature that names it.
+
+**Rejected: a default rail for a merchant with no row.** Convenient, and it is how a typo in a
+merchant id would end up as a real order. Existing catalog merchants were given their row by the
+migration instead, as Razorpay in INR, which is the only thing they could have been.
+
+**Consequence.** `merchant.currency` is stored and not yet compared to the mandate. The catalog
+item's currency is what `evaluate()` checks (D-29), and policy is frozen, so a merchant row
+that disagrees with its own catalog isn't caught here. The rail's refusal or `acceptOutcome` is
+the backstop. `seed-catalog` always writes the two together.

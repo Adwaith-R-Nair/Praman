@@ -24,5 +24,5 @@ export function idempotencyKey(mandateId: string, intent: PurchaseIntent): strin
   return createHash("sha256").update(mandateId + "|" + canonicalIntent(intent), "utf8").digest("hex");
 }
 
-/** Razorpay's receipt field caps at 40 chars; 40 hex = 160 bits, ample. */
+/** Razorpay's receipt field caps at 40 chars, so every rail uses this length; 40 hex = 160 bits, ample. */
 export const receiptFor = (key: string): string => key.slice(0, 40);

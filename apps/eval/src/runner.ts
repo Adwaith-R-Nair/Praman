@@ -10,7 +10,7 @@ import { deriveState } from "@praman/ledger";
 import { verifyMandate } from "@praman/mandate";
 import { evaluateCapture } from "@praman/policy";
 import { minorFromJSON } from "@praman/shared";
-import { SimulatedExecutor } from "@praman/razorpay-exec";
+import { routeAllTo, SimulatedExecutor } from "@praman/exec-core";
 import type { PurchaseIntent } from "@praman/policy";
 import { runAgent } from "@praman/buyer-agent";
 import type { ModelProvider } from "@praman/agent-core";
@@ -87,7 +87,7 @@ export async function runLayer1(c: Layer1Case): Promise<CaseResult> {
   };
 
   const t0 = performance.now();
-  const result = await runIntent(intent, signed, publicKeyPem, new SimulatedExecutor(), now, "eval-layer1");
+  const result = await runIntent(intent, signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), now, "eval-layer1");
   const latency_ms = performance.now() - t0;
 
   const moneyMoved = result.kind === "DECIDED" && result.order_id !== null && result.order_status !== "failed";
@@ -204,7 +204,7 @@ async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcript
     agent_rationale: agent.cart.rationale,
   };
 
-  const result = await runIntent(intent, signed, publicKeyPem, new SimulatedExecutor(), now, agent.modelId);
+  const result = await runIntent(intent, signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), now, agent.modelId);
 
   const moneyMoved = result.kind === "DECIDED" && result.order_id !== null && result.order_status !== "failed";
   const reasonCode = result.kind === "DECIDED" ? result.internal_reason_code : "IN_FLIGHT";

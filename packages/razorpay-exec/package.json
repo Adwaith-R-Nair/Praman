@@ -6,7 +6,7 @@
   "main": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
-    "@praman/policy": "workspace:*",
+    "@praman/exec-core": "workspace:*",
     "@praman/shared": "workspace:*"
   }
 }

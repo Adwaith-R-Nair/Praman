@@ -2030,3 +2030,92 @@ That case fails with a message. It doesn't pass quietly.
 **One thing to know.** `eval/report.md` still is not regenerated, and Task 11 does that. There are
 three commits on purpose: the feature, then the freeze that names
 it, then this.
+
+### Phase P5 · 2026-11-05 · one executor shape, and the merchant picks the rail
+
+No PayPal code yet. This makes room for it, and Razorpay behaves as before. D-32 has the reasoning.
+
+**What moved.** A new package, `packages/exec-core`, now holds what every rail shares: the `Executor`
+interface, the idempotency key derivation, and `SimulatedExecutor`. `packages/razorpay-exec` holds only
+`LiveExecutor`. The control plane doesn't import Razorpay any more, except in one test.
+
+**The interface changed shape.** It used to be Razorpay's: `createOrder(amount, receipt, currency)` and
+`findByReceipt(receipt)`. PayPal has no receipt search (D-26), so it's now `createOrder(request)`,
+`findOrder(lookup)` and `capture(request)`. A lookup carries the receipt, the key, the amount and the
+currency, and each rail uses what it can. Razorpay still finds by receipt. PayPal will repeat the create
+call with the same key.
+
+**How a purchase picks a rail now.** Walking one through `runIntent`:
+
+1. T1 loads the merchant's row, which says for example `rail: "razorpay"`.
+2. It asks the router for that rail's executor. The router is passed in by whoever runs Praman. `pnpm demo`
+   with `PRAMAN_LIVE=1` passes one that only knows Razorpay.
+3. `evaluate()` runs exactly as before. If it says yes and there's no executor, that yes becomes a
+   `MERCHANT_OUT_OF_SCOPE` denial, with one `decision` row, no outbox row and no call.
+4. Otherwise the outbox row records `rail` and `currency`, and the executor is called.
+
+Nothing in the intent is read to choose a rail. A test passes `rail: "paypal"` on the intent of a Razorpay
+merchant, and PayPal is never called.
+
+| Merchant | Router | Result |
+|---|---|---|
+| `rail: razorpay` | knows Razorpay | order created on Razorpay |
+| `rail: paypal` | knows only Razorpay | denied, no call |
+| no row | anything | denied, no call |
+| any, with an expired mandate | anything | `MANDATE_EXPIRED`, because policy answers first |
+
+**What the ledger says now.** `api_call` and `outcome` carry `rail`, in place of a `provider: "razorpay"` that
+was false for every simulated run. `api_call` also gains `merchant_id` and `idempotency_key`, which Task 8
+needs. `outcome` gains `failure_code`, so a Razorpay refusal or a decline is on the record instead of being
+dropped. Old rows are untouched.
+
+**The rail's answer is checked.** If an executor returns a different currency from the one requested, the
+outcome is recorded as `failed` with `RAIL_CURRENCY_MISMATCH` and what the rail actually said. It holds no budget.
+The reconciler applies the same check to an order it finds. `LiveExecutor` now reports the currency from
+Razorpay's response, rather than repeating the request, so this check has something real to look at. If that
+response has no usable currency it throws, and the record stays pending, the same as a malformed amount.
+
+**The reconciler asks the rail on the record.** If no executor exists for it, the record stays pending. "I
+can't ask" must not turn into "it didn't happen".
+
+**Migration.** `idempotency_record` gains `rail` and `currency`. Merchants that already had an INR catalog get
+a `razorpay` row, since a merchant with no row is now refused. Applied to both databases. On the dev database:
+
+```
+MERCH_001            razorpay  INR
+MERCH_US_001         paypal    USD   (seeded earlier, left alone)
+SMOKE_APR_MERCH      razorpay  INR
+SMOKE_RESOLVE_MERCH  razorpay  INR
+```
+
+`pnpm verify-ledger` still passes on 242 entries, since the ledger wasn't touched.
+
+**Checks.** 297 tests in 28 files. Layer 1 of the eval is still 46 of 46, with every eval merchant
+on the simulated rail. `pnpm lint:policy-freeze` passes: this took no change to `packages/policy`.
+
+**Where I went beyond the plan, worth checking:**
+
+- **The plan gives no reason code for "no executor".** I reused `MERCHANT_OUT_OF_SCOPE` and widened its wording in
+  `docs/MANDATE_SPEC.md` and on the trace page. The ledger row's `detail` says which case it was. A dedicated code
+  would be more exact, and would need its own corpus fixture. D-32 has the trade-off.
+- **A merchant with no row is denied.** The plan only names a rail with no executor. A default rail seemed worse.
+- **`LiveExecutor.capture` refuses instead of calling.** Task 7 only captures on PayPal, and Razorpay's endpoint
+  needs a payment id this flow doesn't have.
+- **`resolveApproval` also returns `approve_url`.** The plan only says `RunResult`. On PayPal the first purchase
+  always goes through approval, so Task 12 would have needed it. A repeat of the same intent returns the same URL,
+  stored on the outbox row.
+- **The rail and currency columns have no default.** The plan says default `'razorpay'`. The default fills old
+  rows and is dropped, as the currency migration did, so a new record that forgets its rail fails instead of
+  quietly saying Razorpay.
+- **`routeByRail` is an addition** next to the plan's `routeAllTo`, because real entrypoints shouldn't route
+  everything to one executor.
+
+**Not changed, and worth knowing:**
+
+- `merchant.currency` is stored but nothing compares it to the mandate yet. `evaluate()` checks the catalog item, and
+  policy is frozen.
+- A failed outcome doesn't add its key to `deriveState`'s `keys`, so re-sending the *same* `intent_id` after a failure
+  passes `evaluate()` and then hits the primary key on `idempotency_record`, which throws. This was already there. The
+  demo avoids it because a re-plan always has a new `intent_id`. Task 7's capture path should not inherit it.
+- The gitignored `smoke-*.ts` and `scratch.ts` files were updated too, because `pnpm typecheck` covers them. They won't
+  appear in the commit.

@@ -2,15 +2,23 @@ import { prisma, loadCatalogSnapshot } from "@praman/db";
 import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, type PurchaseIntent } from "@praman/policy";
 import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/mandate";
-import { idempotencyKey, receiptFor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
+import { acceptOutcome, idempotencyKey, receiptFor, type ExecOutcome, type ExecutorRouter } from "@praman/exec-core";
 import { minorFromDb, minorToJSON } from "@praman/shared";
-import { MANDATE_LOCK_NS } from "./run-intent.js";
+import { gateOnRail, routeMerchant } from "./route-merchant.js";
+import { MANDATE_LOCK_NS, parseCachedOutcome } from "./run-intent.js";
 
 /** A human's attention is not indefinite authority. */
 export const APPROVAL_TTL_MS = 15 * 60 * 1000;
 
 export type ResolveResult =
-  | { readonly kind: "EXECUTED"; readonly trace_id: string; readonly order_id: string; readonly order_status: ExecOutcome["status"] }
+  | {
+      readonly kind: "EXECUTED";
+      readonly trace_id: string;
+      readonly order_id: string;
+      readonly order_status: ExecOutcome["status"];
+      /** Set when the rail has a checkout: where the buyer goes to approve the order. */
+      readonly approve_url: string | null;
+    }
   | { readonly kind: "REJECTED"; readonly trace_id: string; readonly reason: string }
   | { readonly kind: "REFUSED"; readonly trace_id: string; readonly reason_code: string; readonly detail: string }
   | { readonly kind: "IN_FLIGHT"; readonly trace_id: string; readonly detail: string }
@@ -29,7 +37,7 @@ export async function resolveApproval(
   verdict: "approve" | "reject",
   signed: SignedMandate,
   publicKeyPem: string,
-  executor: Executor,
+  route: ExecutorRouter,
   now: Date,
 ): Promise<ResolveResult> {
   const phase1 = await prisma.$transaction(async (tx) => {
@@ -99,11 +107,11 @@ export async function resolveApproval(
     // short-circuit shape as runIntent.
     const prior = await tx.idempotencyRecord.findUnique({ where: { key } });
     if (prior?.status === "succeeded") {
-      const cached = prior.outcome as { order_id: string; status: ExecOutcome["status"] };
+      const cached = parseCachedOutcome(prior.outcome, key);
       await tx.approval.update({ where: { approvalId }, data: { status: "approved", resolvedAt: now } });
       return {
         go: false as const,
-        result: { kind: "EXECUTED" as const, trace_id: apr.traceId, order_id: cached.order_id, order_status: cached.status },
+        result: { kind: "EXECUTED" as const, trace_id: apr.traceId, order_id: cached.orderId, order_status: cached.status, approve_url: cached.approveUrl },
       };
     }
     if (prior?.status === "pending") {
@@ -113,11 +121,13 @@ export async function resolveApproval(
       };
     }
 
-    const [state, catalog] = await Promise.all([
+    const [state, catalog, routed] = await Promise.all([
       deriveState(tx, mandate.mandate_id),
       loadCatalogSnapshot(tx, intent.merchant_id),
+      routeMerchant(tx, intent.merchant_id, route),
     ]);
-    const decision = evaluate({ intent, mandate, state, catalog, now, idempotency_key: key });
+    const gate = gateOnRail(evaluate({ intent, mandate, state, catalog, now, idempotency_key: key }), routed);
+    const decision = gate.decision;
 
     await append(tx, {
       traceId: apr.traceId,
@@ -133,20 +143,21 @@ export async function resolveApproval(
       },
     });
 
-    if (decision.kind === "DENY") {
+    if (gate.executor === null) {
       await tx.approval.update({ where: { approvalId }, data: { status: "rejected", resolvedAt: now } });
       await maybeCheckpoint(tx, now);
       return {
         go: false as const,
-        result: { kind: "REFUSED" as const, trace_id: apr.traceId, reason_code: decision.reason_code, detail: decision.detail },
+        result: { kind: "REFUSED" as const, trace_id: apr.traceId, reason_code: gate.decision.reason_code, detail: gate.decision.detail },
       };
     }
+    const executor = gate.executor;
 
     // The human approved a specific figure. If the catalog moved
     // between step-up and approval, this is no longer the purchase they saw
     // — not ALLOW vs STEP_UP, which approval is what resolves either way.
     const approvedAmount = minorFromDb(apr.amountMinor);
-    if (decision.amount_minor !== approvedAmount) {
+    if (gate.decision.amount_minor !== approvedAmount) {
       await tx.approval.update({ where: { approvalId }, data: { status: "rejected", resolvedAt: now } });
       await maybeCheckpoint(tx, now);
       return {
@@ -155,14 +166,14 @@ export async function resolveApproval(
           kind: "REFUSED" as const,
           trace_id: apr.traceId,
           reason_code: "AMOUNT_CHANGED_SINCE_APPROVAL",
-          detail: `approved ${approvedAmount.toString()}, now resolves to ${decision.amount_minor.toString()}`,
+          detail: `approved ${approvedAmount.toString()}, now resolves to ${gate.decision.amount_minor.toString()}`,
         },
       };
     }
 
     const receipt = receiptFor(key);
     await tx.idempotencyRecord.create({
-      data: { key, traceId: apr.traceId, status: "pending", receipt, amountMinor: decision.amount_minor, outcome: {} },
+      data: { key, traceId: apr.traceId, status: "pending", receipt, amountMinor: gate.decision.amount_minor, rail: executor.rail, currency: mandate.scope.currency, outcome: {} },
     });
     await append(tx, {
       traceId: apr.traceId,
@@ -171,10 +182,12 @@ export async function resolveApproval(
       eventType: "api_call",
       payload: {
         mandate_id: mandate.mandate_id,
-        provider: "razorpay",
+        merchant_id: intent.merchant_id,
+        rail: executor.rail,
         operation: "orders.create",
+        idempotency_key: key,
         receipt,
-        amount_minor: minorToJSON(decision.amount_minor),
+        amount_minor: minorToJSON(gate.decision.amount_minor),
         currency: mandate.scope.currency,
         status: "attempted",
       },
@@ -188,7 +201,8 @@ export async function resolveApproval(
       traceId: apr.traceId,
       mandateId: mandate.mandate_id,
       merchantId: intent.merchant_id,
-      amount: decision.amount_minor,
+      executor,
+      amount: gate.decision.amount_minor,
       currency: mandate.scope.currency,
     };
   });
@@ -199,7 +213,10 @@ export async function resolveApproval(
   // be inside a transaction, so the outbox record was committed before it.
   let outcome: ExecOutcome;
   try {
-    outcome = await executor.createOrder(phase1.amount, phase1.receipt, phase1.currency);
+    outcome = acceptOutcome(
+      await phase1.executor.createOrder({ amount_minor: phase1.amount, currency: phase1.currency, idempotency_key: phase1.key, receipt: phase1.receipt }),
+      phase1.currency,
+    );
   } catch (err) {
     return { kind: "IN_FLIGHT", trace_id: phase1.traceId, detail: `call failed with unknown outcome: ${String(err)}` };
   }
@@ -213,11 +230,13 @@ export async function resolveApproval(
       eventType: "outcome",
       payload: {
         mandate_id: phase1.mandateId,
+        rail: outcome.rail,
         status: outcome.status,
         order_id: outcome.order_id,
         payment_id: outcome.payment_id,
+        failure_code: outcome.failure_code,
         amount_minor: minorToJSON(outcome.amount_minor),
-        currency: phase1.currency,
+        currency: outcome.currency,
         merchant_id: phase1.merchantId,
         idempotency_key: phase1.key,
       },
@@ -226,12 +245,12 @@ export async function resolveApproval(
       where: { key: phase1.key },
       data: {
         status: outcome.status === "failed" ? "failed" : "succeeded",
-        outcome: { order_id: outcome.order_id, status: outcome.status },
+        outcome: { order_id: outcome.order_id, status: outcome.status, approve_url: outcome.approve_url },
         updatedAt: now,
       },
     });
     await maybeCheckpoint(tx, now);
   });
 
-  return { kind: "EXECUTED", trace_id: phase1.traceId, order_id: outcome.order_id, order_status: outcome.status };
+  return { kind: "EXECUTED", trace_id: phase1.traceId, order_id: outcome.order_id, order_status: outcome.status, approve_url: outcome.approve_url };
 }

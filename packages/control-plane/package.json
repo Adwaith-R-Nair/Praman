@@ -7,10 +7,13 @@
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
     "@praman/db": "workspace:*",
+    "@praman/exec-core": "workspace:*",
     "@praman/ledger": "workspace:*",
     "@praman/mandate": "workspace:*",
     "@praman/policy": "workspace:*",
-    "@praman/razorpay-exec": "workspace:*",
     "@praman/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@praman/razorpay-exec": "workspace:*"
   }
 }

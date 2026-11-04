@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { minor } from "@praman/shared";
+import { minor, type Currency, type Minor } from "@praman/shared";
 import { LiveExecutor } from "../src/executor.js";
+
+const create = (amount: Minor, receipt: string, currency: Currency) => ({ amount_minor: amount, currency, idempotency_key: "key_1", receipt });
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -12,7 +14,7 @@ describe("LiveExecutor currency", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const outcome = await new LiveExecutor("k", "s").createOrder(minor(1250n), "rcpt_usd", "USD");
+    const outcome = await new LiveExecutor("k", "s").createOrder(create(minor(1250n), "rcpt_usd", "USD"));
 
     expect(outcome.status).toBe("failed");
     expect(outcome.failure_code).toBe("CURRENCY_NOT_SUPPORTED");
@@ -21,13 +23,61 @@ describe("LiveExecutor currency", () => {
   });
 
   it("creates an INR order as before", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: "order_1", amount: 50000 }), { status: 200 }));
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: "order_1", amount: 50000, currency: "INR" }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const outcome = await new LiveExecutor("k", "s").createOrder(minor(50000n), "rcpt_inr", "INR");
+    const outcome = await new LiveExecutor("k", "s").createOrder(create(minor(50000n), "rcpt_inr", "INR"));
 
-    expect(outcome).toMatchObject({ order_id: "order_1", status: "created", amount_minor: 50000n });
+    expect(outcome).toMatchObject({ rail: "razorpay", order_id: "order_1", status: "created", amount_minor: 50000n, currency: "INR", approve_url: null });
     const body: unknown = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body).toEqual({ amount: 50000, currency: "INR", receipt: "rcpt_inr" });
+  });
+
+  it("reports the currency Razorpay answered with, not the one it was asked for", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: "order_1", amount: 50000, currency: "USD" }), { status: 200 })));
+
+    const outcome = await new LiveExecutor("k", "s").createOrder(create(minor(50000n), "rcpt_inr", "INR"));
+
+    expect(outcome.currency).toBe("USD");
+  });
+
+  it("throws on a response with no usable currency, so the record stays pending", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: "order_1", amount: 50000 }), { status: 200 })));
+
+    await expect(new LiveExecutor("k", "s").createOrder(create(minor(50000n), "rcpt_inr", "INR"))).rejects.toThrow(TypeError);
+  });
+});
+
+describe("LiveExecutor.findOrder", () => {
+  const lookup = { receipt: "rcpt_inr", idempotency_key: "key_1", order_id: null, amount_minor: minor(50000n), currency: "INR" as const };
+
+  it("looks the order up by receipt", async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response(JSON.stringify({ items: [{ id: "order_1", amount: 50000, currency: "INR", status: "paid" }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await new LiveExecutor("k", "s").findOrder(lookup);
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/orders?receipt=rcpt_inr");
+    expect(outcome).toMatchObject({ rail: "razorpay", order_id: "order_1", status: "captured", currency: "INR" });
+  });
+
+  it("returns null when no order has that receipt", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ items: [] }), { status: 200 })));
+
+    expect(await new LiveExecutor("k", "s").findOrder(lookup)).toBeNull();
+  });
+});
+
+describe("LiveExecutor.capture", () => {
+  it("refuses with a typed failure and never calls Razorpay, which auto-captures (D-17)", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await new LiveExecutor("k", "s").capture({ order_id: "order_1", amount_minor: minor(50000n), currency: "INR", idempotency_key: "key_1" });
+
+    expect(outcome).toMatchObject({ rail: "razorpay", order_id: "order_1", status: "failed", failure_code: "CAPTURE_NOT_SUPPORTED" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

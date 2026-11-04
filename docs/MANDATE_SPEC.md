@@ -152,7 +152,7 @@ Write this function first, on paper, before any other code in the repo.
 | `MANDATE_AMOUNT_EXCEEDED` | DENY | over per-transaction cap |
 | `MANDATE_BUDGET_EXHAUSTED` | DENY | over cumulative cap |
 | `VELOCITY_EXCEEDED` | DENY | too many transactions in window |
-| `MERCHANT_OUT_OF_SCOPE` | DENY | merchant not in allowlist |
+| `MERCHANT_OUT_OF_SCOPE` | DENY | merchant not in allowlist. The control plane also uses it after `evaluate()`, when a merchant has no configuration or its rail has no executor (D-32) |
 | `CATEGORY_OUT_OF_SCOPE` | DENY | SKU category not in allowlist |
 | `SKU_UNKNOWN` | DENY | SKU not in catalog (hallucinated or stale) |
 | `INSUFFICIENT_STOCK` | DENY | requested qty unavailable |

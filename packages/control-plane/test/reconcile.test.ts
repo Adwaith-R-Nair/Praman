@@ -1,10 +1,10 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@praman/db";
 import { append } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
-import { SimulatedExecutor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
-import type { Currency, Minor } from "@praman/shared";
+import { routeAllTo, routeByRail, SimulatedExecutor, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
+import type { Rail } from "@praman/shared";
 import { runIntent, RECONCILE_MIN_AGE_MS } from "../src/run-intent.js";
 import { reconcilePending } from "../src/reconcile.js";
 
@@ -18,22 +18,28 @@ const SKU = "TEST_CRASH_SKU";
  * the exact gap D-22's two-phase restructure exists to close.
  */
 class CrashAfterSuccessExecutor implements Executor {
+  readonly rail = "simulated";
   constructor(private readonly inner: Executor) {}
-  async createOrder(amountMinor: Minor, receipt: string, currency: Currency): Promise<ExecOutcome> {
-    await this.inner.createOrder(amountMinor, receipt, currency);
+  async createOrder(req: CreateOrderRequest): Promise<ExecOutcome> {
+    await this.inner.createOrder(req);
     throw new Error("SIMULATED_CRASH_AFTER_SUCCESS");
   }
-  async findByReceipt(receipt: string) {
-    return this.inner.findByReceipt(receipt);
+  async findOrder(lookup: OrderLookup) {
+    return this.inner.findOrder(lookup);
   }
-  async capture(paymentId: string, amountMinor: Minor) {
-    return this.inner.capture(paymentId, amountMinor);
+  async capture(req: CaptureRequest) {
+    return this.inner.capture(req);
   }
 }
 
 beforeEach(async () => {
   await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record RESTART IDENTITY`;
   await prisma.$executeRaw`DELETE FROM catalog_item WHERE merchant_id = ${MERCHANT}`;
+  await prisma.merchant.upsert({
+    where: { merchantId: MERCHANT },
+    create: { merchantId: MERCHANT, rail: "simulated", currency: "INR" },
+    update: { rail: "simulated", currency: "INR" },
+  });
   await prisma.catalogItem.create({
     data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", currency: "INR", priceMinor: 5000n, stockQty: 10 },
   });
@@ -105,7 +111,7 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
     // the wrong clock entirely.
     const now = new Date();
 
-    const result = await runIntent(intent, signed, publicKeyPem, crashy, now, "test-model");
+    const result = await runIntent(intent, signed, publicKeyPem, routeAllTo(crashy), now, "test-model");
     expect(result.kind).toBe("IN_FLIGHT");
 
     const traceId = `trc_${intent.intent_id}`;
@@ -123,7 +129,7 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
 
     // Reconcile. Uses the plain inner executor — same order/receipt the
     // crashy wrapper already created there.
-    const resolved = await reconcilePending(inner, now);
+    const resolved = await reconcilePending(routeAllTo(inner), now);
     expect(resolved).toBe(1);
 
     const resolvedRecord = await prisma.idempotencyRecord.findFirst({ where: { traceId } });
@@ -160,15 +166,97 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
     const crashy = new CrashAfterSuccessExecutor(inner);
     const now = new Date();
 
-    await runIntent(intent, signed, publicKeyPem, crashy, now, "test-model");
+    await runIntent(intent, signed, publicKeyPem, routeAllTo(crashy), now, "test-model");
 
     // createdAt (stamped by Postgres just now) is only milliseconds old —
     // well within the propagation-lag window. Must not resolve yet.
-    const resolved = await reconcilePending(inner, now);
+    const resolved = await reconcilePending(routeAllTo(inner), now);
     expect(resolved).toBe(0);
 
     const traceId = `trc_${intent.intent_id}`;
     const record = await prisma.idempotencyRecord.findFirst({ where: { traceId } });
     expect(record?.status).toBe("pending");
+  });
+
+  describe("routing", () => {
+    async function crashOnce(mandateId: string, intentId: string, inner: Executor, now: Date) {
+      await seedPriorHistory(mandateId);
+      const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+      const intent: PurchaseIntent = {
+        intent_id: intentId,
+        mandate_id: mandateId,
+        merchant_id: MERCHANT,
+        line_items: [{ sku: SKU, qty: 1 }],
+        requested_at: "2026-08-28T01:00:00.000Z",
+        agent_rationale: "test",
+      };
+      const crashy: Executor = {
+        rail: inner.rail,
+        createOrder: async (req) => {
+          await inner.createOrder(req);
+          throw new Error("SIMULATED_CRASH_AFTER_SUCCESS");
+        },
+        findOrder: (lookup) => inner.findOrder(lookup),
+        capture: (req) => inner.capture(req),
+      };
+      await runIntent(intent, signed, publicKeyPem, routeAllTo(crashy), now, "test-model");
+      const traceId = `trc_${intentId}`;
+      await prisma.$executeRaw`UPDATE idempotency_record SET created_at = ${new Date(now.getTime() - RECONCILE_MIN_AGE_MS - 1000)} WHERE trace_id = ${traceId}`;
+      return traceId;
+    }
+
+    it("asks the rail on the record, with a lookup carrying the key, amount and currency", async () => {
+      const now = new Date();
+      const inner = new SimulatedExecutor();
+      const traceId = await crashOnce("mnd_crash_route", "int_crash_route", inner, now);
+      const findOrder = vi.spyOn(inner, "findOrder");
+      const asked: Rail[] = [];
+
+      const resolved = await reconcilePending((rail) => {
+        asked.push(rail);
+        return inner;
+      }, now);
+
+      const record = await prisma.idempotencyRecord.findFirst({ where: { traceId } });
+      expect(resolved).toBe(1);
+      expect(asked).toEqual(["simulated"]);
+      expect(findOrder).toHaveBeenCalledWith({ receipt: record?.receipt, idempotency_key: record?.key, order_id: null, amount_minor: 5000n, currency: "INR" });
+      const outcome = await prisma.ledgerEntry.findFirst({ where: { traceId, eventType: "outcome" } });
+      expect(outcome?.payload).toMatchObject({ rail: "simulated", reconciled: true });
+    });
+
+    it("leaves the record pending when no executor exists for its rail", async () => {
+      const now = new Date();
+      const traceId = await crashOnce("mnd_crash_no_rail", "int_crash_no_rail", new SimulatedExecutor(), now);
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const resolved = await reconcilePending(routeByRail([]), now);
+
+      error.mockRestore();
+      expect(resolved).toBe(0);
+      expect((await prisma.idempotencyRecord.findFirst({ where: { traceId } }))?.status).toBe("pending");
+      expect(await prisma.ledgerEntry.count({ where: { traceId, eventType: "outcome" } })).toBe(0);
+    });
+
+    it("does not believe a found order in another currency", async () => {
+      const now = new Date();
+      const inner = new SimulatedExecutor();
+      const traceId = await crashOnce("mnd_crash_currency", "int_crash_currency", inner, now);
+      const lying: Executor = {
+        rail: "simulated",
+        createOrder: (req) => inner.createOrder(req),
+        findOrder: async (lookup) => {
+          const found = await inner.findOrder(lookup);
+          return found === null ? null : { ...found, currency: "USD" };
+        },
+        capture: (req) => inner.capture(req),
+      };
+
+      await reconcilePending(routeAllTo(lying), now);
+
+      expect((await prisma.idempotencyRecord.findFirst({ where: { traceId } }))?.status).toBe("failed");
+      const outcome = await prisma.ledgerEntry.findFirst({ where: { traceId, eventType: "outcome" } });
+      expect(outcome?.payload).toMatchObject({ status: "failed", currency: "USD", failure_code: "RAIL_CURRENCY_MISMATCH" });
+    });
   });
 });

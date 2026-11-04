@@ -46,6 +46,7 @@
     "@praman/control-plane": "workspace:*",
     "@praman/db": "workspace:*",
     "@praman/dispute": "workspace:*",
+    "@praman/exec-core": "workspace:*",
     "@praman/ledger": "workspace:*",
     "@praman/mandate": "workspace:*",
     "@praman/razorpay-exec": "workspace:*",

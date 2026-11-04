@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { append } from "@praman/ledger";
 import { generateKeypair, signMandate, type MandateDocument, type SignedMandate } from "@praman/mandate";
-import { idempotencyKey } from "@praman/razorpay-exec";
+import { idempotencyKey } from "@praman/exec-core";
 import { isCurrency, type Currency } from "@praman/shared";
 import type { PurchaseIntent } from "@praman/policy";
 import { prisma } from "./db.js";
@@ -34,7 +34,7 @@ function loadCatalogFixture(name: string): CatalogFixture {
 
 /** Truncates everything a case could have touched. Called before every case. */
 export async function resetTestDb(): Promise<void> {
-  await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record, catalog_item RESTART IDENTITY`;
+  await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record, catalog_item, merchant RESTART IDENTITY`;
 }
 
 function computeDuplicateKey(mandateId: string, c: Layer1Case, ev: SeedEvent): string {
@@ -127,6 +127,10 @@ export async function seedCase(c: Layer1Case | Layer2Case): Promise<SeededCase> 
   const catalog = loadCatalogFixture(c.catalog);
   const catalogsToSeed = [catalog, ...(c.layer === 1 ? (c.extra_catalogs ?? []) : []).map(loadCatalogFixture)];
   for (const cat of catalogsToSeed) {
+    // Every eval merchant is on the simulated rail. Evals never reach a real gateway.
+    await prisma.merchant.create({
+      data: { merchantId: cat.merchant_id, rail: "simulated", currency: cat.items[0]?.currency ?? "INR" },
+    });
     await prisma.catalogItem.createMany({
       data: cat.items.map((i) => ({
         merchantId: cat.merchant_id,

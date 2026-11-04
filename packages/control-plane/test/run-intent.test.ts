@@ -3,16 +3,22 @@ import { prisma } from "@praman/db";
 import { append, deriveState } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
-import { LiveExecutor, SimulatedExecutor } from "@praman/razorpay-exec";
-import type { Currency } from "@praman/shared";
+import { routeAllTo, routeByRail, SimulatedExecutor, type ExecOutcome, type Executor } from "@praman/exec-core";
+import { LiveExecutor } from "@praman/razorpay-exec";
+import type { Currency, Rail } from "@praman/shared";
 import { runIntent } from "../src/run-intent.js";
 
 const MERCHANT = "TEST_REVOKE_MERCH";
 const SKU = "TEST_REVOKE_SKU";
 
 beforeEach(async () => {
-  await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record RESTART IDENTITY`;
+  await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record, approval RESTART IDENTITY`;
   await prisma.$executeRaw`DELETE FROM catalog_item WHERE merchant_id = ${MERCHANT}`;
+  await prisma.merchant.upsert({
+    where: { merchantId: MERCHANT },
+    create: { merchantId: MERCHANT, rail: "simulated", currency: "INR" },
+    update: { rail: "simulated", currency: "INR" },
+  });
   await prisma.catalogItem.create({
     data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", currency: "INR", priceMinor: 5000n, stockQty: 10 },
   });
@@ -57,7 +63,7 @@ describe("runIntent with a mandate in an unsupported currency", () => {
       },
       signMandate(doc, privateKeyPem, "k1"),
       publicKeyPem,
-      executor,
+      routeAllTo(executor),
       new Date("2026-09-01T01:00:00.000Z"),
       "test-model",
     );
@@ -106,7 +112,7 @@ describe("runIntent with a USD mandate", () => {
     await seedTrustedMerchant(mandateId);
     const { signed, publicKeyPem } = buildSignedMandate(mandateId, "USD");
 
-    const result = await runIntent(buildIntent("int_usd_allow", mandateId, USD_SKU), signed, publicKeyPem, new SimulatedExecutor(), NOW, "test-model");
+    const result = await runIntent(buildIntent("int_usd_allow", mandateId, USD_SKU), signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), NOW, "test-model");
 
     expect(result.kind === "DECIDED" && result.agent_visible).toEqual({ kind: "ALLOW", amount_minor: 1250n });
     const rows = await prisma.ledgerEntry.findMany({ where: { traceId: result.trace_id }, orderBy: { seq: "asc" } });
@@ -124,7 +130,7 @@ describe("runIntent with a USD mandate", () => {
     const executor = new SimulatedExecutor();
     const createOrder = vi.spyOn(executor, "createOrder");
 
-    const result = await runIntent(buildIntent("int_usd_mismatch", mandateId, SKU), signed, publicKeyPem, executor, NOW, "test-model");
+    const result = await runIntent(buildIntent("int_usd_mismatch", mandateId, SKU), signed, publicKeyPem, routeAllTo(executor), NOW, "test-model");
 
     expect(result.kind === "DECIDED" && result.agent_visible).toEqual({ kind: "DENY", reason_code: "CURRENCY_MISMATCH" });
     expect(createOrder).not.toHaveBeenCalled();
@@ -132,16 +138,17 @@ describe("runIntent with a USD mandate", () => {
   });
 
   it("a USD purchase on the Razorpay executor fails with nothing charged and nothing spent", async () => {
-    // The gap until rails are routed: without the executor's refusal, this would
-    // go to Razorpay as an INR order for ₹12.50.
+    // A merchant misconfigured onto a rail that can't take its currency. Without
+    // the executor's refusal, this would go to Razorpay as an INR order for ₹12.50.
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetchMock);
     try {
       const mandateId = "mnd_usd_razorpay";
+      await prisma.merchant.update({ where: { merchantId: MERCHANT }, data: { rail: "razorpay" } });
       await seedTrustedMerchant(mandateId);
       const { signed, publicKeyPem } = buildSignedMandate(mandateId, "USD");
 
-      const result = await runIntent(buildIntent("int_usd_razorpay", mandateId, USD_SKU), signed, publicKeyPem, new LiveExecutor("k", "s"), NOW, "test-model");
+      const result = await runIntent(buildIntent("int_usd_razorpay", mandateId, USD_SKU), signed, publicKeyPem, routeByRail([new LiveExecutor("k", "s")]), NOW, "test-model");
 
       expect(result.kind === "DECIDED" && result.order_status).toBe("failed");
       expect(fetchMock).not.toHaveBeenCalled();
@@ -178,7 +185,7 @@ describe("runIntent ledger events", () => {
       },
       signed,
       publicKeyPem,
-      new SimulatedExecutor(),
+      routeAllTo(new SimulatedExecutor()),
       new Date("2026-09-01T01:00:00.000Z"),
       "test-model",
     );
@@ -221,7 +228,7 @@ describe("runIntent against a revoked mandate", () => {
       agent_rationale: "test",
     };
 
-    const result = await runIntent(intent, signed, publicKeyPem, new SimulatedExecutor(), new Date(), "test-model");
+    const result = await runIntent(intent, signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), new Date(), "test-model");
 
     expect(result.kind).toBe("DECIDED");
     if (result.kind !== "DECIDED") throw new Error("unreachable");
@@ -248,13 +255,13 @@ describe("F1: forged-signature intents do not lock out the real mandate holder",
 
     for (let i = 0; i < 5; i++) {
       const forgedIntent: PurchaseIntent = { ...baseIntent, intent_id: `int_forged_${i.toString()}` };
-      const r = await runIntent(forgedIntent, forged, publicKeyPem, new SimulatedExecutor(), new Date(), "test-model");
+      const r = await runIntent(forgedIntent, forged, publicKeyPem, routeAllTo(new SimulatedExecutor()), new Date(), "test-model");
       if (r.kind !== "DECIDED") throw new Error("unreachable");
       expect(r.internal_reason_code).toBe("MANDATE_SIGNATURE_INVALID");
     }
 
     const legitimateIntent: PurchaseIntent = { ...baseIntent, intent_id: "int_legit" };
-    const result = await runIntent(legitimateIntent, signed, publicKeyPem, new SimulatedExecutor(), new Date(), "test-model");
+    const result = await runIntent(legitimateIntent, signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), new Date(), "test-model");
 
     expect(result.kind).toBe("DECIDED");
     if (result.kind !== "DECIDED") throw new Error("unreachable");
@@ -265,5 +272,188 @@ describe("F1: forged-signature intents do not lock out the real mandate holder",
     // requires human approval, unrelated to the lockout bug being tested here.
     expect(result.internal_reason_code).toBe("STEP_UP_FIRST_MERCHANT");
     expect(result.approval_id).not.toBeNull();
+  });
+});
+
+describe("runIntent routing", () => {
+  const NOW = new Date("2026-09-01T01:00:00.000Z");
+
+  function buildIntent(intentId: string, mandateId: string): PurchaseIntent {
+    return {
+      intent_id: intentId,
+      mandate_id: mandateId,
+      merchant_id: MERCHANT,
+      line_items: [{ sku: SKU, qty: 1 }],
+      requested_at: NOW.toISOString(),
+      agent_rationale: "test",
+    };
+  }
+
+  async function seedTrustedMerchant(mandateId: string) {
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: `trc_seed_${mandateId}`,
+        ts: new Date("2026-08-28T00:30:00.000Z"),
+        actor: "praman",
+        eventType: "outcome",
+        payload: { mandate_id: mandateId, status: "captured", order_id: "o", amount_minor: "1000", currency: "INR", merchant_id: MERCHANT, idempotency_key: "seed" },
+      }),
+    );
+  }
+
+  /** A simulated executor wearing another rail's name, standing in for that rail. */
+  function executorOn(rail: Rail, respond?: (outcome: ExecOutcome) => ExecOutcome): Executor {
+    const inner = new SimulatedExecutor();
+    return {
+      rail,
+      createOrder: async (req) => {
+        const outcome = { ...(await inner.createOrder(req)), rail };
+        return respond === undefined ? outcome : respond(outcome);
+      },
+      findOrder: (lookup) => inner.findOrder(lookup),
+      capture: (req) => inner.capture(req),
+    };
+  }
+
+  async function configureMerchant(rail: Rail) {
+    await prisma.merchant.update({ where: { merchantId: MERCHANT }, data: { rail } });
+  }
+
+  it("routes to the rail configured for the merchant, ignoring the intent", async () => {
+    const mandateId = "mnd_route_config";
+    await seedTrustedMerchant(mandateId);
+    await configureMerchant("razorpay");
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const asked: Rail[] = [];
+    const razorpay = executorOn("razorpay");
+    const paypal = executorOn("paypal");
+    const create = vi.spyOn(paypal, "createOrder");
+
+    // An intent cannot pick a rail. If this field were ever read, the order would go to PayPal.
+    const intent = { ...buildIntent("int_route_config", mandateId), rail: "paypal", provider: "paypal" };
+    const result = await runIntent(
+      intent,
+      signed,
+      publicKeyPem,
+      (rail) => {
+        asked.push(rail);
+        return rail === "razorpay" ? razorpay : paypal;
+      },
+      NOW,
+      "test-model",
+    );
+
+    expect(asked).toEqual(["razorpay"]);
+    expect(create).not.toHaveBeenCalled();
+    expect(result.kind === "DECIDED" && result.order_status).toBe("captured");
+  });
+
+  it.each([
+    ["no executor exists for the merchant's rail", "paypal" as const],
+    ["the merchant has no configuration at all", null],
+  ])("denies cleanly with no call when %s", async (_name, rail) => {
+    const mandateId = `mnd_route_none_${String(rail)}`;
+    await seedTrustedMerchant(mandateId);
+    if (rail === null) await prisma.merchant.delete({ where: { merchantId: MERCHANT } });
+    else await configureMerchant(rail);
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const razorpay = executorOn("razorpay");
+    const create = vi.spyOn(razorpay, "createOrder");
+
+    const result = await runIntent(buildIntent(`int_route_none_${String(rail)}`, mandateId), signed, publicKeyPem, routeByRail([razorpay]), NOW, "test-model");
+
+    expect(result.kind === "DECIDED" && result.agent_visible).toEqual({ kind: "DENY", reason_code: "MERCHANT_OUT_OF_SCOPE" });
+    expect(result.kind === "DECIDED" && result.internal_reason_code).toBe("MERCHANT_OUT_OF_SCOPE");
+    expect(create).not.toHaveBeenCalled();
+    expect(await prisma.idempotencyRecord.count({ where: { traceId: result.trace_id } })).toBe(0);
+    const decisions = await prisma.ledgerEntry.findMany({ where: { traceId: result.trace_id, eventType: "decision" } });
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]?.payload).toMatchObject({ kind: "DENY", reason_code: "MERCHANT_OUT_OF_SCOPE" });
+  });
+
+  it("a policy denial is reported as itself, even when the merchant has no executor", async () => {
+    const mandateId = "mnd_route_policy_first";
+    await seedTrustedMerchant(mandateId);
+    await configureMerchant("paypal");
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const intent: PurchaseIntent = { ...buildIntent("int_route_policy_first", mandateId), line_items: [{ sku: "NO_SUCH_SKU", qty: 1 }] };
+
+    const result = await runIntent(intent, signed, publicKeyPem, routeByRail([]), NOW, "test-model");
+
+    expect(result.kind === "DECIDED" && result.internal_reason_code).toBe("SKU_UNKNOWN");
+  });
+
+  it("does not ask a human to approve a purchase no executor can carry out", async () => {
+    const mandateId = "mnd_route_no_stepup";
+    await configureMerchant("paypal");
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+
+    const result = await runIntent(buildIntent("int_route_no_stepup", mandateId), signed, publicKeyPem, routeByRail([]), NOW, "test-model");
+
+    expect(result.kind === "DECIDED" && result.internal_reason_code).toBe("MERCHANT_OUT_OF_SCOPE");
+    expect(result.kind === "DECIDED" && result.approval_id).toBeNull();
+    expect(await prisma.approval.count({ where: { traceId: result.trace_id } })).toBe(0);
+  });
+
+  it("records rail and currency on the api_call and outcome events", async () => {
+    const mandateId = "mnd_route_events";
+    await seedTrustedMerchant(mandateId);
+    await configureMerchant("razorpay");
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+
+    const result = await runIntent(buildIntent("int_route_events", mandateId), signed, publicKeyPem, routeByRail([executorOn("razorpay")]), NOW, "test-model");
+
+    const record = await prisma.idempotencyRecord.findFirst({ where: { traceId: result.trace_id } });
+    expect(record).toMatchObject({ rail: "razorpay", currency: "INR" });
+    const apiCall = await prisma.ledgerEntry.findFirst({ where: { traceId: result.trace_id, eventType: "api_call" } });
+    expect(apiCall?.payload).toMatchObject({ rail: "razorpay", currency: "INR", merchant_id: MERCHANT, idempotency_key: record?.key });
+    expect(apiCall?.payload).not.toHaveProperty("provider");
+    const outcome = await prisma.ledgerEntry.findFirst({ where: { traceId: result.trace_id, eventType: "outcome" } });
+    expect(outcome?.payload).toMatchObject({ rail: "razorpay", currency: "INR", failure_code: null });
+    expect(outcome?.payload).not.toHaveProperty("provider");
+  });
+
+  it("rejects an executor outcome whose currency differs from the request", async () => {
+    const mandateId = "mnd_route_wrong_currency";
+    await seedTrustedMerchant(mandateId);
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const before = await prisma.$transaction((tx) => deriveState(tx, mandateId));
+    const executor = executorOn("simulated", (outcome) => ({ ...outcome, status: "created", currency: "USD" }));
+
+    const result = await runIntent(buildIntent("int_route_wrong_currency", mandateId), signed, publicKeyPem, routeAllTo(executor), NOW, "test-model");
+
+    expect(result.kind === "DECIDED" && result.order_status).toBe("failed");
+    const record = await prisma.idempotencyRecord.findFirst({ where: { traceId: result.trace_id } });
+    expect(record?.status).toBe("failed");
+    const outcome = await prisma.ledgerEntry.findFirst({ where: { traceId: result.trace_id, eventType: "outcome" } });
+    expect(outcome?.payload).toMatchObject({ status: "failed", currency: "USD", failure_code: "RAIL_CURRENCY_MISMATCH" });
+    const after = await prisma.$transaction((tx) => deriveState(tx, mandateId));
+    expect(after.spent_minor).toBe(before.spent_minor);
+  });
+
+  it("hands back the rail's approve_url, and again on a repeat of the same intent", async () => {
+    const mandateId = "mnd_route_approve_url";
+    await seedTrustedMerchant(mandateId);
+    await configureMerchant("paypal");
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approveUrl = "https://sandbox.example.test/checkout?token=1";
+    const paypal = executorOn("paypal", (outcome) => ({ ...outcome, status: "created", payment_id: null, approve_url: approveUrl }));
+    const intent = buildIntent("int_route_approve_url", mandateId);
+
+    const first = await runIntent(intent, signed, publicKeyPem, routeByRail([paypal]), NOW, "test-model");
+    const second = await runIntent(intent, signed, publicKeyPem, routeByRail([paypal]), NOW, "test-model");
+
+    expect(first.kind === "DECIDED" && first.approve_url).toBe(approveUrl);
+    expect(second.kind === "DECIDED" && second.approve_url).toBe(approveUrl);
+  });
+
+  it("has a null approve_url when nothing was attempted", async () => {
+    const mandateId = "mnd_route_no_url";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+
+    const result = await runIntent(buildIntent("int_route_no_url", mandateId), signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), NOW, "test-model");
+
+    expect(result.kind === "DECIDED" && result.agent_visible.kind).toBe("STEP_UP");
+    expect(result.kind === "DECIDED" && result.approve_url).toBeNull();
   });
 });

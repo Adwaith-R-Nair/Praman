@@ -64,6 +64,9 @@ model IdempotencyRecord {
   status      String   @default("pending")
   receipt     String?
   amountMinor BigInt?  @map("amount_minor")
+  /// The rail that was called, so a reconciler asks the same one. Set by every writer; there is no default.
+  rail        String
+  currency    String
   outcome     Json?
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)

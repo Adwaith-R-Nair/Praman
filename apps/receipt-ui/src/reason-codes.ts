@@ -47,7 +47,7 @@ export const REASON_CODE_PLAIN: Record<ReasonCode, string> = {
   MANDATE_AMOUNT_EXCEEDED: "This is over the mandate's per-purchase limit.",
   MANDATE_BUDGET_EXHAUSTED: "This is over the mandate's total budget.",
   VELOCITY_EXCEEDED: "Too many purchases in a short window.",
-  MERCHANT_OUT_OF_SCOPE: "This merchant isn't on the mandate's allowed list.",
+  MERCHANT_OUT_OF_SCOPE: "This merchant isn't on the mandate's allowed list, or Praman has no way to pay it.",
   CATEGORY_OUT_OF_SCOPE: "The cart's category isn't covered by this mandate.",
   SKU_UNKNOWN: "One of the items isn't in this merchant's catalog.",
   INSUFFICIENT_STOCK: "Not enough stock for the quantity requested.",

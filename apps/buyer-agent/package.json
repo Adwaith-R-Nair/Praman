@@ -13,6 +13,7 @@
     "@praman/agent-core": "workspace:*",
     "@praman/control-plane": "workspace:*",
     "@praman/db": "workspace:*",
+    "@praman/exec-core": "workspace:*",
     "@praman/mandate": "workspace:*",
     "@praman/policy": "workspace:*",
     "@praman/razorpay-exec": "workspace:*",

@@ -3,8 +3,7 @@ import { prisma } from "@praman/db";
 import { append } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
-import { SimulatedExecutor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
-import type { Currency, Minor } from "@praman/shared";
+import { routeAllTo, SimulatedExecutor, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
 import { runIntent } from "../src/run-intent.js";
 
 const MERCHANT = "TEST_DUP_MERCH";
@@ -13,22 +12,28 @@ const SKU = "TEST_DUP_SKU";
 /** Counts real calls to createOrder — the actual claim under test. */
 class CountingExecutor implements Executor {
   callCount = 0;
+  readonly rail = "simulated";
   constructor(private readonly inner: Executor) {}
-  async createOrder(amountMinor: Minor, receipt: string, currency: Currency): Promise<ExecOutcome> {
+  async createOrder(req: CreateOrderRequest): Promise<ExecOutcome> {
     this.callCount += 1;
-    return this.inner.createOrder(amountMinor, receipt, currency);
+    return this.inner.createOrder(req);
   }
-  async findByReceipt(receipt: string) {
-    return this.inner.findByReceipt(receipt);
+  async findOrder(lookup: OrderLookup) {
+    return this.inner.findOrder(lookup);
   }
-  async capture(paymentId: string, amountMinor: Minor) {
-    return this.inner.capture(paymentId, amountMinor);
+  async capture(req: CaptureRequest) {
+    return this.inner.capture(req);
   }
 }
 
 beforeEach(async () => {
   await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record RESTART IDENTITY`;
   await prisma.$executeRaw`DELETE FROM catalog_item WHERE merchant_id = ${MERCHANT}`;
+  await prisma.merchant.upsert({
+    where: { merchantId: MERCHANT },
+    create: { merchantId: MERCHANT, rail: "simulated", currency: "INR" },
+    update: { rail: "simulated", currency: "INR" },
+  });
   await prisma.catalogItem.create({
     data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", currency: "INR", priceMinor: 5000n, stockQty: 10 },
   });
@@ -92,8 +97,8 @@ describe("runIntent never issues a second razorpay call for a duplicate intent",
     const executor = new CountingExecutor(new SimulatedExecutor());
     const now = new Date();
 
-    const first = await runIntent(intent, signed, publicKeyPem, executor, now, "test-model");
-    const second = await runIntent(intent, signed, publicKeyPem, executor, now, "test-model");
+    const first = await runIntent(intent, signed, publicKeyPem, routeAllTo(executor), now, "test-model");
+    const second = await runIntent(intent, signed, publicKeyPem, routeAllTo(executor), now, "test-model");
 
     expect(executor.callCount).toBe(1);
     expect(first.kind).toBe("DECIDED");
@@ -118,6 +123,7 @@ describe("runIntent never issues a second razorpay call for a duplicate intent",
     // An executor that never resolves createOrder, simulating call 1 still
     // being in flight (network call sent, no response yet) when call 2 lands.
     class HangingExecutor implements Executor {
+      readonly rail = "simulated";
       callCount = 0;
       async createOrder(): Promise<ExecOutcome> {
         this.callCount += 1;
@@ -125,22 +131,31 @@ describe("runIntent never issues a second razorpay call for a duplicate intent",
           /* never resolves within this test */
         });
       }
-      async findByReceipt(): Promise<ExecOutcome | null> {
+      async findOrder(): Promise<ExecOutcome | null> {
         return null;
       }
-      async capture(paymentId: string, amountMinor: Minor): Promise<ExecOutcome> {
-        return { order_id: "order_x", status: "captured", amount_minor: amountMinor, payment_id: paymentId, failure_code: null };
+      async capture(req: CaptureRequest): Promise<ExecOutcome> {
+        return {
+          rail: "simulated",
+          order_id: req.order_id,
+          status: "captured",
+          amount_minor: req.amount_minor,
+          currency: req.currency,
+          payment_id: "pay_x",
+          approve_url: null,
+          failure_code: null,
+        };
       }
     }
     const executor = new HangingExecutor();
     const now = new Date();
 
     // Fire call 1 but don't await it — it hangs inside createOrder.
-    void runIntent(intent, signed, publicKeyPem, executor, now, "test-model");
+    void runIntent(intent, signed, publicKeyPem, routeAllTo(executor), now, "test-model");
     // Give T1 time to commit its "pending" record before call 2 starts.
     await new Promise((r) => setTimeout(r, 200));
 
-    const second = await runIntent(intent, signed, publicKeyPem, executor, now, "test-model");
+    const second = await runIntent(intent, signed, publicKeyPem, routeAllTo(executor), now, "test-model");
 
     expect(executor.callCount).toBe(1);
     expect(second.kind).toBe("IN_FLIGHT");

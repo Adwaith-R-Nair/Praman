@@ -216,6 +216,9 @@ importers:
       '@praman/dispute':
         specifier: workspace:*
         version: link:packages/dispute
+      '@praman/exec-core':
+        specifier: workspace:*
+        version: link:packages/exec-core
       '@praman/ledger':
         specifier: workspace:*
         version: link:packages/ledger
@@ -283,6 +286,9 @@ importers:
       '@praman/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@praman/exec-core':
+        specifier: workspace:*
+        version: link:../../packages/exec-core
       '@praman/mandate':
         specifier: workspace:*
         version: link:../../packages/mandate
@@ -322,6 +328,9 @@ importers:
       '@praman/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@praman/exec-core':
+        specifier: workspace:*
+        version: link:../../packages/exec-core
       '@praman/ledger':
         specifier: workspace:*
         version: link:../../packages/ledger
@@ -331,9 +340,6 @@ importers:
       '@praman/policy':
         specifier: workspace:*
         version: link:../../packages/policy
-      '@praman/razorpay-exec':
-        specifier: workspace:*
-        version: link:../../packages/razorpay-exec
       '@praman/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -397,6 +403,9 @@ importers:
       '@praman/db':
         specifier: workspace:*
         version: link:../db
+      '@praman/exec-core':
+        specifier: workspace:*
+        version: link:../exec-core
       '@praman/ledger':
         specifier: workspace:*
         version: link:../ledger
@@ -406,12 +415,13 @@ importers:
       '@praman/policy':
         specifier: workspace:*
         version: link:../policy
-      '@praman/razorpay-exec':
-        specifier: workspace:*
-        version: link:../razorpay-exec
       '@praman/shared':
         specifier: workspace:*
         version: link:../shared
+    devDependencies:
+      '@praman/razorpay-exec':
+        specifier: workspace:*
+        version: link:../razorpay-exec
 
   packages/db:
     dependencies:
@@ -433,6 +443,15 @@ importers:
       '@praman/ledger':
         specifier: workspace:*
         version: link:../ledger
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../shared
+
+  packages/exec-core:
+    dependencies:
+      '@praman/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@praman/shared':
         specifier: workspace:*
         version: link:../shared
@@ -463,9 +482,9 @@ importers:
 
   packages/razorpay-exec:
     dependencies:
-      '@praman/policy':
+      '@praman/exec-core':
         specifier: workspace:*
-        version: link:../policy
+        version: link:../exec-core
       '@praman/shared':
         specifier: workspace:*
         version: link:../shared

@@ -3,8 +3,8 @@ import { prisma } from "@praman/db";
 import { append } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument, type SignedMandate } from "@praman/mandate";
-import { SimulatedExecutor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
-import type { Currency, Minor } from "@praman/shared";
+import { routeAllTo, routeByRail, SimulatedExecutor, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
+import type { Rail } from "@praman/shared";
 import { runIntent } from "../src/run-intent.js";
 import { resolveApproval } from "../src/resolve-approval.js";
 
@@ -14,22 +14,28 @@ const SKU = "TEST_APR_SKU";
 /** Counts real calls to createOrder — exactly what "approve twice" is testing. */
 class CountingExecutor implements Executor {
   callCount = 0;
+  readonly rail = "simulated";
   constructor(private readonly inner: Executor) {}
-  async createOrder(amountMinor: Minor, receipt: string, currency: Currency): Promise<ExecOutcome> {
+  async createOrder(req: CreateOrderRequest): Promise<ExecOutcome> {
     this.callCount += 1;
-    return this.inner.createOrder(amountMinor, receipt, currency);
+    return this.inner.createOrder(req);
   }
-  async findByReceipt(receipt: string) {
-    return this.inner.findByReceipt(receipt);
+  async findOrder(lookup: OrderLookup) {
+    return this.inner.findOrder(lookup);
   }
-  async capture(paymentId: string, amountMinor: Minor) {
-    return this.inner.capture(paymentId, amountMinor);
+  async capture(req: CaptureRequest) {
+    return this.inner.capture(req);
   }
 }
 
 beforeEach(async () => {
   await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record, approval RESTART IDENTITY`;
   await prisma.$executeRaw`DELETE FROM catalog_item WHERE merchant_id = ${MERCHANT}`;
+  await prisma.merchant.upsert({
+    where: { merchantId: MERCHANT },
+    create: { merchantId: MERCHANT, rail: "simulated", currency: "INR" },
+    update: { rail: "simulated", currency: "INR" },
+  });
   await prisma.catalogItem.create({
     data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", currency: "INR", priceMinor: 5000n, stockQty: 10 },
   });
@@ -72,7 +78,7 @@ async function stepUp(mandateId: string, signed: SignedMandate, publicKeyPem: st
     buildIntent(mandateId, intentId),
     signed,
     publicKeyPem,
-    new SimulatedExecutor(),
+    routeAllTo(new SimulatedExecutor()),
     new Date("2026-09-01T00:00:00.000Z"),
     "test-model",
   );
@@ -81,6 +87,62 @@ async function stepUp(mandateId: string, signed: SignedMandate, publicKeyPem: st
   }
   return result.approval_id;
 }
+
+describe("resolveApproval routing", () => {
+  it("uses the merchant's rail, and records it", async () => {
+    const mandateId = "mnd_apr_route";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_route");
+    const asked: Rail[] = [];
+
+    const result = await resolveApproval(
+      approvalId,
+      "approve",
+      signed,
+      publicKeyPem,
+      (rail) => {
+        asked.push(rail);
+        return new SimulatedExecutor();
+      },
+      new Date("2026-09-01T01:00:00.000Z"),
+    );
+
+    expect(asked).toEqual(["simulated"]);
+    expect(result).toMatchObject({ kind: "EXECUTED", approve_url: null });
+    const record = await prisma.idempotencyRecord.findFirst({ where: { traceId: result.kind === "EXECUTED" ? result.trace_id : "" } });
+    expect(record).toMatchObject({ rail: "simulated", currency: "INR" });
+  });
+
+  it("refuses with no call when the merchant's rail has no executor by approval time", async () => {
+    const mandateId = "mnd_apr_no_rail";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_no_rail");
+    await prisma.merchant.update({ where: { merchantId: MERCHANT }, data: { rail: "paypal" } });
+
+    const result = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeByRail([]), new Date("2026-09-01T01:00:00.000Z"));
+
+    expect(result).toMatchObject({ kind: "REFUSED", reason_code: "MERCHANT_OUT_OF_SCOPE" });
+    expect(await prisma.idempotencyRecord.count()).toBe(0);
+    expect((await prisma.approval.findUnique({ where: { approvalId } }))?.status).toBe("rejected");
+  });
+
+  it("rejects an outcome whose currency differs from the request", async () => {
+    const mandateId = "mnd_apr_wrong_currency";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_wrong_currency");
+    const inner = new SimulatedExecutor();
+    const executor: Executor = {
+      rail: "simulated",
+      createOrder: async (req) => ({ ...(await inner.createOrder(req)), currency: "USD" }),
+      findOrder: (lookup) => inner.findOrder(lookup),
+      capture: (req) => inner.capture(req),
+    };
+
+    const result = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), new Date("2026-09-01T01:00:00.000Z"));
+
+    expect(result).toMatchObject({ kind: "EXECUTED", order_status: "failed" });
+  });
+});
 
 describe("resolveApproval closes bypasses a naive approve-the-stored-intent would allow", () => {
   it("refuses an approval once the mandate has expired since step-up", async () => {
@@ -95,7 +157,7 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
       "approve",
       signed,
       publicKeyPem,
-      new SimulatedExecutor(),
+      routeAllTo(new SimulatedExecutor()),
       new Date("2026-09-02T00:00:00.000Z"),
     );
 
@@ -127,7 +189,7 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
       "approve",
       signed,
       publicKeyPem,
-      new SimulatedExecutor(),
+      routeAllTo(new SimulatedExecutor()),
       new Date("2026-09-01T01:00:00.000Z"),
     );
 
@@ -153,7 +215,7 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
       "approve",
       signed,
       publicKeyPem,
-      new SimulatedExecutor(),
+      routeAllTo(new SimulatedExecutor()),
       new Date("2026-09-01T01:00:00.000Z"),
     );
 
@@ -177,7 +239,7 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
       data: { currency: "USD" },
     });
 
-    const result = await resolveApproval(approvalId, "approve", signed, publicKeyPem, new SimulatedExecutor(), new Date("2026-09-01T01:00:00.000Z"));
+    const result = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), new Date("2026-09-01T01:00:00.000Z"));
 
     expect(result.kind === "REFUSED" && result.reason_code).toBe("CURRENCY_MISMATCH");
     expect(await prisma.idempotencyRecord.count()).toBe(0);
@@ -191,8 +253,8 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
     const executor = new CountingExecutor(new SimulatedExecutor());
     const now = new Date("2026-09-01T01:00:00.000Z");
 
-    const first = await resolveApproval(approvalId, "approve", signed, publicKeyPem, executor, now);
-    const second = await resolveApproval(approvalId, "approve", signed, publicKeyPem, executor, now);
+    const first = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), now);
+    const second = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), now);
 
     expect(executor.callCount).toBe(1);
     expect(first.kind).toBe("EXECUTED");
@@ -211,7 +273,7 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
       "approve",
       signed,
       publicKeyPem,
-      new SimulatedExecutor(),
+      routeAllTo(new SimulatedExecutor()),
       new Date("2026-09-01T01:00:00.000Z"),
     );
     expect(approved.kind).toBe("EXECUTED");
@@ -220,7 +282,7 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
       buildIntent(mandateId, "int_apr_deadlock_2"),
       signed,
       publicKeyPem,
-      new SimulatedExecutor(),
+      routeAllTo(new SimulatedExecutor()),
       new Date("2026-09-01T02:00:00.000Z"),
       "test-model",
     );
