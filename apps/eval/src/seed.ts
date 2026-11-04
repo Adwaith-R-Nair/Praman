@@ -79,7 +79,9 @@ async function seedEvents(mandateId: string, currency: string, defaultMerchantId
           payload: {
             mandate_id: mandateId,
             status,
-            order_id: `order_SEED_${i.toString()}`,
+            // Rows sharing an order_key are one order at different stages, so
+            // they name one order id. deriveState counts two ids as two orders.
+            order_id: `order_SEED_${ev.order_key ?? i.toString()}`,
             payment_id: status === "captured" ? `pay_SEED_${i.toString()}` : null,
             amount_minor: ev.amount_minor ?? "0",
             currency,
