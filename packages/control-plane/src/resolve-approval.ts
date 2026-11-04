@@ -169,7 +169,7 @@ export async function resolveApproval(
     const [state, catalog, routed] = await Promise.all([
       deriveState(tx, mandate.mandate_id),
       loadCatalogSnapshot(tx, intent.merchant_id),
-      routeMerchant(tx, intent.merchant_id, route),
+      routeMerchant(tx, intent.merchant_id, route, mandate.scope.currency),
     ]);
     const gate = bindToApproval(
       gateOnRail(evaluate({ intent, mandate, state, catalog, now, idempotency_key: key }), routed),

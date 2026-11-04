@@ -102,6 +102,7 @@ describe("runIntent with a USD mandate", () => {
   }
 
   beforeEach(async () => {
+    await prisma.merchant.update({ where: { merchantId: MERCHANT }, data: { currency: "USD" } });
     await prisma.catalogItem.create({
       data: { merchantId: MERCHANT, sku: USD_SKU, title: "t", description: "d", category: "food", currency: "USD", priceMinor: 1250n, stockQty: 10 },
     });
@@ -415,6 +416,61 @@ describe("runIntent routing", () => {
     expect(result.kind === "DECIDED" && result.internal_reason_code).toBe("MERCHANT_OUT_OF_SCOPE");
     expect(result.kind === "DECIDED" && result.approval_id).toBeNull();
     expect(await prisma.approval.count({ where: { traceId: result.trace_id } })).toBe(0);
+  });
+
+  describe("a merchant in another currency", () => {
+    const USD_SKU = "TEST_ROUTE_USD_SKU";
+
+    function usdIntent(intentId: string, mandateId: string): PurchaseIntent {
+      return { ...buildIntent(intentId, mandateId), line_items: [{ sku: USD_SKU, qty: 1 }] };
+    }
+
+    // The merchant row says INR while its catalog lists this item in USD, so
+    // evaluate() has nothing to object to. Only the merchant's currency is wrong.
+    beforeEach(async () => {
+      await prisma.catalogItem.create({
+        data: { merchantId: MERCHANT, sku: USD_SKU, title: "t", description: "d", category: "food", currency: "USD", priceMinor: 1250n, stockQty: 10 },
+      });
+    });
+
+    it("is denied with no call and nothing recorded as attempted", async () => {
+      const mandateId = "mnd_route_merchant_currency";
+      await seedTrustedMerchant(mandateId);
+      const { signed, publicKeyPem } = buildSignedMandate(mandateId, "USD");
+      const executor = executorOn("simulated");
+      const createOrder = vi.spyOn(executor, "createOrder");
+
+      const result = await runIntent(usdIntent("int_route_merchant_currency", mandateId), signed, publicKeyPem, routeAllTo(executor), NOW, "test-model");
+
+      expect(result).toMatchObject({ kind: "DECIDED", internal_reason_code: "CURRENCY_MISMATCH", agent_visible: { kind: "DENY" }, order_id: null });
+      expect(createOrder).not.toHaveBeenCalled();
+      expect(await prisma.idempotencyRecord.count()).toBe(0);
+      const decision = await prisma.ledgerEntry.findFirst({ where: { traceId: "trc_int_route_merchant_currency", eventType: "decision" } });
+      expect(decision?.payload).toMatchObject({ kind: "DENY", reason_code: "CURRENCY_MISMATCH", detail: "merchant TEST_REVOKE_MERCH is in INR, the mandate is in USD" });
+      const state = await prisma.$transaction((tx) => deriveState(tx, mandateId));
+      expect(state.denied_attempts).toHaveLength(1);
+    });
+
+    it("is not offered to a human to approve", async () => {
+      const mandateId = "mnd_route_currency_no_stepup";
+      const { signed, publicKeyPem } = buildSignedMandate(mandateId, "USD");
+
+      const result = await runIntent(usdIntent("int_route_currency_no_stepup", mandateId), signed, publicKeyPem, routeAllTo(executorOn("simulated")), NOW, "test-model");
+
+      expect(result).toMatchObject({ kind: "DECIDED", internal_reason_code: "CURRENCY_MISMATCH", approval_id: null });
+      expect(await prisma.approval.count()).toBe(0);
+    });
+
+    it("doesn't hide what policy said", async () => {
+      const mandateId = "mnd_route_currency_policy_first";
+      await seedTrustedMerchant(mandateId);
+      const { signed, publicKeyPem } = buildSignedMandate(mandateId, "USD");
+      const intent: PurchaseIntent = { ...buildIntent("int_route_currency_policy_first", mandateId), line_items: [{ sku: "NO_SUCH_SKU", qty: 1 }] };
+
+      const result = await runIntent(intent, signed, publicKeyPem, routeAllTo(executorOn("simulated")), NOW, "test-model");
+
+      expect(result.kind === "DECIDED" && result.internal_reason_code).toBe("SKU_UNKNOWN");
+    });
   });
 
   it("records rail and currency on the api_call and outcome events", async () => {

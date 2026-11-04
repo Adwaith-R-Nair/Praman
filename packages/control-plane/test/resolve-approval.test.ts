@@ -509,6 +509,21 @@ describe("an approval is for money in one currency", () => {
     expect(resolved?.payload).toMatchObject({ revalidated_kind: "DENY", revalidated_reason: "CURRENCY_MISMATCH" });
   });
 
+  it("is refused when the merchant has moved to another currency by approval time", async () => {
+    const mandateId = "mnd_apr_merchant_moved";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_merchant_moved");
+    await prisma.merchant.update({ where: { merchantId: MERCHANT }, data: { currency: "USD" } });
+    const executor = new CountingExecutor(new SimulatedExecutor());
+
+    const result = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), NOW);
+
+    expect(result).toMatchObject({ kind: "REFUSED", reason_code: "CURRENCY_MISMATCH" });
+    expect(executor.callCount).toBe(0);
+    expect(await prisma.idempotencyRecord.count()).toBe(0);
+    expect((await prisma.approval.findUnique({ where: { approvalId } }))?.status).toBe("rejected");
+  });
+
   it("approves a USD purchase, and every record of it says USD", async () => {
     const mandateId = "mnd_apr_usd";
     const { privateKeyPem, publicKeyPem } = generateKeypair();

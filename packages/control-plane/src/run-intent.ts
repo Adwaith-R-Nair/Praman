@@ -193,7 +193,7 @@ export async function runIntent(
     const [state, catalog, routed] = await Promise.all([
       deriveState(tx, mandate.mandate_id),
       loadCatalogSnapshot(tx, intent.merchant_id),
-      routeMerchant(tx, intent.merchant_id, route),
+      routeMerchant(tx, intent.merchant_id, route, mandate.scope.currency),
     ]);
 
     await append(tx, {

@@ -159,7 +159,7 @@ Write this function first, on paper, before any other code in the repo.
 | `AMOUNT_INVALID` | DENY | non-positive or absurd resolved amount |
 | `DUPLICATE_INTENT` | DENY | idempotency key already resolved |
 | `AMOUNT_CHANGED_SINCE_APPROVAL` | DENY | catalog price moved between step-up and approval; the human approved a different figure (D-24) |
-| `CURRENCY_MISMATCH` | DENY | a catalog item, or an order at capture, is in a currency other than the mandate's. Nothing is converted (D-29, D-31) |
+| `CURRENCY_MISMATCH` | DENY | a catalog item, or an order at capture, is in a currency other than the mandate's. Nothing is converted (D-29, D-31). The control plane also uses it after `evaluate()`, for a merchant configured in another currency (D-35), and at approval, when the mandate is no longer in the currency the human approved (D-36) |
 | `ORDER_RELEASED` | DENY | capture refused: this order's hold was released after 10 minutes unapproved. Returned only by `evaluateCapture()` (D-30, D-31) |
 
 Every code must appear in at least one eval fixture. A code with no fixture is untested surface. `AMOUNT_CHANGED_SINCE_APPROVAL` is a known gap here — the Layer 1 eval corpus tests `evaluate()` directly and has no seeding path for an approval/resolution cycle yet.
