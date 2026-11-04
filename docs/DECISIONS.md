@@ -1233,6 +1233,8 @@ out of scope.
 
 ### D-38 · How `paypal-exec` sorts PayPal's answers · Accepted
 
+Status: the row saying a named 4xx is `failed`, and the claim that a `failed` capture took no money, were false for two capture codes when written. D-39 corrects them.
+
 An implementer's decisions for the builder to check. The `Executor` contract gives a rail three ways to answer, and getting one
 wrong has a price in money. A false `failed` frees budget for an order that exists. A false "created" sends a buyer to pay
 something Praman can't vouch for. So each answer from PayPal is sorted once, in `client.ts`.
@@ -1306,3 +1308,45 @@ whether a capture key that got a 422 before approval replays that 422 afterwards
 current status or the first answer. The third means a lost capture should be checked by order id, which `findOrder` supports and the reconciler
 doesn't call yet (Task 7). `invoice_id` is the receipt, so if PayPal forgets a key after a capture, a repeat creates a new order that would
 get `DUPLICATE_INVOICE_ID` at capture, which is the safe side.
+
+### D-39 · A capture PayPal says is under way isn't a failed capture · Accepted
+
+An implementer's decision for the builder to check, after a review found the bug in D-38. D-38 treated every named refusal on a
+capture as "this capture took no money", with one exception, `ORDER_ALREADY_CAPTURED`. PayPal's Orders v2 error reference lists two
+more 422s under capture that don't fit that reading:
+
+| Code | PayPal's text |
+|---|---|
+| `ORDER_COMPLETION_IN_PROGRESS` | "PayPal is still in the process of capturing the order on your behalf as instructed. Please try your request again." |
+| `AUTO_CAPTURE_ENABLED` | "This order is being auto-captured. Merchant initiated capture requests are not allowed." |
+
+**What would have gone wrong.** Both came back as `failed`. T2 would append that and close the record. PayPal finishes the capture,
+the buyer is charged, and no `captured` row exists. The reconciler only sweeps pending records, so nothing looks again. That is the
+critical bug in invariant 5. No entrypoint calls this rail yet, so it was reachable only in tests and never ran against a real purchase.
+
+**The decision.** These two are handled like `ORDER_ALREADY_CAPTURED`: `capture` reads the order and reports what it says.
+
+| The order, read back | Reported as |
+|---|---|
+| `COMPLETED`, with a finished capture | `captured` |
+| `COMPLETED`, with a `DECLINED` or `FAILED` capture | `failed`, `PAYPAL_CAPTURE_DECLINED` or `PAYPAL_CAPTURE_FAILED` |
+| `COMPLETED`, with a `PENDING` capture | throw, record stays pending |
+| `CREATED`, `PAYER_ACTION_REQUIRED`, `APPROVED` | throw, record stays pending |
+| The read itself fails or is refused | throw, record stays pending |
+
+**Rejected: throwing straight away.** It would also keep the record pending, but the capture has often finished by the time PayPal
+answers, and reading says so now where a throw waits for the next look. Reading can't make things worse, since every answer short of
+a finished capture still throws.
+
+**What a `failed` capture means now.** PayPal named a code outside this list, and the code is read as "this capture took no money".
+I read the rest of the capture section of the reference on 2026-11-05, and no other 422 there says a capture has happened or is under
+way. `PREVIOUS_REQUEST_IN_PROGRESS` is the nearest. It is listed as a `RESOURCE_CONFLICT`, and a 409 already throws. A test now holds that.
+
+**Limits.**
+
+- The evidence is PayPal's documentation only. Live capture can't be exercised yet, so neither code has been seen.
+- Text in the reference isn't a guarantee. A code PayPal adds later that means "under way" would still be read as `failed`. The other
+  way to build this reads the order after every refusal on a capture, or lists the codes known to be safe. Either would close that gap,
+  at the cost of an extra call on each refusal or a long list to keep. Not done here, and the builder may want it.
+- The capture retry waits on Task 7. A record left pending this way needs the look-up by order id noted in D-38, or the reconciler
+  will repeat the create instead of checking the capture.
