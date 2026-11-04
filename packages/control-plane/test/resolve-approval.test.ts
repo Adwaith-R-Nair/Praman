@@ -250,6 +250,22 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
 
     const idempotencyRecords = await prisma.idempotencyRecord.count();
     expect(idempotencyRecords).toBe(0);
+
+    // The ledger says what was refused and why, in the fields the trace page and
+    // the dispute bundle already read, and doesn't say the re-check passed.
+    const resolved = await prisma.ledgerEntry.findMany({ where: { traceId: result.trace_id, eventType: "step_up_resolved" } });
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]?.payload).toMatchObject({
+      mandate_id: mandateId,
+      verdict: "approve",
+      revalidated_kind: "DENY",
+      revalidated_reason: "AMOUNT_CHANGED_SINCE_APPROVAL",
+      detail: "approved 5000, now resolves to 6000",
+    });
+    expect((await prisma.approval.findUnique({ where: { approvalId } }))?.status).toBe("rejected");
+    // A merchant repricing isn't the agent probing the policy (D-20).
+    const state = await prisma.$transaction((tx) => deriveState(tx, mandateId));
+    expect(state.denied_attempts).toEqual([]);
   });
 
   it("refuses an approval when the catalog's currency changed since step-up, even at the same number", async () => {

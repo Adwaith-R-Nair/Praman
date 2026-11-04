@@ -3,8 +3,8 @@ import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, type PurchaseIntent } from "@praman/policy";
 import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/mandate";
 import { acceptOutcome, idempotencyKey, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
-import { minorFromDb, minorToJSON, type DenyCode } from "@praman/shared";
-import { gateOnRail, routeMerchant } from "./route-merchant.js";
+import { minorFromDb, minorToJSON, type DenyCode, type Minor } from "@praman/shared";
+import { gateOnRail, routeMerchant, type RailGate } from "./route-merchant.js";
 import { MANDATE_LOCK_NS, parseCachedOutcome } from "./run-intent.js";
 
 /** A human's attention is not indefinite authority. */
@@ -41,6 +41,23 @@ async function refuseUnproven(tx: PrismaTx, apr: { readonly traceId: string; rea
     payload: { claimed_mandate_id: apr.mandateId, kind: "DENY", reason_code: reasonCode, detail },
   });
   return { go: false as const, result: { kind: "REFUSED" as const, trace_id: apr.traceId, reason_code: reasonCode, detail } };
+}
+
+/**
+ * The human approved a specific figure. If the catalog moved between step-up and
+ * approval, this is no longer the purchase they saw. Runs before anything is
+ * recorded, so the ledger names this refusal rather than saying the re-check passed.
+ */
+function bindToApproval(gate: RailGate, approvedAmount: Minor): RailGate {
+  if (gate.executor === null || gate.decision.amount_minor === approvedAmount) return gate;
+  return {
+    decision: {
+      kind: "DENY",
+      reason_code: "AMOUNT_CHANGED_SINCE_APPROVAL",
+      detail: `approved ${approvedAmount.toString()}, now resolves to ${gate.decision.amount_minor.toString()}`,
+    },
+    executor: null,
+  };
 }
 
 /**
@@ -143,7 +160,7 @@ export async function resolveApproval(
       loadCatalogSnapshot(tx, intent.merchant_id),
       routeMerchant(tx, intent.merchant_id, route),
     ]);
-    const gate = gateOnRail(evaluate({ intent, mandate, state, catalog, now, idempotency_key: key }), routed);
+    const gate = bindToApproval(gateOnRail(evaluate({ intent, mandate, state, catalog, now, idempotency_key: key }), routed), minorFromDb(apr.amountMinor));
     const decision = gate.decision;
 
     await append(tx, {
@@ -157,6 +174,7 @@ export async function resolveApproval(
         verdict: "approve",
         revalidated_kind: decision.kind,
         revalidated_reason: decision.reason_code,
+        ...(decision.kind === "DENY" ? { detail: decision.detail } : {}),
       },
     });
 
@@ -169,24 +187,6 @@ export async function resolveApproval(
       };
     }
     const executor = gate.executor;
-
-    // The human approved a specific figure. If the catalog moved
-    // between step-up and approval, this is no longer the purchase they saw
-    // — not ALLOW vs STEP_UP, which approval is what resolves either way.
-    const approvedAmount = minorFromDb(apr.amountMinor);
-    if (gate.decision.amount_minor !== approvedAmount) {
-      await tx.approval.update({ where: { approvalId }, data: { status: "rejected", resolvedAt: now } });
-      await maybeCheckpoint(tx, now);
-      return {
-        go: false as const,
-        result: {
-          kind: "REFUSED" as const,
-          trace_id: apr.traceId,
-          reason_code: "AMOUNT_CHANGED_SINCE_APPROVAL",
-          detail: `approved ${approvedAmount.toString()}, now resolves to ${gate.decision.amount_minor.toString()}`,
-        },
-      };
-    }
 
     const receipt = receiptFor(key);
     await tx.idempotencyRecord.create({
