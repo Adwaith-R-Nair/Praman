@@ -589,6 +589,8 @@ not to be a free lockout lever for anyone who knows a public ID.
 
 Status: decision 1 is changed by D-33. The comparison moved out of `paypal-exec`, and a difference is recorded as a mismatch that holds budget, not as a failure.
 
+Status: the transaction search and vault setup token rows, and decision 5's reasoning, are moved forward by D-37. Direct card was not re-tested.
+
 D-22 taught this project not to trust a provider's documented behaviour
 without testing it, so PayPal got the same treatment before any rail code was
 written. Tested on 2026-11-04 against Orders v2 in the sandbox, with a merchant
@@ -1192,3 +1194,39 @@ closed for denials. The cost of what was chosen: a mandate that really is broken
 **Limits.** A `reject` verdict is still accepted without any mandate check, as it always was. The only callers are the
 issuer's CLI scripts, so that is fine today. A public approval endpoint would have to prove who is asking. The hosted
 demo needs to deal with this in Task 12 or 13.
+
+### D-37 · What the PayPal app allows once its features are on · Accepted
+
+Moves D-26 forward. D-26 recorded transaction search and vault setup tokens as 403 `NOT_AUTHORIZED` on this app. After the
+app's features were enabled and the old token was terminated, they answer. An implementer's record for the builder to check.
+
+| Question | D-26, 2026-11-04 | Now, 2026-11-05 |
+|---|---|---|
+| Transaction search | 403 `NOT_AUTHORIZED` | **200** |
+| Vault setup token | 403 `NOT_AUTHORIZED` | **201**, status `PAYER_ACTION_REQUIRED` |
+
+The two "now" answers were seen again by a throwaway script during Task 6, printing status codes only, using a token fetched
+for that run.
+
+**A cached token can outlive the settings it was issued under.** PayPal kept handing back an existing token with its old scopes
+after the features were toggled, and the calls kept failing until that token was terminated. So a 403 `NOT_AUTHORIZED` can mean
+the feature is off, or that the feature is on and the token is stale, and asking for a token again doesn't tell those apart.
+This was not reproduced in Task 6, because reproducing it would mean turning the features off. `paypal-exec` handles it by
+dropping its own cached token on that 403 and naming both causes in `describePayPalFailure`. It doesn't terminate tokens itself.
+
+**Still untested, because no sandbox buyer approval has registered on PayPal's side:**
+
+- creating a payment token from an approved setup token
+- capture after approval, and a capture retry with a repeated key
+- a charge with no buyer present
+
+A setup token at `PAYER_ACTION_REQUIRED` is waiting for the same approval step. **So a purchase with no buyer present is not
+shown to work.** The refusal in D-26's decision 5 has gone, and that is all that has changed. Plan Task 14 stays conditional.
+Direct card was not re-tested and D-26's 422 stands.
+
+**Transaction search does not replace repeating the create.** It now answers, but D-26's decision 2 stands: reconciling a create
+repeats the create with the same key. Transaction search would only ever see captured payments, may lag, and was never needed to
+find an unapproved order. This record doesn't test what it returns for a real capture, since none exists.
+
+**Limits.** One app on one sandbox account, as in D-26. Sandbox and live entitlements are separate things, and live keys stay
+out of scope.
