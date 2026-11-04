@@ -1,6 +1,6 @@
 import { prisma } from "@praman/db";
-import { append, readCurrency } from "@praman/ledger";
-import { isRail, minorFromDb, minorToJSON } from "@praman/shared";
+import { append } from "@praman/ledger";
+import { currencyFromDb, isRail, minorFromDb, minorToJSON } from "@praman/shared";
 import { acceptOutcome, outcomeFields, type ExecutorRouter } from "@praman/exec-core";
 import { RECONCILE_MIN_AGE_MS } from "./run-intent.js";
 
@@ -35,11 +35,15 @@ export async function reconcilePending(route: ExecutorRouter, now: Date): Promis
       // payload, and deriveState (which filters on payload->>'mandate_id')
       // would never see it: a reconciled captured payment would silently
       // never count toward spend.
+      //
+      // Found by key, not by trace alone. A trace id comes from the intent id,
+      // and two mandates can propose the same one, so a trace can hold two
+      // attempts, and the first intent on it may not be this record's.
       const intentRow = await prisma.ledgerEntry.findFirst({
-        where: { traceId: rec.traceId, eventType: "intent" },
+        where: { traceId: rec.traceId, eventType: "intent", payload: { path: ["idempotency_key"], equals: rec.key } },
         orderBy: { seq: "asc" },
       });
-      if (intentRow === null) throw new Error(`no intent ledger entry found for trace ${rec.traceId}`);
+      if (intentRow === null) throw new Error(`no intent ledger entry found for ${rec.key} on trace ${rec.traceId}`);
       const intentPayload = intentRow.payload as Record<string, unknown>;
       const mandateId = intentPayload["mandate_id"];
       const merchantId = intentPayload["merchant_id"];
@@ -47,14 +51,8 @@ export async function reconcilePending(route: ExecutorRouter, now: Date): Promis
         throw new TypeError(`intent payload for trace ${rec.traceId} is missing mandate_id/merchant_id`);
       }
 
-      // Same reason as the intent lookup above: the api_call event from T1 is the
-      // durable record of which currency this attempt was in.
-      const apiCallRow = await prisma.ledgerEntry.findFirst({
-        where: { traceId: rec.traceId, eventType: "api_call" },
-        orderBy: { seq: "desc" },
-      });
-      if (apiCallRow === null) throw new Error(`no api_call ledger entry found for trace ${rec.traceId}`);
-      const currency = readCurrency(apiCallRow.payload as Record<string, unknown>);
+      // T1 wrote this next to the amount. An unknown value throws, and stays pending.
+      const currency = currencyFromDb(rec.currency);
 
       if (!isRail(rec.rail)) throw new TypeError(`record ${rec.key} has an unknown rail: ${rec.rail}`);
       const executor = route(rec.rail);
