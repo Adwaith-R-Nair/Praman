@@ -258,10 +258,12 @@ it("sends the derived key as PayPal-Request-Id on create and capture")
 it("sets intent CAPTURE, reference and invoice ids from the receipt, and a USD amount")
 it("refreshes the OAuth token once on 401, then returns a typed failure")
 it("surfaces a network error so the record stays pending, never as failed")
-it("treats a create response with a different amount as a failure, per the spike's reuse answer")
+it("reports the amount and currency PayPal returned, even when they differ from the request")
 it("returns approve_url from the payer-action or approve link")
 it.runIf(process.env.PAYPAL_CLIENT_ID)("creates a real sandbox order")
 ```
+
+**Changed by D-33:** this list used to say a create response with a different amount is treated as a failure. `paypal-exec` must not do that. A rail reports what it was told, and `acceptOutcome` in `packages/exec-core` decides, recording a `mismatch` that holds budget. Marking it `failed` in the rail brings back the budget hole D-33 closed.
 
 - [ ] **Step 2:** Run them. Expected: FAIL.
 - [ ] **Step 3:** Implement with an injected `fetch`. `findOrder` uses the method chosen in Task 0. Do not import the PayPal Agent Toolkit. Add a README line explaining why.
@@ -307,6 +309,8 @@ it("a capture refusal is a capture_decision and does not count toward the denial
 ```
 
 - [ ] **Step 2:** Run them. Expected: FAIL.
+**Added by D-33 and D-34:** refuse to capture an order whose outcome is `mismatch`, and write `order_id` on capture and release outcomes, since a key can hold two orders.
+
 - [ ] **Step 3:** Implement with the same two-phase shape as `runIntent`: T1 under `MANDATE_LOCK_NS` runs `evaluateCapture`, writes the capture record and `api_call`. The rail call runs outside any transaction. T2 appends the outcome. `release` takes the same lock. Reconcile covers both record kinds, and `pnpm reconcile` runs one sweep of both functions.
 - [ ] **Step 4:** Run the full done-check plus `pnpm lint:policy-freeze`. Expected: pass.
 - [ ] **Step 5:** Log it, with the state at each stage so the builder can walk it. Commit `feat: capture paypal orders under a mandate re-check`.
