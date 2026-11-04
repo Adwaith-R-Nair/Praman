@@ -33,7 +33,11 @@ jobs:
       TEST_DATABASE_URL: postgresql://postgres:praman@localhost:5432/praman_test
 
     steps:
+      # Full history, because lint:policy-freeze compares against an older
+      # commit. A shallow clone wouldn't have it, and the check fails if so.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -69,6 +73,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm --filter @praman/shared run lint:casts
       - run: pnpm lint:boundary
+      - run: pnpm lint:policy-freeze
       - run: pnpm eval:check-coverage
       - run: pnpm test
       - run: pnpm verify-ledger
