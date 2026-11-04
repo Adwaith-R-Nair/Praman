@@ -3,7 +3,7 @@ import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, type PurchaseIntent } from "@praman/policy";
 import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/mandate";
 import { acceptOutcome, idempotencyKey, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
-import { minorFromDb, minorToJSON, type DenyCode, type Minor } from "@praman/shared";
+import { minorFromDb, minorToJSON, type Currency, type DenyCode, type Minor } from "@praman/shared";
 import { gateOnRail, routeMerchant, type RailGate } from "./route-merchant.js";
 import { MANDATE_LOCK_NS, parseCachedOutcome } from "./run-intent.js";
 
@@ -44,20 +44,31 @@ async function refuseUnproven(tx: PrismaTx, apr: { readonly traceId: string; rea
 }
 
 /**
- * The human approved a specific figure. If the catalog moved between step-up and
- * approval, this is no longer the purchase they saw. Runs before anything is
- * recorded, so the ledger names this refusal rather than saying the re-check passed.
+ * The human approved a specific figure in a specific currency. If either moved
+ * between step-up and approval, this is no longer the purchase they saw. Currency
+ * comes first, since 5000 of one is no comparison with 5000 of another. Runs before
+ * anything is recorded, so the ledger names this refusal rather than saying the
+ * re-check passed.
  */
-function bindToApproval(gate: RailGate, approvedAmount: Minor): RailGate {
-  if (gate.executor === null || gate.decision.amount_minor === approvedAmount) return gate;
-  return {
-    decision: {
-      kind: "DENY",
-      reason_code: "AMOUNT_CHANGED_SINCE_APPROVAL",
-      detail: `approved ${approvedAmount.toString()}, now resolves to ${gate.decision.amount_minor.toString()}`,
-    },
-    executor: null,
-  };
+function bindToApproval(gate: RailGate, approved: { readonly amount: Minor; readonly currency: string }, mandateCurrency: Currency): RailGate {
+  if (gate.executor === null) return gate;
+  if (approved.currency !== mandateCurrency) {
+    return {
+      decision: { kind: "DENY", reason_code: "CURRENCY_MISMATCH", detail: `approved in ${approved.currency}, the mandate is now in ${mandateCurrency}` },
+      executor: null,
+    };
+  }
+  if (gate.decision.amount_minor !== approved.amount) {
+    return {
+      decision: {
+        kind: "DENY",
+        reason_code: "AMOUNT_CHANGED_SINCE_APPROVAL",
+        detail: `approved ${approved.amount.toString()}, now resolves to ${gate.decision.amount_minor.toString()}`,
+      },
+      executor: null,
+    };
+  }
+  return gate;
 }
 
 /**
@@ -160,7 +171,11 @@ export async function resolveApproval(
       loadCatalogSnapshot(tx, intent.merchant_id),
       routeMerchant(tx, intent.merchant_id, route),
     ]);
-    const gate = bindToApproval(gateOnRail(evaluate({ intent, mandate, state, catalog, now, idempotency_key: key }), routed), minorFromDb(apr.amountMinor));
+    const gate = bindToApproval(
+      gateOnRail(evaluate({ intent, mandate, state, catalog, now, idempotency_key: key }), routed),
+      { amount: minorFromDb(apr.amountMinor), currency: apr.currency },
+      mandate.scope.currency,
+    );
     const decision = gate.decision;
 
     await append(tx, {

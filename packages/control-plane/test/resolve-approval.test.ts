@@ -4,7 +4,7 @@ import { append, deriveState } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument, type SignedMandate } from "@praman/mandate";
 import { idempotencyKey, routeAllTo, routeByRail, SimulatedExecutor, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
-import { minor, type Rail } from "@praman/shared";
+import { minor, type Currency, type Rail } from "@praman/shared";
 import { runIntent } from "../src/run-intent.js";
 import { resolveApproval } from "../src/resolve-approval.js";
 import { MANDATE_LOCK_NS } from "../src/run-intent.js";
@@ -464,5 +464,77 @@ describe("a caller who hasn't proved they hold the mandate changes nothing about
     expect(result).toMatchObject({ kind: "REFUSED", reason_code: "MANDATE_SUBJECT_MISMATCH" });
     expect((await prisma.approval.findUnique({ where: { approvalId } }))?.status).toBe(status);
     expect(executor.callCount).toBe(0);
+  });
+});
+
+describe("an approval is for money in one currency", () => {
+  const NOW = new Date("2026-09-01T01:00:00.000Z");
+
+  function signedIn(currency: Currency, mandateId: string, privateKeyPem: string): SignedMandate {
+    const doc: MandateDocument = {
+      mandate_id: mandateId,
+      version: 2,
+      issuer_id: "usr_t",
+      subject_id: "agt_t",
+      scope: { merchant_ids: [MERCHANT], categories: ["food"], currency },
+      limits: { max_per_txn_minor: "80000", max_total_minor: "500000", max_txns_per_window: 5, window_seconds: 3600, max_denials_per_window: 5 },
+      step_up: { threshold_minor: "50000" },
+      validity: { not_before: "2026-08-28T00:00:00.000Z", not_after: "2026-12-31T00:00:00.000Z" },
+      nonce: "n1",
+    };
+    return signMandate(doc, privateKeyPem, "k1");
+  }
+
+  async function priceEverythingIn(currency: Currency): Promise<void> {
+    await prisma.merchant.update({ where: { merchantId: MERCHANT }, data: { currency } });
+    await prisma.catalogItem.update({ where: { merchantId_sku: { merchantId: MERCHANT, sku: SKU } }, data: { currency } });
+  }
+
+  it("doesn't carry to the same mandate id re-signed in another currency, at the same digits", async () => {
+    // Everything else agrees: the mandate is validly signed, and the merchant and
+    // catalog are now USD too. Only the approval still says the human saw rupees.
+    const mandateId = "mnd_apr_resigned";
+    const { privateKeyPem, publicKeyPem } = generateKeypair();
+    const approvalId = await stepUp(mandateId, signedIn("INR", mandateId, privateKeyPem), publicKeyPem, "int_apr_resigned");
+    await priceEverythingIn("USD");
+    const executor = new CountingExecutor(new SimulatedExecutor());
+
+    const result = await resolveApproval(approvalId, "approve", signedIn("USD", mandateId, privateKeyPem), publicKeyPem, routeAllTo(executor), NOW);
+
+    expect(result).toMatchObject({ kind: "REFUSED", reason_code: "CURRENCY_MISMATCH", detail: "approved in INR, the mandate is now in USD" });
+    expect(executor.callCount).toBe(0);
+    expect(await prisma.idempotencyRecord.count()).toBe(0);
+    expect((await prisma.approval.findUnique({ where: { approvalId } }))?.status).toBe("rejected");
+    const resolved = await prisma.ledgerEntry.findFirst({ where: { traceId: "trc_int_apr_resigned", eventType: "step_up_resolved" } });
+    expect(resolved?.payload).toMatchObject({ revalidated_kind: "DENY", revalidated_reason: "CURRENCY_MISMATCH" });
+  });
+
+  it("approves a USD purchase, and every record of it says USD", async () => {
+    const mandateId = "mnd_apr_usd";
+    const { privateKeyPem, publicKeyPem } = generateKeypair();
+    const signed = signedIn("USD", mandateId, privateKeyPem);
+    await priceEverythingIn("USD");
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_usd");
+    expect((await prisma.approval.findUnique({ where: { approvalId } }))?.currency).toBe("USD");
+    const inner = new SimulatedExecutor();
+    const asked: CreateOrderRequest[] = [];
+    const executor: Executor = {
+      rail: "simulated",
+      createOrder: (req) => {
+        asked.push(req);
+        return inner.createOrder(req);
+      },
+      findOrder: (lookup) => inner.findOrder(lookup),
+      capture: (req) => inner.capture(req),
+    };
+
+    const result = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), NOW);
+
+    expect(result).toMatchObject({ kind: "EXECUTED", order_status: "captured" });
+    expect(asked).toEqual([expect.objectContaining({ amount_minor: 5000n, currency: "USD" })]);
+    expect(await prisma.idempotencyRecord.findFirst({ where: { traceId: "trc_int_apr_usd" } })).toMatchObject({ currency: "USD", amountMinor: 5000n });
+    const rows = await prisma.ledgerEntry.findMany({ where: { traceId: "trc_int_apr_usd", eventType: { in: ["api_call", "outcome"] } } });
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row.payload).toMatchObject({ amount_minor: "5000", currency: "USD" });
   });
 });
