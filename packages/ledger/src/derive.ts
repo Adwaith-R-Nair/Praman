@@ -69,6 +69,15 @@ function heldAmount(payload: Record<string, unknown>, seq: bigint): bigint {
   return amount > authorised ? amount : authorised;
 }
 
+/** One outcome row that counts toward an order. A release has no amount of its own. */
+interface OrderRow {
+  readonly ts: Date;
+  readonly orderId: string | null;
+  readonly status: string;
+  readonly amount: bigint;
+  readonly merchant: string | null;
+}
+
 /** Everything the outcomes for one order add up to. See deriveState. */
 interface OrderFold {
   readonly firstSeen: Date;
@@ -81,6 +90,40 @@ interface OrderFold {
 
 function newOrderFold(firstSeen: Date): OrderFold {
   return { firstSeen, amount: 0n, merchants: [], captured: false, released: false, mismatch: false };
+}
+
+/**
+ * Splits one key's rows into the orders they are about. The same order id is the
+ * same order, however many rows name it, so a reconciler racing T2 counts once.
+ * Two order ids are two orders: a rail isn't trusted to enforce the key (D-22), and
+ * each one that exists is an obligation (D-34).
+ *
+ * A row with no order id belongs to the key's order, which is how every old row
+ * always counted. If the key has several, it joins the first rather than inventing
+ * another, unless it is a release. A release that can't say which order it means
+ * frees nothing.
+ */
+function foldOrders(rows: readonly OrderRow[]): OrderFold[] {
+  const orderIds = [...new Set(rows.flatMap((row) => row.orderId ?? []))];
+  const several = orderIds.length > 1;
+  const folds = new Map<string, OrderFold>();
+
+  for (const row of rows) {
+    if (several && row.orderId === null && row.status === "released") continue;
+    const foldId = (several ? row.orderId : null) ?? orderIds[0] ?? "";
+    const order = folds.get(foldId) ?? newOrderFold(row.ts);
+    folds.set(foldId, order);
+
+    // These should always agree. If they don't, the higher one is counted,
+    // so a mismatch can't free budget. Throwing would be worse: this row
+    // can never be rewritten, so it would break the mandate permanently.
+    if (row.amount > order.amount) order.amount = row.amount;
+    if (row.status === "captured") order.captured = true;
+    if (row.status === "released") order.released = true;
+    if (row.status === "mismatch") order.mismatch = true;
+    if (row.merchant !== null) order.merchants.push(row.merchant);
+  }
+  return [...folds.values()];
 }
 
 /**
@@ -105,18 +148,19 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
   const releasedKeys = new Set<string>();
 
   // One order can have several outcomes: created, then captured later, or a
-  // release. They are one purchase, so they are folded together by key before
-  // anything is counted (D-30). An old outcome with no key can't be matched to
-  // anything, so it stays its own order, which is what it always counted as.
-  const orders: OrderFold[] = [];
-  const ordersByKey = new Map<string, OrderFold>();
-  const orderFor = (key: string, ts: Date): OrderFold => {
-    const existing = ordersByKey.get(key);
+  // release. They are one purchase, so rows are grouped by key, and split into
+  // orders by foldOrders, before anything is counted (D-30, D-34). An old outcome
+  // with no key can't be matched to anything, so it stays its own order, which is
+  // what it always counted as.
+  const groups: OrderRow[][] = [];
+  const groupsByKey = new Map<string, OrderRow[]>();
+  const groupFor = (key: string): OrderRow[] => {
+    const existing = groupsByKey.get(key);
     if (existing !== undefined) return existing;
-    const order = newOrderFold(ts);
-    ordersByKey.set(key, order);
-    orders.push(order);
-    return order;
+    const group: OrderRow[] = [];
+    groupsByKey.set(key, group);
+    groups.push(group);
+    return group;
   };
 
   for (const row of rows) {
@@ -141,12 +185,14 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
         // no key can't name an order, so it frees nothing.
         const status = row.payload["status"];
         const key = row.payload["idempotency_key"];
+        const rawOrderId = row.payload["order_id"];
+        const orderId = typeof rawOrderId === "string" ? rawOrderId : null;
 
         if (status === "released") {
           if (typeof key !== "string") break;
           keys.add(key);
           releasedKeys.add(key);
-          orderFor(key, row.ts).released = true;
+          groupFor(key).push({ ts: row.ts, orderId, status, amount: 0n, merchant: null });
           break;
         }
 
@@ -155,25 +201,20 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
         // any order. See the counting below for what it doesn't get (D-33).
         if (status !== "created" && status !== "captured" && status !== "mismatch") break;
 
-        const amount = heldAmount(row.payload, row.seq);
-        let order: OrderFold;
+        const merchant = row.payload["merchant_id"];
+        const orderRow: OrderRow = {
+          ts: row.ts,
+          orderId,
+          status,
+          amount: heldAmount(row.payload, row.seq),
+          merchant: typeof merchant === "string" ? merchant : null,
+        };
         if (typeof key === "string") {
           keys.add(key);
-          order = orderFor(key, row.ts);
+          groupFor(key).push(orderRow);
         } else {
-          order = newOrderFold(row.ts);
-          orders.push(order);
+          groups.push([orderRow]);
         }
-
-        // These should always agree. If they don't, the higher one is counted,
-        // so a mismatch can't free budget. Throwing would be worse: this row
-        // can never be rewritten, so it would break the mandate permanently.
-        if (amount > order.amount) order.amount = amount;
-        if (status === "captured") order.captured = true;
-        if (status === "mismatch") order.mismatch = true;
-
-        const merchant = row.payload["merchant_id"];
-        if (typeof merchant === "string") order.merchants.push(merchant);
         break;
       }
 
@@ -197,7 +238,7 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
   const merchants = new Set<string>();
 
   // Done after the replay, so the order the rows arrived in can't matter.
-  for (const order of orders) {
+  for (const order of groups.flatMap(foldOrders)) {
     // Velocity counts attempts, so a released order still used one up.
     txnTimestamps.push(order.firstSeen);
 

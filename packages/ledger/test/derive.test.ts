@@ -446,6 +446,125 @@ describe("deriveState folding outcomes by order", () => {
     expect(s.txn_timestamps).toHaveLength(1);
   });
 
+  describe("one key, more than one order id (D-34)", () => {
+    const LATER = new Date("2026-09-04T10:05:00.000Z");
+
+    it("counts two real orders on one key separately, because the rail doesn't enforce the receipt", async () => {
+      await outcome("created", "k1", { order_id: "order_A" });
+      await outcome("created", "k1", { order_id: "order_B", amount_minor: "700" }, LATER);
+
+      const s = await state();
+      expect(s.spent_minor).toBe(5700n);
+      expect(s.txn_timestamps).toEqual([TS, LATER]);
+      expect([...s.seen_idempotency_keys]).toEqual(["k1"]);
+    });
+
+    it("counts a reconciler racing T2 once, when both name the same order", async () => {
+      await outcome("created", "k1", { order_id: "order_A" });
+      await outcome("created", "k1", { order_id: "order_A", reconciled: true }, LATER);
+
+      const s = await state();
+      expect(s.spent_minor).toBe(5000n);
+      expect(s.txn_timestamps).toEqual([TS]);
+    });
+
+    it("counts created then captured on the same order once, and each order only once", async () => {
+      await outcome("created", "k1", { order_id: "order_A" });
+      await outcome("created", "k1", { order_id: "order_B" });
+      await outcome("captured", "k1", { order_id: "order_A" });
+      await outcome("captured", "k1", { order_id: "order_B" });
+
+      const s = await state();
+      expect(s.spent_minor).toBe(10000n);
+      expect(s.txn_timestamps).toHaveLength(2);
+    });
+
+    it.each([
+      ["no order id first", [{}, { order_id: "order_A" }]],
+      ["no order id last", [{ order_id: "order_A" }, {}]],
+    ])("a row with no order id belongs to the key's one order: %s", async (_name, rows) => {
+      for (const fields of rows) await outcome("created", "k1", fields);
+
+      const s = await state();
+      expect(s.spent_minor).toBe(5000n);
+      expect(s.txn_timestamps).toHaveLength(1);
+    });
+
+    it("a row with no order id on a key with two orders adds no third order", async () => {
+      await outcome("created", "k1", { order_id: "order_A" });
+      await outcome("created", "k1", { order_id: "order_B" });
+      await outcome("created", "k1");
+
+      const s = await state();
+      expect(s.spent_minor).toBe(10000n);
+      expect(s.txn_timestamps).toHaveLength(2);
+    });
+
+    it("a release naming one order frees only that order", async () => {
+      await outcome("created", "k1", { order_id: "order_A" });
+      await outcome("created", "k1", { order_id: "order_B", amount_minor: "700" });
+      await outcome("released", "k1", { order_id: "order_A", amount_minor: undefined });
+
+      const s = await state();
+      expect(s.spent_minor).toBe(700n);
+      expect(s.txn_timestamps).toHaveLength(2);
+      expect([...s.merchants_transacted]).toEqual(["MERCH_001"]);
+    });
+
+    it("a release naming no order frees nothing when the key has two, because it can't say which", async () => {
+      await outcome("created", "k1", { order_id: "order_A" });
+      await outcome("created", "k1", { order_id: "order_B", amount_minor: "700" });
+      await outcome("released", "k1", { amount_minor: undefined });
+
+      const s = await state();
+      expect(s.spent_minor).toBe(5700n);
+      expect(s.txn_timestamps).toHaveLength(2);
+      expect([...s.released_keys]).toEqual(["k1"]);
+    });
+
+    it("a release naming no order still frees the key's one order", async () => {
+      await outcome("created", "k1", { order_id: "order_A" });
+      await outcome("released", "k1", { amount_minor: undefined });
+
+      expect((await state()).spent_minor).toBe(0n);
+    });
+
+    it("one order's capture doesn't stop the other's release, nor free itself", async () => {
+      await outcome("created", "k1", { order_id: "order_A" });
+      await outcome("created", "k1", { order_id: "order_B", amount_minor: "700" });
+      await outcome("captured", "k1", { order_id: "order_A" });
+      await outcome("released", "k1", { order_id: "order_A", amount_minor: undefined });
+      await outcome("released", "k1", { order_id: "order_B", amount_minor: undefined });
+
+      expect((await state()).spent_minor).toBe(5000n);
+    });
+
+    it("a failed row with another order id is no order at all", async () => {
+      await outcome("created", "k1", { order_id: "order_A" });
+      await outcome("failed", "k1", { order_id: "order_B" });
+
+      const s = await state();
+      expect(s.spent_minor).toBe(5000n);
+      expect(s.txn_timestamps).toHaveLength(1);
+    });
+
+    it("a mismatch on one order earns no trust, but doesn't take back another's", async () => {
+      await outcome("mismatch", "k1", { order_id: "order_A", rail_currency: "USD", rail_amount_minor: "5000" });
+      await outcome("created", "k1", { order_id: "order_B", merchant_id: "MERCH_002" });
+
+      const s = await state();
+      expect(s.spent_minor).toBe(10000n);
+      expect([...s.merchants_transacted]).toEqual(["MERCH_002"]);
+    });
+
+    it("rows with no key stay their own order, even with one order id", async () => {
+      await outcome("captured", null, { order_id: "order_A" });
+      await outcome("captured", null, { order_id: "order_A" });
+
+      expect((await state()).spent_minor).toBe(10000n);
+    });
+  });
+
   it("a capture_decision denial is not a denied attempt", async () => {
     await prisma.$transaction((tx) =>
       append(tx, {
