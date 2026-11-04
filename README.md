@@ -6,7 +6,7 @@
 
 Praman is a control plane for agent-initiated payments. It sits between an AI buyer agent and a Razorpay merchant, and makes every rupee the agent moves bounded, explainable, and replayable.
 
-Adwaith R Nair · Razorpay AI Buildathon 2026 · Track 01 — AI Growth & Agentic Commerce
+Adwaith R Nair · Started at the Razorpay AI Buildathon 2026 (Track 01, AI Growth & Agentic Commerce) · Now being extended for the PayPal AI Hackathon. See [History](#history).
 
 ---
 
@@ -37,11 +37,11 @@ Injection can make the model *want* the wrong thing. It cannot make the system *
 
 ## Three primitives
 
-**Mandate** — a human-signed (Ed25519) grant of bounded authority: merchant allowlist, category allowlist, per-transaction cap, cumulative cap, velocity limit, denial-rate cap, validity window, human-approval threshold. Modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot. Protocol-agnostic, since UAP is unpublished.
+**Mandate:** a human-signed (Ed25519) grant of bounded authority: merchant allowlist, category allowlist, per-transaction cap, cumulative cap, velocity limit, denial-rate cap, validity window, human-approval threshold. Modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot. Protocol-agnostic, since UAP is unpublished.
 
-**Policy engine** — a pure, total, deterministic function of `(intent, mandate, ledger_state, catalog, now)`. No I/O, no clock, no randomness, **no LLM**. Returns `ALLOW` / `STEP_UP` / `DENY` with a machine-readable code from a closed enum of 19. Hand-written, readable top to bottom in one pass.
+**Policy engine:** a pure, total, deterministic function of `(intent, mandate, ledger_state, catalog, now)`. No I/O, no clock, no randomness, **no LLM**. Returns `ALLOW` / `STEP_UP` / `DENY` with a machine-readable code from a closed enum of 19. One function, readable top to bottom in one pass. Hand-written up to the `v1.0-submission` tag, and changed since then only under the rules in [D-27](docs/DECISIONS.md).
 
-**Ledger** — append-only, hash-chained, Merkle-checkpointed. Every intent, decision, agent transcript, API call and outcome. Immutability enforced by Postgres triggers that raise, not by application convention. Spend is *derived by replaying the ledger*, never stored — so inflating a budget requires forging every subsequent hash rather than editing one column.
+**Ledger:** append-only, hash-chained, Merkle-checkpointed. Every intent, decision, agent transcript, API call and outcome. Immutability enforced by Postgres triggers that raise, not by application convention. Spend is *derived by replaying the ledger*, never stored, so inflating a budget requires forging every subsequent hash rather than editing one column.
 
 ## Results
 
@@ -204,8 +204,25 @@ Three that changed the architecture:
 - [Decision records](docs/DECISIONS.md) · [Engineering invariants](docs/INVARIANTS.md)
 - [Build log](docs/BUILD_LOG.md) · [Roadmap](docs/ROADMAP.md)
 
+## History
+
+**Razorpay AI Buildathon, up to 5 Sep 2026.** Praman began as a Track 01 submission. It was shortlisted, I defended it in interview, and I was selected for the Razorpay internship. The submitted state is the `v1.0-submission` tag.
+
+**Independent learning, 30 Sep to 2 Oct 2026.** With no deadline, I kept working on it: fixed a lockout caused by forged-signature intents ([D-25](docs/DECISIONS.md)), added a cast lint and an import-boundary check to CI, and traced agent runs through Langfuse.
+
+**PayPal AI Hackathon, from 4 Nov 2026.** Same repo, entered as an update to this existing project. The aim is to run the same mandate format, policy engine and ledger on PayPal as a second payment rail, with INR and USD taken from the signed mandate. So far I have tested how the PayPal sandbox really behaves ([D-26](docs/DECISIONS.md)). This README describes what runs today, which is Razorpay test mode, and PayPal claims get added here only once they are built.
+
+**After the hackathon.** The project continues. Work deferred for now stays in [`docs/ROADMAP_PHASE2.md`](docs/ROADMAP_PHASE2.md).
+
+To see what changed:
+
+- [Everything since the Buildathon submission](https://github.com/Adwaith-R-Nair/Praman/compare/v1.0-submission...main) (`v1.0-submission...main`)
+- [Everything since the last commit before 1 Oct 2026](https://github.com/Adwaith-R-Nair/Praman/compare/51012ef...main) (`51012ef...main`). Commits dated 30 Sep are not claimed as hackathon work.
+
 ## Built with
 
-Praman was designed and built with Claude as a pair-programming partner. Every architectural decision in `docs/DECISIONS.md` is mine, made deliberately and defended there. The policy engine's `evaluate()` and the ledger's hash chain are hand-written — those are the two files where a subtle bug is a money bug, and I wanted to own them line by line. Claude generated much of the surrounding scaffolding from specifications I wrote, under the constraints in `docs/INVARIANTS.md`, and I reviewed every diff. The commit history shows the sequence: specification, then core, then plumbing, then measurement.
+Praman was designed and built with Claude as a pair-programming partner. Every architectural decision in `docs/DECISIONS.md` is mine, made deliberately and defended there. Up to the `v1.0-submission` tag, the policy engine's `evaluate()` and the ledger's hash chain were hand-written, because those are the two files where a subtle bug is a money bug and I wanted to own them line by line. Claude generated much of the surrounding scaffolding from specifications I wrote, under the constraints in `docs/INVARIANTS.md`, and I reviewed every diff. The commit history shows the sequence: specification, then core, then plumbing, then measurement.
+
+Since 2026-11-04 the project follows an agentic development life cycle, by my decision ([D-27](docs/DECISIONS.md)). Agents may now edit those two files as well. Each change to them needs a failing test first, its own commit, and my review. An agent can propose a design, and accepting it stays my call. No model takes part in a payment decision at runtime, and that has not changed.
 
 MIT licensed.

@@ -17,7 +17,7 @@ praman/
 │   └── diagrams/
 ├── packages/
 │   ├── shared/        types, Money, Result, canonical.ts, untrusted.ts, reason-codes.ts
-│   ├── policy/        evaluate.ts  ← hand-written
+│   ├── policy/        evaluate.ts  ← hand-written up to v1.0-submission, see D-27
 │   ├── ledger/        append.ts, chain.ts, derive.ts, verify.ts
 │   ├── razorpay-exec/ execute.ts, idempotency.ts, reconcile.ts
 │   └── dispute/       bundle.ts
@@ -211,7 +211,7 @@ Every 100 entries, append a `checkpoint` whose payload is `{ merkle_root, range:
 
 Signature and evaluation order are in `MANDATE_SPEC.md` §3. Implementation notes:
 
-- Single file, `evaluate.ts`, **hand-written**. No helper indirection — a reviewer should read it top to bottom in one pass and see the whole policy.
+- Single file, `evaluate.ts`, one function. Hand-written up to the `v1.0-submission` tag; D-27 covers changes after it. No helper indirection: a reviewer should read it top to bottom in one pass and see the whole policy.
 - Structure it as a flat sequence of early returns, one per reason code, in the documented order. No nested conditionals.
 - `now: Date` is a parameter. Never call `new Date()` inside.
 - Amount resolution happens at step 9, *after* SKU and category validation, so an unknown SKU can never contribute to a price.

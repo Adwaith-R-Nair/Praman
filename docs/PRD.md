@@ -94,7 +94,7 @@ These are what the panel will probe. Every one of them is a decision you must be
 
 | # | Component | Purpose | Priority |
 |---|-----------|---------|----------|
-| C1 | `packages/policy` | Pure decision function. **Hand-written by you.** | P0 |
+| C1 | `packages/policy` | Pure decision function. Hand-written up to the `v1.0-submission` tag; D-27 covers changes after it. | P0 |
 | C2 | `packages/ledger` | Hash-chained append-only log + Merkle root + verifier CLI | P0 |
 | C3 | `apps/control-plane` | Express API: `/v1/intents`, `/v1/mandates`, `/v1/traces` | P0 |
 | C4 | `packages/razorpay-exec` | Test-mode order/payment execution, idempotent, with retry+escalate | P0 |

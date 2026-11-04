@@ -35,11 +35,11 @@ Injection can make the model *want* the wrong thing. It cannot make the system *
 
 ## The three primitives
 
-**1. Mandate** — a human-signed (Ed25519) grant of bounded authority: merchant allowlist, category allowlist, per-transaction cap, cumulative cap, velocity limit, validity window, human-approval threshold. Modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot. Protocol-agnostic by design, since UAP is unpublished.
+**1. Mandate:** a human-signed (Ed25519) grant of bounded authority: merchant allowlist, category allowlist, per-transaction cap, cumulative cap, velocity limit, validity window, human-approval threshold. Modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot. Protocol-agnostic by design, since UAP is unpublished.
 
-**2. Policy engine** — a pure, total, deterministic function of one input object (`intent`, `mandate`, `ledger_state`, `catalog`, `now`, `idempotency_key`). No I/O, no clock, no randomness, **no LLM**. Returns `ALLOW` / `STEP_UP` / `DENY` with a machine-readable reason code from a closed enum of 19. Hand-written, readable top to bottom in one pass.
+**2. Policy engine:** a pure, total, deterministic function of one input object (`intent`, `mandate`, `ledger_state`, `catalog`, `now`, `idempotency_key`). No I/O, no clock, no randomness, **no LLM**. Returns `ALLOW` / `STEP_UP` / `DENY` with a machine-readable reason code from a closed enum of 19. One function, readable top to bottom in one pass. Hand-written up to the `v1.0-submission` tag, and changed since then only under the rules in D-27.
 
-**3. Ledger** — append-only, hash-chained, Merkle-checkpointed. Every intent, decision, API call and outcome. Immutability enforced by Postgres triggers rejecting UPDATE and DELETE, not by application convention. Spend is *derived by replaying the ledger*, never stored on the mandate — so inflating a budget requires forging the whole chain.
+**3. Ledger:** append-only, hash-chained, Merkle-checkpointed. Every intent, decision, API call and outcome. Immutability enforced by Postgres triggers rejecting UPDATE and DELETE, not by application convention. Spend is *derived by replaying the ledger*, never stored on the mandate, so inflating a budget requires forging the whole chain.
 
 ## System view
 
@@ -104,4 +104,4 @@ Run in GitHub Actions on every push. The README badge is generated from `report.
 
 ## Built with
 
-Praman was designed and built with Claude as a pair-programming partner. Every architectural decision in `DECISIONS.md` is mine, made deliberately and defended there. The policy engine's `evaluate()` is hand-written. Claude generated much of the surrounding scaffolding — types, serialisation, test cases — from specifications I wrote, and I reviewed and understand every line. The commit history shows the sequence: specification, then core, then plumbing, then measurement.
+Praman was designed and built with Claude as a pair-programming partner. Every architectural decision in `DECISIONS.md` is mine, made deliberately and defended there. Up to the `v1.0-submission` tag, the policy engine's `evaluate()` was hand-written, and Claude generated much of the surrounding scaffolding (types, serialisation, test cases) from specifications I wrote, which I reviewed line by line. The commit history shows the sequence: specification, then core, then plumbing, then measurement. Since 2026-11-04 the project follows an agentic development life cycle, by my decision (D-27): agents may edit `evaluate.ts`, with a failing test first, its own commit, and my review.

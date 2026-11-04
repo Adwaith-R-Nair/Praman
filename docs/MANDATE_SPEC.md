@@ -77,7 +77,7 @@ Emitted by the agent as a tool call. Structured only — never prose.
 
 ## 3. The decision function
 
-This is the file you write by hand. Signature:
+This is `packages/policy/src/evaluate.ts`, hand-written up to the `v1.0-submission` tag. D-27 covers changes after it. Signature:
 
 ```ts
 export function evaluate(input: EvaluateInput): Decision;

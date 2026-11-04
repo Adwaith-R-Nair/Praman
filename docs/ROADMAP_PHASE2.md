@@ -1,5 +1,7 @@
 # Praman · Roadmap, Phase 2 (Phases 9 to 21)
 
+**Status (2026-11-04):** current work follows the [PayPal hackathon design](superpowers/specs/2026-11-04-paypal-hackathon-design.md). It finishes Phase 10, pulls Phase 13 forward, takes a subset of Phase 15 and the statistics item from Phase 11, and defers Phases 11 (the rest), 12, 14 and 16 to 20 until after the hackathon. Where the two differ, the design wins.
+
 The submission is done: Phases 0 to 8 in [`ROADMAP.md`](ROADMAP.md) shipped, the repo was shortlisted, and it was defended in interview. This roadmap covers what comes next. There is no deadline, so phases are ordered by dependency and by what each one makes possible for the next, not by calendar.
 
 Three goals carry equal weight, and every phase is tagged with the ones it serves:
@@ -17,7 +19,7 @@ The rule from Phase 0 still holds: *if you cannot explain the phase you just fin
 These rules apply to every phase. The engineer executing a phase (human or model) reads this section first.
 
 1. **Protected packages.** `CLAUDE.md` requires a five-line plan, and explicit approval, before any change to `packages/policy`, `packages/ledger` or `packages/razorpay-exec`. Phases that touch them are marked **⚑ PROTECTED** with the exact files involved. That includes test-only changes inside those packages. Post the plan, wait, then start.
-2. **`packages/policy/src/evaluate.ts` is human-authored.** Two phases (19 and 20) need new decision logic. The builder writes that logic by hand. The executor writes the failing tests first, the surrounding plumbing, and the docs, and does not touch `evaluate.ts`. Those phases are marked **✎ HAND-WRITTEN**.
+2. **`packages/policy/src/evaluate.ts` was hand-written up to the `v1.0-submission` tag.** Since 2026-11-04 agents may edit it (D-27), with a failing test first, its own commit, and the builder's review. Two phases (19 and 20) need new decision logic and follow that rule. They are marked **✎ DECISION LOGIC**.
 3. **Documentation happens inside the phase.** No phase is finished until it has (a) a build-log entry and (b) a decision record wherever a real design choice was made. There is no "docs cleanup" phase at the end.
    - Build log: new entries go under a `## Phase 2` divider in `docs/BUILD_LOG.md`, headed `### Phase N · <date> · <topic>`. The existing rule still applies: entries are never edited after the fact, and corrections are written forward.
    - Decision records: continue from D-25 in `docs/DECISIONS.md`. Numbers are assigned when the record is written, in the order they're written. The `D-xx` labels in this document are working titles, not reserved numbers. When a new record supersedes part of an old one (D-20 and D-22 will both be partly superseded), the old record gets a one-line `Status:` pointer forward. Its original text stays as written.
@@ -255,7 +257,7 @@ Make budget and velocity count money that *might* have moved, and give the recon
 1. **Concurrency harness first (red).** Use a `SimulatedExecutor` with a controllable latch, so every call waits until released. Fire N concurrent `runIntent` calls with distinct carts under one mandate, release them, and assert that the sum of created amounts is at most `max_total_paise` and the count is at most `max_txns_per_window`. Commit it failing. That commit is the evidence of the gap.
 2. **Reservation in `deriveState` (⚑).** An `api_call` with `status: attempted` and no matching `outcome` counts toward `spent_paise` and `txn_timestamps`, and **not** toward `merchants_transacted`, because an attempt isn't an order and shouldn't satisfy the first-merchant step-up. A `failed` outcome, including a reconciled not-found, releases it.
    - **Pairing (F14):** old `api_call` events have no `idempotency_key`, so pair by `trace_id`. Add `idempotency_key` and `merchant_id` to *new* `api_call` payloads. The reader must handle both shapes forever, since you can't backfill an append-only log. This is schema evolution under immutability, and it's worth being able to explain.
-   - **Why fold reservations into `spent_paise`** rather than adding a `reserved_paise` field: it leaves `evaluate.ts` untouched, and the check is meant to cover obligations that are committed *or may be committed*. D-17 already counts created orders on the same principle. Record this. The alternative is also defensible but needs a hand-written change to `evaluate()`.
+   - **Why fold reservations into `spent_paise`** rather than adding a `reserved_paise` field: it leaves `evaluate.ts` untouched, and the check is meant to cover obligations that are committed *or may be committed*. D-17 already counts created orders on the same principle. Record this. The alternative is also defensible but needs a change to `evaluate()`.
    - **Consequence, named:** a pending record nobody reconciles holds its budget indefinitely. This fails closed, which is correct.
 3. **The reconciler takes the per-mandate lock** after reading `mandate_id` from the intent event, closing D-22 residual 4.
 4. **`pnpm reconcile` (F13).** A CLI that runs one sweep. Document that in production something has to schedule it, and that webhooks (Phase 15) shorten the wait without replacing the sweep.
@@ -480,7 +482,7 @@ Exercise multi-merchant use at realistic scale, measure the known bottlenecks, a
 
 Answer the policy question D-20 deliberately left open.
 
-**⚑ PROTECTED + ✎ HAND-WRITTEN:** `packages/policy/src/evaluate.ts` (**the builder writes the change**), `packages/mandate` (schema v2), `packages/ledger/src/derive.ts`, `packages/shared/src/reason-codes.ts`.
+**⚑ PROTECTED + ✎ DECISION LOGIC:** `packages/policy/src/evaluate.ts` (**rule 2 applies**), `packages/mandate` (schema v2), `packages/ledger/src/derive.ts`, `packages/shared/src/reason-codes.ts`.
 
 **Why this phase, why now.** Slow probing across windows is the last open gap in the probe-oracle story (D-19 → D-20). It comes after Phase 9 because a global ceiling combined with the F1 bug would have let anyone lock any mandate *permanently*. It comes after Phase 11 because it changes `evaluate()` and needs a mutation baseline. It comes before Phase 20 because both need mandate schema versioning, and it's the smaller of the two changes.
 
@@ -491,7 +493,7 @@ Answer the policy question D-20 deliberately left open.
    - *Reset:* the recommendation is an issuer-signed `mandate_unlocked` ledger event (`pnpm unlock <mandate_id> "<reason>"`), because it leaves an audit trail and matches the "pending human review" wording `DENIAL_RATE_EXCEEDED` already uses. The alternative is to require a new mandate.
    - *What counts:* signature-invalid denials are already excluded (Phase 9). Decide whether `DUPLICATE_INTENT` counts, since a legitimate client's retry storm shouldn't lock a mandate.
    - *Reason code:* the recommendation is a new code, `MANDATE_LOCKED`, because the fix is different: the window cap clears itself, and the ceiling doesn't. That means the enum, the `MANDATE_SPEC.md` table and a corpus fixture (invariant 8).
-3. **Order of work.** The executor writes failing tests: a slow-probe fixture that stays under the window cap across windows (named in D-20), v1 compatibility, and unlock. The builder hand-writes the `evaluate.ts` check and decides where it goes in the order (recommendation: next to 2b, after revocation). The executor does the derive, schema and CLI plumbing.
+3. **Order of work.** The executor writes failing tests: a slow-probe fixture that stays under the window cap across windows (named in D-20), v1 compatibility, and unlock. The `evaluate.ts` check follows rule 2, and the builder decides where it goes in the order (recommendation: next to 2b, after revocation). The executor does the derive, schema and CLI plumbing.
 
 **Exit criterion (demoable).** The slow-probe case is contained. An unlock demo shows the lock, the signed unlock, and purchases resuming, all on the ledger. v1 mandates behave exactly as before. The mutation score for `evaluate.ts` is at least the Phase 11 baseline. **Docs:** build-log entry; **D-xx "Lifetime denial ceiling and signed unlock"**, with D-20 given a `Status:` pointer forward; `MANDATE_SPEC.md` §1, §3 and §4 updated.
 
@@ -501,7 +503,7 @@ Answer the policy question D-20 deliberately left open.
 - `test: slow probe stays under the window cap indefinitely` ⚑ policy tests
 - `feat: add mandate schema v2 with a lifetime denial limit`
 - `feat: add MANDATE_LOCKED to reason codes and spec table`
-- `feat: enforce the lifetime denial ceiling` ✎ **builder's commit**
+- `feat: enforce the lifetime denial ceiling` ✎ **its own commit, builder's review**
 - `feat: derive unlock events and add an unlock cli` ⚑ ledger
 - `test: v1 mandates are unaffected by the ceiling`
 - `chore: add the slow-probe and locked-mandate fixtures`
@@ -516,7 +518,7 @@ Answer the policy question D-20 deliberately left open.
 
 Let an agent hand a strictly smaller slice of its authority to a sub-agent. The original PRD scoped this out explicitly.
 
-**⚑ PROTECTED + ✎ HAND-WRITTEN:** `packages/policy` (**builder writes the chain-aware decision logic**), `packages/mandate`, `packages/ledger/src/derive.ts`.
+**⚑ PROTECTED + ✎ DECISION LOGIC:** `packages/policy` (**rule 2 applies to the chain-aware decision logic**), `packages/mandate`, `packages/ledger/src/derive.ts`.
 
 **Why this phase, why now.** It's the most research-heavy capability in the roadmap: attenuation-only delegation, the model behind macaroons, UCAN and Biscuit tokens. It depends on agent keys (14), registration events (14) and schema versioning (19).
 
@@ -527,7 +529,7 @@ Let an agent hand a strictly smaller slice of its authority to a sub-agent. The 
 3. **Evaluation design, for the builder to choose and write.**
    - (a) A new `evaluateChain()` in its own file that calls the existing `evaluate()` once per level, with the intent re-bound to that level's `mandate_id` and a derived state that sums spend across the level's subtree. Deny if any level denies, and record which level did. This leaves `evaluate.ts` untouched.
    - (b) Make `evaluate()` itself aware of chains.
-   The recommendation is (a). Either way it's decision logic, so the builder writes it.
+   The recommendation is (a). Either way it's decision logic, so rule 2 applies.
 4. **Derivation.** `deriveState` for an ancestor aggregates its descendants' spend. The subtree comes from `mandate_registered` events.
 5. **Cascade.** Revoking a parent denies every descendant, with no separate revocation events needed.
 6. **New reason code** `DELEGATION_INVALID` for chain-verification failures, if (b) or issuance checks need one. Enum, docs and fixture as usual.
@@ -540,7 +542,7 @@ Let an agent hand a strictly smaller slice of its authority to a sub-agent. The 
 - `test: sibling spend is bounded by the parent budget` ⚑
 - `feat: add sub-mandate issuance with attenuation checks`
 - `feat: derive subtree spend for ancestor mandates` ⚑ ledger
-- `feat: evaluate intents against every level of a chain` ✎ **builder's commit**
+- `feat: evaluate intents against every level of a chain` ✎ **its own commit, builder's review**
 - `feat: cascade parent revocation to descendants`
 - `feat: show the denying level on the trace page`
 - `chore: add delegation fixtures`
@@ -627,7 +629,7 @@ Every cut goes into the README's limitations section, as before.
 
 - **A Rust policy core.** D-18 called it "first on the post-submission roadmap". Having now costed it against these three goals, it isn't scheduled. Its only real benefit (newtypes that survive to runtime) is weaker than the FFI boundary it adds, which is D-18's own argument, and Phases 11, 13 and 17 buy more of all three goals. Record a short decision that supersedes D-18's sequencing sentence so the old promise isn't left open.
 - **An LLM reviewer anywhere in authorisation.** Rejected by D-02, and that doesn't change.
-- **A policy-as-code DSL.** It would stop `evaluate.ts` from being a single file that a human wrote and can read top to bottom (invariant 3). Revisit only if the builder decides to give that property up.
+- **A policy-as-code DSL.** It would stop `evaluate.ts` from being a single file that a human can read top to bottom (invariant 3). Revisit only if the builder decides to give that property up.
 - **Multi-instance deployment, HA or Kubernetes.** This work is about correctness under a single Postgres. The advisory-lock design assumes a single database, and the threat model says so.
 - **Live-mode keys.** Test mode only, permanently for this repo.
 - **Fuzzing prompts or generating attacks automatically.** Excluded by invariant 9. Property testing of `evaluate()` in Phase 11 is allowed because its inputs go to our own pure function, not to a model, and it produces no attack text.

@@ -643,3 +643,45 @@ delivery. These are tested as those parts get built, and recorded forward.
 **Limits.** This is one app on one sandbox account on one day. Key retention is
 still undocumented and untested, which decision 2 is built to tolerate. Sandbox
 behaviour may differ from production. Live keys are out of scope for this repo.
+
+### D-27 · Moving to an agentic development life cycle · Accepted
+
+Decided by the builder, Adwaith R Nair, on 2026-11-04. Until now invariant 3 said
+`packages/policy/src/evaluate.ts` was human-authored and an agent could only
+write tests for it and report bugs in it. The builder lifted that rule: the
+project now follows an agentic development life cycle, and the PayPal plan has
+agents make the policy changes it needs, such as the `_minor` rename and the
+currency mismatch check.
+
+**What stays true, as history.** `evaluate()` and the ledger's hash chain
+(`packages/ledger/src/chain.ts`) were hand-written up to the `v1.0-submission`
+tag. At the time of this record, neither file has a commit after that tag, which
+`git log v1.0-submission..HEAD` on those two paths confirms. Git cannot show who
+typed a line, so the evidence for "hand-written" is the builder's own statement:
+the README at that tag, and the Day 4 build-log entry for `evaluate()`.
+
+**The rule from here.** Agents may edit both files. Each change needs a failing
+test first, its own commit, and the builder's review. `evaluate.ts` stays one
+readable pure function.
+
+**What this does not change.** Invariant 1 is about runtime, and it holds as
+before. An agent writing code that the builder reviews is not a model authorising
+a payment. No LLM call enters `packages/policy` or the executors, and no model
+output becomes a policy value.
+
+**Rejected: keeping the rule.** The builder would have to type every policy
+change for the PayPal work himself. That is the builder's call to make, and he
+made it the other way.
+
+**Rejected: leaving the docs as they were.** A present-tense "hand-written" claim
+would become false at the first agent commit to that file, and this repo is read
+by people checking its claims against its history.
+
+**Rejected: removing the claim altogether.** It is true of the submitted version,
+and the tag gives a fixed point to check it against.
+
+**Consequence.** "Hand-written" stops being a reason to trust later versions of
+these files. That trust now rests on the failing test, the isolated commit and
+the builder's review, all of which can be read in the history. Docs that state
+the claim are reworded as history. Dated records, meaning `docs/BUILD_LOG.md` and
+the shipped phases in `docs/ROADMAP.md`, stay as written.

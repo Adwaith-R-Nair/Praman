@@ -1802,3 +1802,36 @@ with no buyer present stays conditional.
 
 Still untested because it needs a real buyer or a public URL: capture after
 approval, and webhook delivery. Those get tested when that code is written.
+
+### Phase P1 · 2026-11-04 · making the docs tell the true story
+
+Docs only, no code changed. Two rules changed today, and the docs still stated
+the old ones as fact.
+
+**Who writes the policy engine.** The docs said `evaluate.ts` is hand-written. I
+decided agents may now edit it, under stricter conditions: a failing test first,
+its own commit, my review. D-27 records this. If the docs had stayed as they were,
+they would become false the first time an agent touches that file, and the people
+reading this repo compare claims against history. So every present-tense claim
+now reads as history: hand-written up to the `v1.0-submission` tag. That is still
+true today, since neither `evaluate.ts` nor `chain.ts` has a commit after the tag.
+
+The plan listed five places to fix. A wider search found more: the file tree in
+`docs/LLD.md`, one line in `docs/MANDATE_SPEC.md`, and the rules and markers in
+`docs/ROADMAP_PHASE2.md`, which still told an executor not to touch the file.
+Phases 19 and 20 now carry a "decision logic" marker in place of "hand-written".
+`docs/ROADMAP.md` and this log keep their old wording, because they are dated
+records of what happened then.
+
+**How amounts are named.** Invariant 2 now says minor units, `_minor` field names
+and currency from the signed mandate. The code doesn't do that yet, since the
+rename is the next task, so the invariant says so in words instead of pretending.
+
+**The story of the project.** The README has a new History section: the Buildathon,
+then independent learning, then this hackathon, then what continues after it. Its
+comparison links are the ones a judge can use to check what is new. They compare
+against `main`, so PayPal work only appears in them once this branch is merged.
+The section says plainly that PayPal is not built yet.
+
+Em dashes were also removed from the "three primitives" lists in the README and
+`docs/ARCHITECTURE.md`, so those lists read the same after the rewording.
