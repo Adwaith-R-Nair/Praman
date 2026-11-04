@@ -1,9 +1,9 @@
-import { prisma, loadCatalogSnapshot } from "@praman/db";
+import { prisma, loadCatalogSnapshot, type PrismaTx } from "@praman/db";
 import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, type PurchaseIntent } from "@praman/policy";
 import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/mandate";
 import { acceptOutcome, idempotencyKey, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
-import { minorFromDb, minorToJSON } from "@praman/shared";
+import { minorFromDb, minorToJSON, type DenyCode } from "@praman/shared";
 import { gateOnRail, routeMerchant } from "./route-merchant.js";
 import { MANDATE_LOCK_NS, parseCachedOutcome } from "./run-intent.js";
 
@@ -27,6 +27,23 @@ export type ResolveResult =
   | { readonly kind: "NOT_FOUND"; readonly detail: string };
 
 /**
+ * A caller who hasn't proved they hold this approval's mandate changes nothing
+ * about it. The status stays as it is, since an approved row means money may have
+ * moved and a pending one still belongs to the real holder. The attempt is recorded
+ * as a claim, not against the mandate, as runIntent does (D-25).
+ */
+async function refuseUnproven(tx: PrismaTx, apr: { readonly traceId: string; readonly mandateId: string }, reasonCode: DenyCode, detail: string, now: Date) {
+  await append(tx, {
+    traceId: apr.traceId,
+    ts: now,
+    actor: "praman",
+    eventType: "decision",
+    payload: { claimed_mandate_id: apr.mandateId, kind: "DENY", reason_code: reasonCode, detail },
+  });
+  return { go: false as const, result: { kind: "REFUSED" as const, trace_id: apr.traceId, reason_code: reasonCode, detail } };
+}
+
+/**
  * Approval satisfies ONLY the step-up gate, and nothing else. Everything
  * else — revocation, expiry, budget, velocity — is re-evaluated against the
  * mandate and ledger state as they are NOW, not as they were at step-up
@@ -43,8 +60,18 @@ export async function resolveApproval(
   now: Date,
 ): Promise<ResolveResult> {
   const phase1 = await prisma.$transaction(async (tx) => {
-    const apr = await tx.approval.findUnique({ where: { approvalId } });
-    if (apr === null) return { go: false as const, result: { kind: "NOT_FOUND" as const, detail: approvalId } };
+    const found = await tx.approval.findUnique({ where: { approvalId } });
+    if (found === null) return { go: false as const, result: { kind: "NOT_FOUND" as const, detail: approvalId } };
+
+    // Same lock namespace as runIntent (D-05) — a fresh purchase attempt and
+    // an approval resolution for the same mandate must serialise together,
+    // or both could read stale spend before either writes it.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${found.mandateId}))`;
+
+    // The first read only finds which lock to take. Whoever held the lock may
+    // have just resolved this approval, so its status is only true from here on.
+    const apr = await tx.approval.findUniqueOrThrow({ where: { approvalId } });
+
     // "rejected"/"expired" are terminal — refuse outright. "approved" is NOT
     // rejected here: it falls through to the idempotency-record check below,
     // which returns the cached EXECUTED result. Rejecting it here instead
@@ -56,11 +83,6 @@ export async function resolveApproval(
         result: { kind: "REJECTED" as const, trace_id: apr.traceId, reason: `already ${apr.status}` },
       };
     }
-
-    // Same lock namespace as runIntent (D-05) — a fresh purchase attempt and
-    // an approval resolution for the same mandate must serialise together,
-    // or both could read stale spend before either writes it.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${apr.mandateId}))`;
 
     // Only a still-pending approval can be rejected or expire. An
     // already-"approved" one falls straight through to the idempotency
@@ -87,20 +109,12 @@ export async function resolveApproval(
     }
 
     const verified = verifyMandate(signed, publicKeyPem);
-    if (!verified.ok) {
-      await tx.approval.update({ where: { approvalId }, data: { status: "rejected", resolvedAt: now } });
-      return {
-        go: false as const,
-        result: {
-          kind: "REFUSED" as const,
-          trace_id: apr.traceId,
-          reason_code: verifyFailureCode(verified.reason),
-          detail: verified.reason,
-        },
-      };
+    if (!verified.ok) return refuseUnproven(tx, apr, verifyFailureCode(verified.reason), verified.reason, now);
+    const mandate = verified.mandate;
+    if (mandate.mandate_id !== apr.mandateId) {
+      return refuseUnproven(tx, apr, "MANDATE_SUBJECT_MISMATCH", `approval belongs to mandate ${apr.mandateId}, not ${mandate.mandate_id}`, now);
     }
 
-    const mandate = verified.mandate;
     const intent = apr.intent as unknown as PurchaseIntent;
     const key = idempotencyKey(mandate.mandate_id, intent);
 

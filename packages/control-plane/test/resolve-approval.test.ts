@@ -3,10 +3,11 @@ import { prisma } from "@praman/db";
 import { append, deriveState } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument, type SignedMandate } from "@praman/mandate";
-import { routeAllTo, routeByRail, SimulatedExecutor, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
+import { idempotencyKey, routeAllTo, routeByRail, SimulatedExecutor, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
 import { minor, type Rail } from "@praman/shared";
 import { runIntent } from "../src/run-intent.js";
 import { resolveApproval } from "../src/resolve-approval.js";
+import { MANDATE_LOCK_NS } from "../src/run-intent.js";
 
 const MERCHANT = "TEST_APR_MERCH";
 const SKU = "TEST_APR_SKU";
@@ -330,5 +331,122 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
     expect(second.kind).toBe("DECIDED");
     if (second.kind !== "DECIDED") throw new Error("unreachable");
     expect(second.agent_visible.kind).toBe("ALLOW");
+  });
+});
+
+describe("resolveApproval reads the approval's status under the mandate lock", () => {
+  const NOW = new Date("2026-09-01T01:00:00.000Z");
+
+  async function waitForLockWaiter(): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`SELECT count(*) AS waiting FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`;
+      if (row !== undefined && row.waiting > 0n) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("nothing ever waited on the mandate lock");
+  }
+
+  it("a reject that waited behind an approve does not undo it", async () => {
+    const mandateId = "mnd_apr_race";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const intentId = "int_apr_race";
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, intentId);
+    const executor = new CountingExecutor(new SimulatedExecutor());
+
+    // Plays the approve that got the lock first: it commits "approved" and its
+    // outbox row while the reject is already past its first read, waiting.
+    const { resolving } = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${mandateId}))`;
+      const started = resolveApproval(approvalId, "reject", signed, publicKeyPem, routeAllTo(executor), NOW);
+      await waitForLockWaiter();
+      await tx.approval.update({ where: { approvalId }, data: { status: "approved", resolvedAt: NOW } });
+      await tx.idempotencyRecord.create({
+        data: { key: idempotencyKey(mandateId, buildIntent(mandateId, intentId)), traceId: `trc_${intentId}`, status: "pending", receipt: "r", amountMinor: 5000n, rail: "simulated", currency: "INR", outcome: {} },
+      });
+      return { resolving: started };
+    });
+    const result = await resolving;
+
+    expect(result).toMatchObject({ kind: "IN_FLIGHT" });
+    expect((await prisma.approval.findUnique({ where: { approvalId } }))?.status).toBe("approved");
+    expect(await prisma.ledgerEntry.count({ where: { eventType: "step_up_resolved" } })).toBe(0);
+    expect(executor.callCount).toBe(0);
+  });
+
+  it("a second approve that waited behind a reject gets the rejection", async () => {
+    const mandateId = "mnd_apr_race_reject";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_race_reject");
+    const executor = new CountingExecutor(new SimulatedExecutor());
+
+    const { resolving } = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${mandateId}))`;
+      const started = resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), NOW);
+      await waitForLockWaiter();
+      await tx.approval.update({ where: { approvalId }, data: { status: "rejected", resolvedAt: NOW } });
+      return { resolving: started };
+    });
+
+    expect(await resolving).toMatchObject({ kind: "REJECTED", reason: "already rejected" });
+    expect(executor.callCount).toBe(0);
+    expect(await prisma.idempotencyRecord.count()).toBe(0);
+  });
+});
+
+describe("a caller who hasn't proved they hold the mandate changes nothing about the approval", () => {
+  const NOW = new Date("2026-09-01T01:00:00.000Z");
+
+  async function attemptRows(traceId: string) {
+    const rows = await prisma.ledgerEntry.findMany({ where: { traceId, eventType: "decision" }, orderBy: { seq: "asc" } });
+    return rows.slice(1).map((row) => row.payload);
+  }
+
+  it("a bad signature can't turn an approved row into a rejected one, and is recorded", async () => {
+    const mandateId = "mnd_apr_flip";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_flip");
+    const first = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), NOW);
+    expect(first.kind).toBe("EXECUTED");
+
+    const wrongKey = buildSignedMandate(mandateId).publicKeyPem;
+    const result = await resolveApproval(approvalId, "approve", signed, wrongKey, routeAllTo(new SimulatedExecutor()), NOW);
+
+    expect(result).toMatchObject({ kind: "REFUSED", reason_code: "MANDATE_SIGNATURE_INVALID" });
+    expect((await prisma.approval.findUnique({ where: { approvalId } }))?.status).toBe("approved");
+    const rows = await attemptRows("trc_int_apr_flip");
+    expect(rows).toEqual([expect.objectContaining({ claimed_mandate_id: mandateId, kind: "DENY", reason_code: "MANDATE_SIGNATURE_INVALID" })]);
+    expect(rows[0]).not.toHaveProperty("mandate_id");
+  });
+
+  it("a bad signature leaves a pending approval pending, so the real holder can still approve", async () => {
+    const mandateId = "mnd_apr_forged_pending";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_forged_pending");
+
+    const forged = buildSignedMandate(mandateId);
+    const refused = await resolveApproval(approvalId, "approve", forged.signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), NOW);
+    expect(refused).toMatchObject({ kind: "REFUSED", reason_code: "MANDATE_SIGNATURE_INVALID" });
+    expect((await prisma.approval.findUnique({ where: { approvalId } }))?.status).toBe("pending");
+
+    const real = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), NOW);
+    expect(real).toMatchObject({ kind: "EXECUTED" });
+    // A forged attempt is never counted against the real mandate (D-25).
+    const state = await prisma.$transaction((tx) => deriveState(tx, mandateId));
+    expect(state.denied_attempts).toEqual([]);
+  });
+
+  it.each(["pending", "approved"] as const)("another mandate's good signature can't flip a %s approval", async (status) => {
+    const mandateId = `mnd_apr_other_${status}`;
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, `int_apr_other_${status}`);
+    if (status === "approved") await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), NOW);
+    const other = buildSignedMandate(`${mandateId}_someone_else`);
+    const executor = new CountingExecutor(new SimulatedExecutor());
+
+    const result = await resolveApproval(approvalId, "approve", other.signed, other.publicKeyPem, routeAllTo(executor), NOW);
+
+    expect(result).toMatchObject({ kind: "REFUSED", reason_code: "MANDATE_SUBJECT_MISMATCH" });
+    expect((await prisma.approval.findUnique({ where: { approvalId } }))?.status).toBe(status);
+    expect(executor.callCount).toBe(0);
   });
 });
