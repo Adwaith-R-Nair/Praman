@@ -1230,3 +1230,79 @@ find an unapproved order. This record doesn't test what it returns for a real ca
 
 **Limits.** One app on one sandbox account, as in D-26. Sandbox and live entitlements are separate things, and live keys stay
 out of scope.
+
+### D-38 · How `paypal-exec` sorts PayPal's answers · Accepted
+
+An implementer's decisions for the builder to check. The `Executor` contract gives a rail three ways to answer, and getting one
+wrong has a price in money. A false `failed` frees budget for an order that exists. A false "created" sends a buyer to pay
+something Praman can't vouch for. So each answer from PayPal is sorted once, in `client.ts`.
+
+| PayPal answers | Reported as | Why |
+|---|---|---|
+| 200 or 201 with a readable order | what the order says, even if it differs from the request | D-33: `acceptOutcome` decides |
+| 400, 403, 404, 422 with a named code | `failed`, carrying the code | PayPal said no and said why |
+| 401, then 401 on a new token | `failed`, `PAYPAL_UNAUTHORIZED` | a call that didn't authenticate didn't run |
+| token endpoint 400, 401, 403 | `failed`, `PAYPAL_AUTH_FAILED`, no API call | nothing was sent |
+| network error, timeout, a body that stops | throw, record stays pending | the call may have landed |
+| 5xx, 429, 409 | throw | the same |
+| 202, 207 | throw | PayPal documents these as unfinished and mixed |
+| a 4xx with no recognisable code | throw | anything between here and PayPal can send a bare 4xx |
+| a success with no id, a bad amount, or an unknown status | throw | it may be an order, and it can't be read |
+
+**`findOrder` throws where `createOrder` returns `failed`.** The reconciler reads `null` or a failure as "no order exists, nothing
+held". A 401 or 403 on a look-up means Praman couldn't ask, and D-32 already says that isn't the same as it not happening. So
+a look-up by repeating the create only returns an order or throws. `null` comes from a 404 on a named id, or a non-USD record,
+since `createOrder` never calls PayPal for one. The cost: a record whose repeat is refused for good stays pending until a human
+looks. A false `failed` costs more. A pending record doesn't count against budget yet. That is the in-flight window Task 8 closes.
+
+**`ORDER_ALREADY_CAPTURED` is read back, not reported.** It's a 422, so the general rule would say `failed`, and the money
+has moved. `capture` fetches the order and reports the real capture. If that fails too, the outcome stays unknown. PayPal's
+error reference names this code. It hasn't been seen live, because nothing has been captured live.
+
+**An order's `COMPLETED` isn't enough.** PayPal documents the capture inside it as `COMPLETED`, `DECLINED`, `PARTIALLY_REFUNDED`,
+`PENDING`, `REFUNDED` or `FAILED`.
+
+| Capture status | Reported as |
+|---|---|
+| `COMPLETED`, `PARTIALLY_REFUNDED`, `REFUNDED` | `captured`, since the payment happened. Refunds aren't modelled. |
+| `DECLINED`, `FAILED` | `failed`, `PAYPAL_CAPTURE_DECLINED` or `PAYPAL_CAPTURE_FAILED` |
+| `PENDING` | throw: funds neither credited nor refused, so a later look decides |
+
+**Capture before approval is a definite `failed` with `ORDER_NOT_APPROVED`.** Confirmed live. A `failed` capture says that capture
+took no money. It doesn't say the order is gone, which is different from what `failed` means on a create. Task 7 has to keep the two apart.
+
+**The request.** `payment_source.paypal.experience_context` with `NO_SHIPPING` and `PAY_NOW`, because the server captures straight
+after approval. This changes what D-26 saw, because D-26's orders didn't send it. Seen live on 2026-11-05:
+
+| | D-26's orders | With `payment_source` |
+|---|---|---|
+| Status | `CREATED` | `PAYER_ACTION_REQUIRED` |
+| Link | `approve` | `payer-action` |
+| First call | 201 | **200** |
+| Repeat with the same key | 200 | 200, same order |
+
+So the status code can't tell a first call from a repeat here, and nothing reads it for that. `Prefer: return=representation` is
+always sent, because PayPal's default answer has no amount to compare, and D-26's silent reuse would go unseen.
+
+**Small guards.**
+
+- A key that is empty or over 108 characters is refused before calling. 109 gets a 500, which would read as unknown for ever, and an empty one means no dedupe. Derived keys are 64.
+- The constructor refuses any host but `*.sandbox.paypal.com`, because live keys are out of scope for this repo.
+- `approve_url` must be https on `*.paypal.com`, or it is null. A buyer gets sent there, and it's PayPal's text.
+- Only code-shaped strings from PayPal are kept (`[A-Z][A-Z0-9_]*`, up to 64). The free text is dropped, so it never reaches the ledger.
+- Every request has a 30 second timeout, so a hung connection can't hold up T2.
+
+**`failure_code` stays executor vocabulary, not a reason code** (D-32). The new codes don't join the closed enum. The explanation of
+a 403 lives in `describePayPalFailure`, because `ExecOutcome` has no detail field and adding one would touch every rail for one
+message. The ledger has the code, and a person can look up the sentence.
+
+**Rejected: PayPal's Agent Toolkit.** It gives a model tools that act on PayPal, which is what Praman exists to stand in front of.
+`@paypal/agent-toolkit` is now in the boundary check's forbidden list.
+
+**Capture tests use PayPal's documented sample,** from its OpenAPI schema, in a file that says so. Nothing in the repo claims a live capture.
+
+**Limits.** Capture after approval is unverified. Three questions wait for a real approval: whether repeating a capture key returns the same capture,
+whether a capture key that got a 422 before approval replays that 422 afterwards, and whether repeating a create after capture shows the order's
+current status or the first answer. The third means a lost capture should be checked by order id, which `findOrder` supports and the reconciler
+doesn't call yet (Task 7). `invoice_id` is the receipt, so if PayPal forgets a key after a capture, a repeat creates a new order that would
+get `DUPLICATE_INVOICE_ID` at capture, which is the safe side.

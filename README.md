@@ -210,7 +210,9 @@ Three that changed the architecture:
 
 **Independent learning, 30 Sep to 2 Oct 2026.** With no deadline, I kept working on it: fixed a lockout caused by forged-signature intents ([D-25](docs/DECISIONS.md)), added a cast lint and an import-boundary check to CI, and traced agent runs through Langfuse.
 
-**PayPal AI Hackathon, from 4 Nov 2026.** Same repo, entered as an update to this existing project. The aim is to run the same mandate format, policy engine and ledger on PayPal as a second payment rail, with INR and USD taken from the signed mandate. So far I have tested how the PayPal sandbox really behaves ([D-26](docs/DECISIONS.md)). This README describes what runs today, which is Razorpay test mode, and PayPal claims get added here only once they are built.
+**PayPal AI Hackathon, from 4 Nov 2026.** Same repo, entered as an update to this existing project. The aim is to run the same mandate format, policy engine and ledger on PayPal as a second payment rail, with INR and USD taken from the signed mandate. So far I have tested how the PayPal sandbox really behaves ([D-26](docs/DECISIONS.md)) and written the rail in `packages/paypal-exec`, which creates real sandbox orders. No entrypoint uses it yet, and its capture call has not run against a real buyer approval. This README describes what runs today, which is Razorpay test mode, and PayPal claims get added here only once they are built.
+
+`paypal-exec` calls PayPal's Orders REST API directly and does not use the PayPal Agent Toolkit. The toolkit gives a model tools that act on PayPal, and Praman exists to decide whether that action should happen ([D-38](docs/DECISIONS.md)).
 
 **After the hackathon.** The project continues. Work deferred for now stays in [`docs/ROADMAP_PHASE2.md`](docs/ROADMAP_PHASE2.md).
 

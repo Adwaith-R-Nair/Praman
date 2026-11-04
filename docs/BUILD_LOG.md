@@ -2258,3 +2258,94 @@ touched.
   page, so the hosted demo has to handle it.
 - **Task 7 must write `order_id` on capture and release rows.** Without one, a release can't free the right order on a key
   that has two.
+
+### Phase P6 · 2026-11-05 · the PayPal rail, and what it can't claim yet
+
+`packages/paypal-exec` now exists. It creates real orders in the sandbox, repeats them, reads them back, and gets a real refusal
+when it captures too early. **Live capture is unverified.** The buyer approval step hasn't succeeded on PayPal's side, so no capture
+has ever run for real. The capture code is tested against the sample in PayPal's published API schema, in a file named
+`documented-shapes.ts` that says so. D-38 has the reasoning, and D-37 records what moved on since D-26.
+
+No entrypoint uses the rail yet, so nothing about a running purchase has changed. The control plane meets it in Task 7.
+
+**Three files do the work.**
+
+- `money.ts` turns `1250n` into `"12.50"` and back with string logic. No float at any point. Inbound values must be exactly two decimals.
+- `client.ts` holds the token and decides what each PayPal answer means.
+- `executor.ts` turns those answers into `created`, `captured`, `failed`, or a throw.
+
+**Walking a purchase through it.** $12.50, with key `K`:
+
+1. `createOrder` refuses anything but USD, and any key over 108 characters, without calling.
+2. It fetches a token, or uses the cached one if that has more than a minute left.
+3. It POSTs with `PayPal-Request-Id: K`, `NO_SHIPPING` and `PAY_NOW`.
+4. The sandbox answers `PAYER_ACTION_REQUIRED` with a `payer-action` link.
+5. The outcome says `created`, 1250, USD, with `approve_url` pointing at that link.
+
+**What happens when it doesn't go that way.** Each of these is a test:
+
+| What happens | Result | Budget |
+|---|---|---|
+| Key reused for another amount, PayPal answers with the old order | reports the old amount, `acceptOutcome` makes it `mismatch` | held |
+| Network error or timeout | throw, record stays pending | not counted until Task 8 |
+| PayPal 500 | throw, record stays pending | not counted until Task 8 |
+| Token expired, 401 | one new token and one repeat with the same key, then carries on | as normal |
+| 401 on the new token too | `failed`, `PAYPAL_UNAUTHORIZED` | none: the call didn't run |
+| 403 `NOT_AUTHORIZED` | `failed`, `PAYPAL_NOT_AUTHORIZED`, cached token dropped | none |
+| INR | `failed`, `CURRENCY_NOT_SUPPORTED`, no call | none |
+| Capture before approval | `failed`, `ORDER_NOT_APPROVED` | Task 7 decides |
+| Capture says already captured | reads the order, reports `captured` | held |
+| Capture `PENDING` | throw, record stays pending | Task 7 and 8 decide |
+
+**The trap worth knowing.** `findOrder` can't use the same rules as `createOrder`. The reconciler reads a failure as "no order, nothing
+held". So if a 403 on the look-up came back as `failed`, a bad token during a sweep would wipe out a real order. Every refusal on a
+look-up throws instead, and the record stays pending.
+
+**A pending record doesn't hold budget yet.** The design wants it to, and that is Task 8's in-flight window. Today, pending only means the outcome hasn't been written off.
+
+**Things PayPal did that I didn't expect:**
+
+- With `payment_source` in the body, the *first* create answers 200, not the 201 D-26 saw. A repeat is also 200. So 201 then 200 doesn't hold for this request, and the code doesn't rely on it. The same order id is what a live test checks.
+- The status and link name change too: `PAYER_ACTION_REQUIRED` and `payer-action`, where D-26 saw `CREATED` and `approve`. Both link names are handled.
+- PayPal documents capture answers of 202 and 207. Reading "2xx" as success would have recorded those as done. Only 200 and 201 count.
+
+**PayPal's app features moved on.** Transaction search and vault setup tokens went from 403 to 200 and 201, after the features were enabled and
+the stale token was terminated. I saw those two codes again in a throwaway script. Payment token creation, capture and a no-buyer charge are
+still untested, since each needs an approval that hasn't registered. D-37 has this. A no-buyer purchase is not shown to work.
+
+**Live tests.** `live.test.ts` runs when `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` are in `.env`, and is skipped in CI. So `pnpm test` locally now
+creates a few unapproved sandbox orders each run, adds several seconds, and needs the network. They ran and passed:
+
+```
+packages/paypal-exec/test/live.test.ts > creates a real sandbox order
+  > finds the same order by repeating the create with the same key
+  > reports the original order when a key is reused for another amount
+  > reads an order back by id
+  > gets a definite not approved from a capture before any buyer approval
+  > answers no order for an id PayPal doesn't know
+```
+
+**Checks.** 460 tests in 31 files, up from 350, and all 110 new ones are in this package. `pnpm lint:policy-freeze` passes, so the rail took no
+policy change. Layer 1 is 46 of 46. No schema change. No ledger row touched.
+
+**A note on running Layer 1.** `pnpm eval --layer1 --dev` rewrites `eval/report.md` and `eval/report.json`. I restored both rather than commit a report
+from a mid-task run, since Task 11 regenerates them.
+
+**Where I went beyond or away from the plan, worth checking:**
+
+- **No `src/webhook.ts`.** The plan lists it here, but no step uses it. An unused stub in the money path helps nobody, so Task 9 creates it, and its "Modify" becomes "Create".
+- **`findOrder` also reads by order id.** The plan only asks for the Task 0 method. The design says a capture is checked by order id, and `OrderLookup` already has the field.
+- **`PENDING`, 202, 207 and 409 are treated as unknown,** which the plan doesn't mention. The schema made them hard to ignore.
+- **Additions:** a sandbox-only constructor, a host check on `approve_url`, `@paypal/agent-toolkit` in the boundary check, a request timeout, and an optional `now` in the config, for token expiry tests.
+- **A README sentence went further than asked.** Saying only why the toolkit is skipped would have left "so far I have tested" out of date, so it now says the rail exists, nothing calls it, and capture hasn't run for real.
+
+**For Task 7:**
+
+- A `failed` capture means that capture took no money. The order still exists and still holds budget. Don't treat it like a failed create.
+- `ORDER_NOT_APPROVED` is exported, so the caller can tell a buyer who hasn't approved from a decline.
+- **Open question:** if a capture key got a 422 before approval, PayPal may replay that 422 after approval too. This can't be tested until an approval works. If it does replay, retrying with the same key would never succeed, and the key would need thought.
+- `reconcilePending` passes `order_id: null`. A capture record has to pass the real id, or `findOrder` will repeat the create instead of checking the capture.
+- `findOrder` returns null on a 404 for a named id, and the reconciler writes that as `failed`. For a capture record, that row must not free the order's budget without thought.
+- `failure_code` strings reach the trace page, and came from PayPal, so they are checked as codes here and still need escaping there.
+
+**For Task 12:** there is no `return_url` in the request, because `CreateOrderRequest` has nowhere to carry one. The sandbox accepts that. A redirect checkout will need one, while a JavaScript SDK checkout may not. The design left that choice open.
