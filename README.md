@@ -122,7 +122,7 @@ pnpm test
 
 ```bash
 pnpm seed-catalog                           # 27 SKUs, including injection fixtures
-pnpm issue-mandate                          # signs mandate.json
+pnpm issue-mandate                          # signs mandate.json, in INR
 pnpm demo "order lunch for two under ₹700"  # agent proposes, Praman decides
 pnpm pending                                # list approvals awaiting a human
 pnpm approve <approval_id> approve          # resolve one

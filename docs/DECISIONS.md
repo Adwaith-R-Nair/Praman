@@ -743,3 +743,59 @@ ledger readers and the two transcript patterns, plus tests. Committed eval outpu
 `eval/` is left as generated, since it records past runs. The price label the model
 reads changes from `price_paise=` to `price_minor=`; the policy never read that text.
 
+### D-29 · Currency comes from the signed mandate · Accepted
+
+Until now a price was a bare integer and every reader assumed rupees. `50000` meant
+₹500 because nothing else could exist. With USD, the same integer could be $500, and
+nothing in the system would notice. The danger isn't a crash. It's a charge that looks
+correct and is wrong by the whole exchange rate.
+
+**Decision: the signed mandate names the currency, and anything priced differently is
+refused.** One amount and one label, `amount_minor` and `currency: "INR" | "USD"`.
+
+- `scope.currency` on the mandate is the only source. It is inside the signed bytes, so
+  it can't be changed without the issuer's key. It is never inferred from region or
+  merchant, and never read from model output.
+- Every catalog item carries a currency. `evaluate()` compares it to the mandate's
+  inside the sorted SKU loop, right after `SKU_UNKNOWN`, and denies `CURRENCY_MISMATCH`.
+  A wrong-currency price is never added to the amount, and because the loop is sorted
+  the code doesn't depend on cart order.
+- Limits are counted in the mandate's currency. Each mandate has one, so its spend is
+  summed in one currency without `deriveState` having to separate them.
+- New ledger events with an amount carry `currency`. Old rows have none and read as
+  INR through `readCurrency`, which is true: `evaluate()` refused everything else when
+  they were written. They are not rewritten (D-28).
+
+**Rejected: converting at evaluation time.** It would need an exchange rate, which is
+an outside input to a pure function, and a mandate's limits would then depend on the
+day. The person signing `$50` means $50.
+
+**Rejected: reusing `AMOUNT_INVALID` for a mismatch.** The amount is fine. The caller
+needs to know the merchant is wrong for this mandate, and a separate code also makes
+the corpus able to prove this exact check fired instead of something nearby.
+
+**Rejected: taking currency from the merchant.** A merchant's configuration isn't signed
+by the person whose money it is. `merchant.currency` exists, and it can only ever
+disagree into a refusal, because each of its items still has to match the mandate.
+
+**An unsupported currency on a good signature isn't a bad signature.** `verifyMandate`
+now returns `UNSUPPORTED_CURRENCY`, and `verifyFailureCode` records it as
+`AMOUNT_INVALID`, the same code `evaluate()` step 5b gives it. Recording it as
+`MANDATE_SIGNATURE_INVALID` would be a false statement in an evidence log. A v2 mandate
+with no currency gets the same refusal rather than an assumed INR. A v1 mandate counts
+in paise by name, so one claiming USD is `MALFORMED_DOCUMENT`.
+
+**Columns have no default.** `catalog_item.currency` and `approval.currency` use a
+default only to backfill existing rows, then drop it. A default of `'INR'` left in place
+would make a USD seed that forgets the field quietly list dollar prices as rupees, which
+is the bug this decision exists to prevent. The check constraints refuse anything but
+the two supported values.
+
+**Razorpay refuses USD until rails are routed.** `LiveExecutor` hardcoded `INR` in its
+request body, so once `evaluate()` allowed USD, a $12.50 item sent there would have
+become a real ₹12.50 order. It now returns a typed failure with no network call. Rail
+routing arrives with the rail-neutral executor, and this refusal stays, because the
+Razorpay account takes INR only.
+
+**Consequence.** The `eval` money-at-risk metric is now one total per currency, since a
+sum of paise and cents means nothing. Its JSON shape changed from a string to an object.

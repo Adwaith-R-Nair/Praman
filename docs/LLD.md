@@ -44,7 +44,9 @@ export const minor = (n: bigint): Minor => {
   if (n < 0n) throw new Error("Minor cannot be negative");
   return n as Minor;
 };
-export const formatINR = (p: Minor): string => `₹${(Number(p) / 100).toFixed(2)}`;
+export const CURRENCIES = ["INR", "USD"] as const;
+export type Currency = (typeof CURRENCIES)[number];
+export function formatMoney(value: Minor, currency: Currency): string; // exact bigint arithmetic, display only
 
 // Result — no thrown exceptions anywhere in the money path.
 export type Result<T, E> =
@@ -113,6 +115,7 @@ CREATE TABLE catalog_item (
   description   TEXT   NOT NULL,            -- UNTRUSTED. never enters policy.
   category      TEXT   NOT NULL,
   price_minor   BIGINT NOT NULL CHECK (price_minor > 0),
+  currency      TEXT   NOT NULL CHECK (currency IN ('INR', 'USD')),
   stock_qty     INT    NOT NULL CHECK (stock_qty >= 0),
   PRIMARY KEY (merchant_id, sku)
 );

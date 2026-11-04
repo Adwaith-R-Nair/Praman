@@ -1886,3 +1886,65 @@ from the catalog and the policy never reads this text, so no money decision depe
 it, but the model may judge a budget less well. Layer 2 wasn't rerun here. Task 3 is
 the natural place to show the currency next to the price, and Task 11 reruns Layer 2.
 
+### Phase P3 · 2026-11-05 · currency from the signed mandate
+
+Praman can now hold USD. The mandate says which currency it is in, and anything priced
+in a different currency is refused. D-29 has the reasoning.
+
+**The bug this prevents.** A price used to be a bare number that everyone read as
+rupees. A ₹500 item is stored as `50000`. Under a USD mandate that same number reads as
+$500, and no check would have complained. Now every catalog item says what currency it
+is in, and `evaluate()` denies `CURRENCY_MISMATCH` if it isn't the mandate's. Nothing is
+ever converted.
+
+**How I know the check is doing the work.** The new corpus cases are built so nothing
+else can stop them: inside every limit, at a merchant already trusted. I removed the
+check temporarily and ran Layer 1. Both mismatch cases moved money, 37 of 39 passed. With
+the check back, 39 of 39.
+
+**Places that assumed INR, which the plan didn't all list:**
+
+- **Razorpay's executor had `currency: "INR"` hardcoded.** This one is the serious find.
+  As soon as `evaluate()` allowed USD, a $12.50 item sent to `LiveExecutor` would have
+  become a real ₹12.50 order. Task 5 was going to fix it, but that leaves a gap in
+  between. It now returns a typed failure and makes no network call, and a test proves
+  it through `runIntent`.
+- **The eval's money-at-risk number** added everything together. With USD cases it would
+  have added paise to cents. It's now one total per currency.
+- **`pnpm pending`** showed approvals with `formatINR`. The `approval` table now has a
+  `currency` column, since a human needs to see what they're approving.
+- **The trace page, index, demo output and dispute bundle** all assumed rupees.
+  `formatINR` is deleted so nothing can reach for it by accident. Everything uses
+  `formatMoney(amount, currency)`.
+- **The reconciler** writes outcomes too, so it reads the currency from the `api_call`
+  event written before the call.
+- **The model's catalog view** now says `price_minor=48000 currency=INR`, which also
+  deals with the concern from P2 that `price_minor` alone doesn't name a unit. The trace
+  page and dispute bundle read lines with or without it, because old transcripts stay
+  as they are. The system prompt didn't change.
+
+**Decisions worth checking:**
+
+- The migration's `'INR'` default fills in existing rows and is then dropped, so a new
+  row with no currency fails rather than quietly becoming rupees.
+- A signed mandate in JPY is recorded as `AMOUNT_INVALID`, not `MANDATE_SIGNATURE_INVALID`,
+  because its signature is fine and the ledger shouldn't say otherwise.
+- USD demo limits are their own numbers ($50 a purchase, $300 total, step-up at $25), not
+  converted from the rupee ones. Same for the USD catalog, seeded with
+  `pnpm seed-catalog MERCH_US_001 USD`. A USD mandate is `pnpm issue-mandate MERCH_US_001 mandate.json USD`.
+
+**The `merchant` table** holds each merchant's rail and currency, loaded by
+`loadMerchantConfig`. Nothing reads it yet. Task 5 routes payments with it. `pnpm
+seed-catalog` writes the rows, INR merchants on Razorpay and USD merchants on PayPal.
+
+**Old data is fine.** After migrating the dev database, `pnpm verify-ledger` gives the same
+result as before: 242 entries, head `62a68c3b...`. The migration doesn't touch `ledger_entry`.
+
+**Commits are split on purpose.** Plumbing first, then display, then the `evaluate.ts`
+change with its reason code and fixtures. USD stayed refused until that third commit, so
+each one is safe on its own.
+
+**One thing to know.** `eval/report.md` wasn't regenerated and is out of date in two ways:
+it still says 35 cases, and it says ₹20338.00 at risk prevented, where the corpus sums to
+₹20878.00 even before these new cases. That older figure was already stale before this
+work. Task 11 regenerates the report, and the README's numbers should be checked against it.
