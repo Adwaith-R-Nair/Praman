@@ -14,7 +14,8 @@ export type ResolveResult =
   | {
       readonly kind: "EXECUTED";
       readonly trace_id: string;
-      readonly order_id: string;
+      /** Null only when a repeat finds a failed attempt whose order never existed. */
+      readonly order_id: string | null;
       readonly order_status: ExecOutcome["status"];
       /** Set when the rail has a checkout: where the buyer goes to approve the order. */
       readonly approve_url: string | null;
@@ -104,10 +105,11 @@ export async function resolveApproval(
 
     // Immune to a second call for the same approval (or races with a fresh
     // purchase attempt that happened to compute the same key) — same
-    // short-circuit shape as runIntent.
+    // short-circuit shape as runIntent, including a failed attempt, so approving
+    // twice after a decline gets the decline again and not a second call.
     const prior = await tx.idempotencyRecord.findUnique({ where: { key } });
-    if (prior?.status === "succeeded") {
-      const cached = parseCachedOutcome(prior.outcome, key);
+    if (prior?.status === "succeeded" || prior?.status === "failed") {
+      const cached = parseCachedOutcome(prior, key);
       await tx.approval.update({ where: { approvalId }, data: { status: "approved", resolvedAt: now } });
       return {
         go: false as const,

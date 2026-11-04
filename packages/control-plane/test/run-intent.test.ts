@@ -158,6 +158,28 @@ describe("runIntent with a USD mandate", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("a repeat of a USD purchase the Razorpay executor refused gets the same typed answer", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const mandateId = "mnd_usd_razorpay_repeat";
+      await prisma.merchant.update({ where: { merchantId: MERCHANT }, data: { rail: "razorpay" } });
+      await seedTrustedMerchant(mandateId);
+      const { signed, publicKeyPem } = buildSignedMandate(mandateId, "USD");
+      const intent = buildIntent("int_usd_razorpay_repeat", mandateId, USD_SKU);
+      const route = routeByRail([new LiveExecutor("k", "s")]);
+
+      const first = await runIntent(intent, signed, publicKeyPem, route, NOW, "test-model");
+      const second = await runIntent(intent, signed, publicKeyPem, route, NOW, "test-model");
+
+      expect(second).toEqual(first);
+      expect(second).toMatchObject({ kind: "DECIDED", order_status: "failed", order_id: "" });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("runIntent ledger events", () => {

@@ -148,6 +148,32 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
     expect(payload["currency"]).toBe("INR");
   });
 
+  it("a repeat of an intent the reconciler found no order for gets a typed answer with no order id", async () => {
+    const mandateId = "mnd_crash_not_found";
+    await seedPriorHistory(mandateId);
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const intent: PurchaseIntent = {
+      intent_id: "int_crash_not_found",
+      mandate_id: mandateId,
+      merchant_id: MERCHANT,
+      line_items: [{ sku: SKU, qty: 1 }],
+      requested_at: "2026-08-28T01:00:00.000Z",
+      agent_rationale: "test",
+    };
+    const now = new Date();
+    // Times out before any order exists, so the rail has nothing to find later.
+    const timesOut = new SimulatedExecutor("timeout");
+
+    expect((await runIntent(intent, signed, publicKeyPem, routeAllTo(timesOut), now, "test-model")).kind).toBe("IN_FLIGHT");
+    const traceId = `trc_${intent.intent_id}`;
+    await prisma.$executeRaw`UPDATE idempotency_record SET created_at = ${new Date(now.getTime() - RECONCILE_MIN_AGE_MS - 1000)} WHERE trace_id = ${traceId}`;
+    expect(await reconcilePending(routeAllTo(timesOut), now)).toBe(1);
+
+    const repeat = await runIntent(intent, signed, publicKeyPem, routeAllTo(timesOut), now, "test-model");
+
+    expect(repeat).toMatchObject({ kind: "DECIDED", order_status: "failed", order_id: null, approve_url: null });
+  });
+
   it("refuses to reconcile a record younger than RECONCILE_MIN_AGE_MS", async () => {
     const mandateId = "mnd_crash_test_2";
     await seedPriorHistory(mandateId);

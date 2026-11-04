@@ -263,6 +263,22 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
     expect(second.order_id).toBe(first.order_id);
   });
 
+  it("approving twice after a decline returns the same answer and calls the executor once", async () => {
+    const mandateId = "mnd_apr_twice_declined";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_twice_declined");
+
+    const executor = new CountingExecutor(new SimulatedExecutor("declined"));
+    const now = new Date("2026-09-01T01:00:00.000Z");
+
+    const first = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), now);
+    const second = await resolveApproval(approvalId, "approve", signed, publicKeyPem, routeAllTo(executor), now);
+
+    expect(executor.callCount).toBe(1);
+    expect(first).toMatchObject({ kind: "EXECUTED", order_status: "failed" });
+    expect(second).toEqual(first);
+  });
+
   it("closes the deadlock: a second purchase at the same merchant goes straight to ALLOW after approval", async () => {
     const mandateId = "mnd_apr_deadlock";
     const { signed, publicKeyPem } = buildSignedMandate(mandateId);

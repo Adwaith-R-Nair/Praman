@@ -33,8 +33,20 @@ export type RunResult =
       readonly detail: string;
     };
 
-/** Reads a settled idempotency record's cached order out of its JSON outcome. Rows from before rails have no approve_url. */
-export function parseCachedOutcome(outcome: unknown, key: string): { orderId: string; status: ExecOutcome["status"]; approveUrl: string | null } {
+/**
+ * Reads a settled idempotency record's cached order out of its JSON outcome.
+ * Rows from before rails have no approve_url. A failed record may have no order
+ * at all, because the reconciler writes `{}` when the rail found nothing.
+ */
+export function parseCachedOutcome(
+  record: { readonly status: string; readonly outcome: unknown },
+  key: string,
+): { orderId: string | null; status: ExecOutcome["status"]; approveUrl: string | null } {
+  const { outcome } = record;
+  if (record.status === "failed") {
+    const orderId = outcome !== null && typeof outcome === "object" && "order_id" in outcome && typeof outcome.order_id === "string" ? outcome.order_id : null;
+    return { orderId, status: "failed", approveUrl: null };
+  }
   if (outcome === null || typeof outcome !== "object" || !("order_id" in outcome) || !("status" in outcome)) {
     throw new TypeError(`idempotency record ${key} is succeeded but its outcome is malformed`);
   }
@@ -137,12 +149,16 @@ export async function runIntent(
 
     // Short-circuit on our OWN record — immune to Razorpay's propagation lag,
     // because it is a row in the same transaction we are already inside.
+    //
+    // A failed attempt is settled too. This exact intent got its answer, and the
+    // same key would reach the same rail, so a repeat gets that answer again. A
+    // new attempt is a new intent, with a new key.
     const prior = await tx.idempotencyRecord.findUnique({ where: { key } });
-    if (prior?.status === "succeeded") {
+    if (prior?.status === "succeeded" || prior?.status === "failed") {
       if (prior.amountMinor === null) {
-        throw new TypeError(`idempotency record ${key} is succeeded but has no amount_minor`);
+        throw new TypeError(`idempotency record ${key} is ${prior.status} but has no amount_minor`);
       }
-      const cached = parseCachedOutcome(prior.outcome, key);
+      const cached = parseCachedOutcome(prior, key);
       return {
         go: false as const,
         result: {

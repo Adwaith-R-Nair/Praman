@@ -107,6 +107,32 @@ describe("runIntent never issues a second razorpay call for a duplicate intent",
     expect(second.order_id).toBe(first.order_id);
   });
 
+  it("a repeat of an intent the rail declined gets the same answer, with no second call", async () => {
+    const mandateId = "mnd_dup_test_declined";
+    await seedPriorHistory(mandateId);
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const intent: PurchaseIntent = {
+      intent_id: "int_dup_declined",
+      mandate_id: mandateId,
+      merchant_id: MERCHANT,
+      line_items: [{ sku: SKU, qty: 1 }],
+      requested_at: "2026-08-28T01:00:00.000Z",
+      agent_rationale: "test",
+    };
+    const executor = new CountingExecutor(new SimulatedExecutor("declined"));
+    const now = new Date();
+
+    const first = await runIntent(intent, signed, publicKeyPem, routeAllTo(executor), now, "test-model");
+    const ledgerAfterFirst = await prisma.ledgerEntry.count();
+    const second = await runIntent(intent, signed, publicKeyPem, routeAllTo(executor), now, "test-model");
+
+    expect(executor.callCount).toBe(1);
+    expect(first).toMatchObject({ kind: "DECIDED", order_status: "failed" });
+    expect(second).toEqual(first);
+    // A replay, like the one for a succeeded record: nothing new happened to record.
+    expect(await prisma.ledgerEntry.count()).toBe(ledgerAfterFirst);
+  });
+
   it("a second identical intent while the first is still pending does not call the executor", async () => {
     const mandateId = "mnd_dup_test_2";
     await seedPriorHistory(mandateId);
