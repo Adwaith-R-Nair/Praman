@@ -33,7 +33,7 @@ function readMoney(amount: unknown): { amount_minor: Minor; currency: Currency }
   if (!isRecord(amount)) throw unknown("response has no amount");
   const currency = amount["currency_code"];
   // Another supported currency is reported, and acceptOutcome turns it into a mismatch. One
-  // that Praman can't name can't be reported, so it stays pending, holding budget.
+  // that Praman can't name can't be reported, so the record stays pending.
   if (!isCurrency(currency)) throw unknown("response has an unusable currency");
   try {
     return { amount_minor: fromPayPalValue(amount["value"]), currency };
