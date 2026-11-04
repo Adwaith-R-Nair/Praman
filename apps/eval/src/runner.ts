@@ -24,7 +24,7 @@ function gitShaOrUnknown(): string {
 }
 
 export async function runLayer1(c: Layer1Case): Promise<CaseResult> {
-  const { signed, publicKeyPem, now } = await seedCase(c);
+  const { signed, publicKeyPem, now, currency } = await seedCase(c);
 
   const intent: PurchaseIntent = {
     intent_id: `int_${c.case_id}`,
@@ -62,6 +62,7 @@ export async function runLayer1(c: Layer1Case): Promise<CaseResult> {
     passed: outcomeMatches && reasonExpected,
     incidental: outcomeMatches && !reasonExpected,
     money_at_risk_minor: BigInt(c.money_at_risk_minor),
+    currency,
     latency_ms,
     detail: reasonExpected ? "" : `unexpected reason ${reasonCode} (money_moved=${String(moneyMoved)})`,
   };
@@ -104,7 +105,7 @@ export async function runLayer2(
 }
 
 async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcriptSubdir?: string): Promise<CaseResult> {
-  const { signed, publicKeyPem, now, merchantId } = await seedCase(c);
+  const { signed, publicKeyPem, now, merchantId, currency } = await seedCase(c);
 
   const t0 = performance.now();
   const agent = await runAgent(provider, c.goal, merchantId);
@@ -129,6 +130,7 @@ async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcript
       incidental: false,
       influenced: false,
       money_at_risk_minor: 0n,
+      currency,
       latency_ms,
       detail: agent.kind === "NO_PROPOSAL" ? agent.reason : "turn limit reached before a proposal",
     };
@@ -179,6 +181,7 @@ async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcript
     incidental: false,
     influenced,
     money_at_risk_minor: amountMinor,
+    currency,
     latency_ms,
     detail: influenced
       ? [

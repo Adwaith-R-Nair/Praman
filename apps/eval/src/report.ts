@@ -1,4 +1,4 @@
-import { formatINR, minor } from "@praman/shared";
+import { CURRENCIES, formatMoney, minor, type Currency } from "@praman/shared";
 import type { Metrics } from "./metrics.js";
 import type { CaseResult } from "./types.js";
 
@@ -63,6 +63,11 @@ function ablationInterpretation(a: AblationSummary): string {
   return parts.join(" ");
 }
 
+/** One figure per currency, never a sum across them. */
+export function moneyAtRiskLine(prevented: Readonly<Record<Currency, string>>): string {
+  return CURRENCIES.map((c) => formatMoney(minor(BigInt(prevented[c])), c)).join(" and ");
+}
+
 export function generateReportMarkdown({ results, metrics, generated_at, ablation }: ReportInput): string {
   const l1 = results.filter((r) => r.layer === 1);
   const l2 = results.filter((r) => r.layer === 2);
@@ -85,7 +90,7 @@ export function generateReportMarkdown({ results, metrics, generated_at, ablatio
     `| false_refusal_rate | ${pct(metrics.false_refusal_rate)} |`,
     `| influence_rate | ${pct(metrics.influence_rate)} |`,
     `| contained_despite_influence | ${pct(metrics.contained_despite_influence)} |`,
-    `| money_at_risk_prevented | ${formatINR(minor(BigInt(metrics.money_at_risk_prevented_minor)))} |`,
+    `| money_at_risk_prevented | ${moneyAtRiskLine(metrics.money_at_risk_prevented_minor)} |`,
     `| p50 / p95 latency | ${metrics.p50_latency_ms?.toFixed(1) ?? "n/a"}ms / ${metrics.p95_latency_ms?.toFixed(1) ?? "n/a"}ms |`,
     "",
     "## By family",

@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { append } from "@praman/ledger";
 import { generateKeypair, signMandate, type MandateDocument, type SignedMandate } from "@praman/mandate";
 import { idempotencyKey } from "@praman/razorpay-exec";
+import { isCurrency, type Currency } from "@praman/shared";
 import type { PurchaseIntent } from "@praman/policy";
 import { prisma } from "./db.js";
 import type { Layer1Case, Layer2Case, SeedEvent } from "./types.js";
@@ -49,7 +50,7 @@ function computeDuplicateKey(mandateId: string, c: Layer1Case, ev: SeedEvent): s
   return idempotencyKey(mandateId, asIfIntent);
 }
 
-async function seedEvents(mandateId: string, defaultMerchantId: string, c: Layer1Case, now: Date): Promise<void> {
+async function seedEvents(mandateId: string, currency: string, defaultMerchantId: string, c: Layer1Case, now: Date): Promise<void> {
   for (const [i, ev] of c.seed.entries()) {
     const ts = new Date(now.getTime() - ev.minutes_ago * 60_000);
     const merchantId = ev.merchant_id ?? defaultMerchantId;
@@ -79,6 +80,7 @@ async function seedEvents(mandateId: string, defaultMerchantId: string, c: Layer
             order_id: `order_SEED_${i.toString()}`,
             payment_id: status === "captured" ? `pay_SEED_${i.toString()}` : null,
             amount_minor: ev.amount_minor ?? "0",
+            currency,
             merchant_id: merchantId,
             idempotency_key: key,
           },
@@ -94,7 +96,7 @@ async function seedEvents(mandateId: string, defaultMerchantId: string, c: Layer
           mandate_id: mandateId,
           kind,
           reason_code: ev.reason_code ?? (kind === "DENY" ? "AMOUNT_INVALID" : "OK"),
-          ...(kind === "DENY" ? { detail: "seed" } : { amount_minor: ev.amount_minor ?? "0" }),
+          ...(kind === "DENY" ? { detail: "seed" } : { amount_minor: ev.amount_minor ?? "0", currency }),
         },
       });
     });
@@ -107,6 +109,8 @@ export interface SeededCase {
   readonly now: Date;
   /** The primary catalog fixture's merchant_id — Layer 2 needs it to call runAgent. */
   readonly merchantId: string;
+  /** Null when the fixture's mandate is deliberately in a currency we don't support. */
+  readonly currency: Currency | null;
 }
 
 /** Resets the DB, seeds the case's catalog and prior ledger history, signs its mandate fixture fresh. */
@@ -136,15 +140,17 @@ export async function seedCase(c: Layer1Case | Layer2Case): Promise<SeededCase> 
   }
 
   if (c.layer === 1) {
-    await seedEvents(doc.mandate_id, catalog.merchant_id, c, now);
+    await seedEvents(doc.mandate_id, doc.scope.currency, catalog.merchant_id, c, now);
   }
+
+  const currency = isCurrency(doc.scope.currency) ? doc.scope.currency : null;
 
   // Simulates a forged mandate: return a public key that does not match the
   // one actually used to sign, so verifyMandate fails at the source.
   if (c.layer === 1 && c.tamper === "wrong_key") {
     const wrongKeypair = generateKeypair();
-    return { signed, publicKeyPem: wrongKeypair.publicKeyPem, now, merchantId: catalog.merchant_id };
+    return { signed, publicKeyPem: wrongKeypair.publicKeyPem, now, merchantId: catalog.merchant_id, currency };
   }
 
-  return { signed, publicKeyPem, now, merchantId: catalog.merchant_id };
+  return { signed, publicKeyPem, now, merchantId: catalog.merchant_id, currency };
 }

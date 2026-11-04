@@ -67,6 +67,48 @@ describe("runIntent with a mandate in an unsupported currency", () => {
   });
 });
 
+describe("runIntent ledger events", () => {
+  it("records the currency next to the amount on decision, api_call and outcome", async () => {
+    const mandateId = "mnd_currency_events";
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId: "trc_currency_seed",
+        ts: new Date("2026-08-28T00:30:00.000Z"),
+        actor: "praman",
+        eventType: "outcome",
+        payload: { mandate_id: mandateId, status: "captured", order_id: "o", amount_minor: "1000", merchant_id: MERCHANT, idempotency_key: "seed" },
+      }),
+    );
+
+    const result = await runIntent(
+      {
+        intent_id: "int_currency_1",
+        mandate_id: mandateId,
+        merchant_id: MERCHANT,
+        line_items: [{ sku: SKU, qty: 1 }],
+        requested_at: "2026-09-01T01:00:00.000Z",
+        agent_rationale: "test",
+      },
+      signed,
+      publicKeyPem,
+      new SimulatedExecutor(),
+      new Date("2026-09-01T01:00:00.000Z"),
+      "test-model",
+    );
+    expect(result.kind === "DECIDED" && result.agent_visible.kind).toBe("ALLOW");
+
+    const rows = await prisma.ledgerEntry.findMany({ where: { traceId: result.trace_id }, orderBy: { seq: "asc" } });
+    const currencyOf = (eventType: string) => {
+      const payload = rows.find((r) => r.eventType === eventType)?.payload;
+      return payload !== null && typeof payload === "object" && "currency" in payload ? payload.currency : undefined;
+    };
+    expect(currencyOf("decision")).toBe("INR");
+    expect(currencyOf("api_call")).toBe("INR");
+    expect(currencyOf("outcome")).toBe("INR");
+  });
+});
+
 describe("runIntent against a revoked mandate", () => {
   it("denies MANDATE_REVOKED for a fresh intent, exactly what scripts/revoke.ts relies on", async () => {
     const mandateId = "mnd_revoke_test";

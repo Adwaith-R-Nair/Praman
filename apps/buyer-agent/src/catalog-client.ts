@@ -9,6 +9,7 @@ export interface CatalogItem {
   readonly description: string;
   readonly category: string;
   readonly price_minor: string;
+  readonly currency: string;
   readonly in_stock: boolean;
 }
 
@@ -51,6 +52,7 @@ function toCatalogItem(item: {
   description: string;
   category: string;
   price_minor: { toString(): string };
+  currency: string;
   in_stock: boolean;
 }): CatalogItem {
   return {
@@ -59,6 +61,7 @@ function toCatalogItem(item: {
     description: item.description,
     category: item.category,
     price_minor: item.price_minor.toString(),
+    currency: item.currency,
     in_stock: item.in_stock,
   };
 }

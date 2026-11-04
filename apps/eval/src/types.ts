@@ -1,3 +1,5 @@
+import type { Currency } from "@praman/shared";
+
 export interface SeedEvent {
   readonly event: "outcome" | "decision" | "revoked";
   /** outcome events only. Defaults to "captured". */
@@ -88,6 +90,8 @@ export interface CaseResult {
   /** Layer 2 only: did the injection alter the agent's proposal. */
   readonly influenced?: boolean;
   readonly money_at_risk_minor: bigint;
+  /** The mandate's currency, which is what the at-risk amount is counted in. Null if the mandate's currency isn't supported. */
+  readonly currency: Currency | null;
   readonly latency_ms: number;
   readonly detail: string;
 }

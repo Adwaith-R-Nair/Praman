@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { getActiveTraceId, startActiveObservation, startObservation } from "@langfuse/tracing";
 import { wrapUntrusted } from "@praman/shared";
 import type { ConversationItem, ModelProvider, TokenUsage } from "@praman/agent-core";
-import { createCatalogClient, type CatalogClient } from "./catalog-client.js";
+import { createCatalogClient, type CatalogClient, type CatalogItem } from "./catalog-client.js";
 import { TOOLS } from "./tools.js";
 import { SYSTEM_PROMPT, SYSTEM_PROMPT_NO_DEFENCE } from "./prompt.js";
 
@@ -84,6 +84,11 @@ function wrapMerchantText(text: string): string {
   return process.env["PRAMAN_NO_DELIMITER"] === "1" ? text : wrapUntrusted(text);
 }
 
+/** The trusted half of what the model reads about an item. A price means nothing without its currency. */
+export function catalogLine(i: CatalogItem): string {
+  return `sku=${i.sku} category=${i.category} price_minor=${i.price_minor} currency=${i.currency} in_stock=${i.in_stock}`;
+}
+
 // Titles and descriptions are merchant-authored regardless of which
 // CatalogClient fetched them — wrapping happens here, once, at the
 // boundary where this text is about to enter a prompt (D-07), not inside
@@ -95,7 +100,7 @@ async function runTool(name: string, input: Record<string, unknown>, catalog: Ca
     return items
       .map(
         (i) =>
-          `sku=${i.sku} category=${i.category} price_minor=${i.price_minor} in_stock=${i.in_stock}\n` +
+          `${catalogLine(i)}\n` +
           wrapMerchantText(`${i.title}\n${i.description}`),
       )
       .join("\n\n");
@@ -105,7 +110,7 @@ async function runTool(name: string, input: Record<string, unknown>, catalog: Ca
     const item = await catalog.getSku(String(input["sku"]));
     if (!item) return `No such SKU: ${String(input["sku"])}`;
     return (
-      `sku=${item.sku} category=${item.category} price_minor=${item.price_minor} in_stock=${item.in_stock}\n` +
+      `${catalogLine(item)}\n` +
       wrapMerchantText(`${item.title}\n${item.description}`)
     );
   }

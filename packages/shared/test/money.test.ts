@@ -4,7 +4,6 @@ import {
   addMinor,
   subMinor,
   mulMinor,
-  formatINR,
   formatMoney,
   isCurrency,
   currencyFromDb,
@@ -69,20 +68,6 @@ describe("Minor", () => {
 
   it("rejects fractional quantity", () => {
     expect(() => mulMinor(minor(100n), 1.5)).toThrow(RangeError);
-  });
-
-  it("formats with two decimal places", () => {
-    expect(formatINR(minor(48000n))).toBe("₹480.00");
-    expect(formatINR(minor(5n))).toBe("₹0.05");
-  });
-
-  it("rejects a forged negative Minor at the display boundary", () => {
-    // The brand is erased at compile time, so a value that skipped minor()'s
-    // guard is indistinguishable from a real Minor at runtime. @ts-expect-error
-    // (not `as Minor`, which lint:casts would rightly flag outside money.ts)
-    // stands in for that escape, to prove formatINR does not trust it silently.
-    // @ts-expect-error - deliberately bypassing minor() to simulate a forged value
-    expect(() => formatINR(-100n)).toThrow(RangeError);
   });
 
   it("survives values above Number.MAX_SAFE_INTEGER", () => {

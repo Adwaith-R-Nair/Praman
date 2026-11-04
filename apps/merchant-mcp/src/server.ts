@@ -22,6 +22,7 @@ function toolItem(item: CatalogItem) {
     description: item.description,
     category: item.category,
     price_minor: item.price_minor.toString(),
+    currency: item.currency,
     in_stock: item.in_stock,
   };
 }

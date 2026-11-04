@@ -93,6 +93,7 @@ describe("buildBundle", () => {
     expect(bundle.mandate.signature_verified).toBe(true);
     expect(bundle.authorisation.decision).toBe("ALLOW");
     expect(bundle.authorisation.amount_minor).toBe("52000");
+    expect(bundle.authorisation.currency).toBe("INR");
     expect(bundle.agent.goal).toBe("order lunch for two");
     expect(bundle.agent.rationale).toBe("two biryanis fit the budget");
     expect(bundle.agent.tool_calls).toHaveLength(1);
@@ -107,6 +108,52 @@ describe("buildBundle", () => {
     expect(bundle.chain.entries).toHaveLength(4);
     expect(bundle.chain.global_chain_ok).toBe(true);
     expect(bundle.chain.trace_fully_verified).toBe(true);
+  });
+
+  it("reports the currency a USD trace was recorded in", async () => {
+    const traceId = "trace_dispute_usd";
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId,
+        ts: new Date("2026-11-05T10:00:00.000Z"),
+        actor: "praman",
+        eventType: "outcome",
+        payload: { mandate_id: "mnd_test", status: "captured", order_id: "order_u", amount_minor: "1250", currency: "USD" },
+      }),
+    );
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, traceId));
+    expect(bundle?.authorisation.amount_minor).toBe("1250");
+    expect(bundle?.authorisation.currency).toBe("USD");
+  });
+
+  it("reads a transcript line that shows the currency next to the price", async () => {
+    const traceId = "trace_dispute_line";
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId,
+        ts: new Date("2026-11-05T10:00:00.000Z"),
+        actor: "praman",
+        eventType: "agent_transcript",
+        payload: {
+          transcript: [
+            {
+              role: "tool_results",
+              results: [
+                {
+                  id: "c1",
+                  name: "list_catalog",
+                  content:
+                    "sku=SKU_US_1 category=food price_minor=1250 currency=USD in_stock=true\n" +
+                    "<untrusted_merchant_content>\nBurrito\nRice and beans\n</untrusted_merchant_content>",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, traceId));
+    expect(bundle?.merchant_content_read.map((r) => r.sku)).toEqual(["SKU_US_1"]);
   });
 
   it("reads a trace recorded before the rename, with old field names", async () => {
@@ -139,6 +186,7 @@ describe("buildBundle", () => {
     if (bundle === null) throw new Error("unreachable");
 
     expect(bundle.authorisation.amount_minor).toBe("48000");
+    expect(bundle.authorisation.currency).toBe("INR");
     expect(bundle.merchant_content_read.map((r) => r.sku)).toEqual(["SKU_FOOD_002"]);
     expect(bundle.chain.global_chain_ok).toBe(true);
   });

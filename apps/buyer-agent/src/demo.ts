@@ -26,7 +26,7 @@ if (env["LANGFUSE_SECRET_KEY"] && env["LANGFUSE_PUBLIC_KEY"]) {
 
 const { runIntent } = await import("@praman/control-plane");
 const { LiveExecutor, SimulatedExecutor } = await import("@praman/razorpay-exec");
-const { formatINR } = await import("@praman/shared");
+const { formatMoney } = await import("@praman/shared");
 const { GeminiProvider, TracedProvider } = await import("@praman/agent-core");
 const { propagateAttributes, startObservation } = await import("@langfuse/tracing");
 const { runAgent } = await import("./agent.js");
@@ -139,7 +139,7 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
 
   const v = result.agent_visible;
   console.log(`▸ decision: ${v.kind}`);
-  if (v.kind !== "DENY") console.log(`  amount: ${formatINR(v.amount_minor)}`);
+  if (v.kind !== "DENY") console.log(`  amount: ${formatMoney(v.amount_minor, signed.document.scope.currency)}`);
   else console.log(`  reason: ${v.reason_code}`);
   console.log(`  trace:  ${result.trace_id}`);
   if (result.order_id) console.log(`  order:  ${result.order_id} (${result.order_status ?? "n/a"})`);

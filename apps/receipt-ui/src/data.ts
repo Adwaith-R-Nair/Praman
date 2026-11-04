@@ -1,11 +1,13 @@
 import { prisma } from "@praman/db";
-import { amountIfPresent, read, type LedgerEntryRecord } from "@praman/ledger";
+import { amountIfPresent, read, readCurrency, type LedgerEntryRecord } from "@praman/ledger";
+import { isCurrency, type Currency } from "@praman/shared";
 import type { ConversationItem } from "@praman/agent-core";
 
 export interface MerchantItemRead {
   readonly sku: string;
   readonly category: string;
   readonly priceMinor: string;
+  readonly currency: Currency;
   readonly inStock: boolean;
   readonly title: string;
   readonly description: string;
@@ -19,6 +21,7 @@ export interface TraceView {
   /** Set instead of reasonCode when the final state isn't a formal ReasonCode — an approval rejected or left to expire. */
   readonly refusalReason: string | null;
   readonly amountMinor: string | null;
+  readonly currency: Currency;
   readonly goal: string | null;
   readonly merchantId: string | null;
   readonly rationale: string | null;
@@ -37,18 +40,21 @@ export interface TraceView {
  * format by necessity — there's no structured version of "what the agent
  * read" to parse instead, only the text it was actually shown. Transcripts
  * recorded before the rename to minor units say price_paise, and they sit in
- * the ledger for good, so both names match.
+ * the ledger for good, so both names match. They also show no currency, and they
+ * are INR, because nothing else existed then.
  */
 function parseMerchantReads(raw: readonly string[]): MerchantItemRead[] {
   const pattern =
-    /sku=(\S+)\s+category=(\S+)\s+price_(?:paise|minor)=(\S+)\s+in_stock=(\S+)\s*\n<untrusted_merchant_content>\n([\s\S]*?)\n<\/untrusted_merchant_content>/g;
+    /sku=(\S+)\s+category=(\S+)\s+price_(?:paise|minor)=(\S+)(?:\s+currency=(\S+))?\s+in_stock=(\S+)\s*\n<untrusted_merchant_content>\n([\s\S]*?)\n<\/untrusted_merchant_content>/g;
   const seen = new Set<string>();
   const items: MerchantItemRead[] = [];
 
   for (const block of raw) {
     for (const m of block.matchAll(pattern)) {
-      const [, sku, category, priceMinor, inStock, titleAndDesc] = m;
+      const [, sku, category, priceMinor, currency, inStock, titleAndDesc] = m;
       if (!sku || seen.has(sku)) continue;
+      const itemCurrency = currency ?? "INR";
+      if (!isCurrency(itemCurrency)) continue;
       seen.add(sku);
       const newlineIdx = (titleAndDesc ?? "").indexOf("\n");
       const title = newlineIdx === -1 ? (titleAndDesc ?? "") : (titleAndDesc ?? "").slice(0, newlineIdx);
@@ -57,6 +63,7 @@ function parseMerchantReads(raw: readonly string[]): MerchantItemRead[] {
         sku,
         category: category ?? "",
         priceMinor: priceMinor ?? "0",
+        currency: itemCurrency,
         inStock: inStock === "true",
         title,
         description,
@@ -137,6 +144,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     reasonCode,
     refusalReason,
     amountMinor: (outcome && amountIfPresent(outcome)) ?? (decision && amountIfPresent(decision)),
+    currency: readCurrency(outcome ?? decision ?? {}),
     goal,
     merchantId: asString(intent?.["merchant_id"]),
     rationale: asString(intent?.["agent_rationale"]),

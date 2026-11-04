@@ -6,7 +6,7 @@ import { config } from "dotenv";
 config({ path: fileURLToPath(new URL("../.env", import.meta.url)) });
 
 const { prisma } = await import("@praman/db");
-const { formatINR, minorFromDb } = await import("@praman/shared");
+const { currencyFromDb, formatMoney, minorFromDb } = await import("@praman/shared");
 
 const pending = await prisma.approval.findMany({
   where: { status: "pending" },
@@ -20,7 +20,7 @@ if (pending.length === 0) {
   for (const apr of pending) {
     const ageMin = Math.floor((now - apr.createdAt.getTime()) / 60_000);
     console.log(
-      `${apr.approvalId}  ${formatINR(minorFromDb(apr.amountMinor)).padEnd(12)}  ${ageMin.toString().padStart(3)}m old  mandate=${apr.mandateId}`,
+      `${apr.approvalId}  ${formatMoney(minorFromDb(apr.amountMinor), currencyFromDb(apr.currency)).padEnd(12)}  ${ageMin.toString().padStart(3)}m old  mandate=${apr.mandateId}`,
     );
   }
 }

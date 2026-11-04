@@ -1,5 +1,6 @@
 import { prisma, type PrismaTx } from "@praman/db";
-import { amountIfPresent, read, verifyChain, type LedgerEntryRecord } from "@praman/ledger";
+import { amountIfPresent, read, readCurrency, verifyChain, type LedgerEntryRecord } from "@praman/ledger";
+import type { Currency } from "@praman/shared";
 
 export interface DisputeBundle {
   readonly trace_id: string;
@@ -27,6 +28,8 @@ export interface DisputeBundle {
     readonly decision: string | null;
     readonly reason_code: string | null;
     readonly amount_minor: string | null;
+    /** Null when there is no amount, as on a DENY. */
+    readonly currency: Currency | null;
     readonly evaluated_at: string | null;
   };
   readonly agent: {
@@ -77,11 +80,11 @@ function asString(v: unknown): string | null {
  * a deliberate tradeoff for time rather than a cross-package refactor.
  * If this drifts from that copy, both need updating together. Transcripts
  * recorded before the rename to minor units say price_paise, and they sit in
- * the ledger for good, so both names match.
+ * the ledger for good, so both names match. Only newer ones show a currency.
  */
 function parseMerchantReads(raw: readonly string[]): { sku: string; text: string; marked_untrusted: true }[] {
   const pattern =
-    /sku=(\S+)\s+category=(\S+)\s+price_(?:paise|minor)=(\S+)\s+in_stock=(\S+)\s*\n<untrusted_merchant_content>\n([\s\S]*?)\n<\/untrusted_merchant_content>/g;
+    /sku=(\S+)\s+category=(\S+)\s+price_(?:paise|minor)=(\S+)(?:\s+currency=\S+)?\s+in_stock=(\S+)\s*\n<untrusted_merchant_content>\n([\s\S]*?)\n<\/untrusted_merchant_content>/g;
   const seen = new Set<string>();
   const items: { sku: string; text: string; marked_untrusted: true }[] = [];
   for (const block of raw) {
@@ -176,6 +179,8 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
     ? true
     : !ownSeqs.some((seq) => seq >= Number(chainResult.brokenAt));
 
+  const amountMinor = (outcome && amountIfPresent(outcome)) ?? (decision && amountIfPresent(decision));
+
   return {
     trace_id: traceId,
     generated_at: new Date().toISOString(),
@@ -187,7 +192,8 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
     authorisation: {
       decision: decisionKind,
       reason_code: reasonCode,
-      amount_minor: (outcome && amountIfPresent(outcome)) ?? (decision && amountIfPresent(decision)),
+      amount_minor: amountMinor,
+      currency: amountMinor === null ? null : readCurrency(outcome ?? decision ?? {}),
       evaluated_at: decisionEntry ? decisionEntry.ts.toISOString() : null,
     },
     agent: {

@@ -4,7 +4,7 @@ import { append } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
 import { SimulatedExecutor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
-import type { Minor } from "@praman/shared";
+import type { Currency, Minor } from "@praman/shared";
 import { runIntent } from "../src/run-intent.js";
 
 const MERCHANT = "TEST_DUP_MERCH";
@@ -14,9 +14,9 @@ const SKU = "TEST_DUP_SKU";
 class CountingExecutor implements Executor {
   callCount = 0;
   constructor(private readonly inner: Executor) {}
-  async createOrder(amountMinor: Minor, receipt: string): Promise<ExecOutcome> {
+  async createOrder(amountMinor: Minor, receipt: string, currency: Currency): Promise<ExecOutcome> {
     this.callCount += 1;
-    return this.inner.createOrder(amountMinor, receipt);
+    return this.inner.createOrder(amountMinor, receipt, currency);
   }
   async findByReceipt(receipt: string) {
     return this.inner.findByReceipt(receipt);

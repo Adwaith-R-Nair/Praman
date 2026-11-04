@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@praman/db";
 import { append, type EventType } from "@praman/ledger";
 import { loadTrace } from "../src/data.js";
+import { renderTracePage } from "../src/pages/trace.js";
 
 // Runs against TEST_DATABASE_URL (see vitest.config.ts), never the real one.
 beforeEach(async () => {
@@ -46,11 +47,13 @@ describe("loadTrace", () => {
 
     const view = await loadTrace("trace_ui");
     expect(view?.amountMinor).toBe("48000");
+    expect(view?.currency).toBe("INR");
     expect(view?.merchantReads).toEqual([
       {
         sku: "SKU_FOOD_002",
         category: "food",
         priceMinor: "26000",
+        currency: "INR",
         inStock: true,
         title: "Chicken Biryani",
         description: "Dum-style biryani",
@@ -74,6 +77,41 @@ describe("loadTrace", () => {
 
     expect((await loadTrace("trace_old"))?.amountMinor).toBe("52000");
     expect((await loadTrace("trace_new"))?.amountMinor).toBe("52000");
+  });
+
+  it("shows a USD trace and its catalog read in USD", async () => {
+    const event = (eventType: EventType, payload: Record<string, unknown>) =>
+      prisma.$transaction((tx) =>
+        append(tx, { traceId: "trace_usd", ts: new Date("2026-11-05T10:00:00.000Z"), actor: "system", eventType, payload }),
+      );
+    await event("agent_transcript", {
+      transcript: [
+        {
+          role: "tool_results",
+          results: [
+            {
+              id: "1",
+              name: "list_catalog",
+              content:
+                "sku=SKU_US_1 category=food price_minor=1250 currency=USD in_stock=true\n" +
+                "<untrusted_merchant_content>\nBurrito\nRice and beans\n</untrusted_merchant_content>",
+            },
+          ],
+        },
+      ],
+    });
+    await event("outcome", { mandate_id: "mnd_test", status: "captured", order_id: "order_x", amount_minor: "1250", currency: "USD" });
+
+    const view = await loadTrace("trace_usd");
+    expect(view?.currency).toBe("USD");
+    expect(view?.merchantReads[0]?.currency).toBe("USD");
+    expect(view?.merchantReads[0]?.priceMinor).toBe("1250");
+
+    // On the page itself: the amount and the catalog price both read in dollars.
+    const { html } = await renderTracePage("trace_usd");
+    expect(html).toContain('<div class="amount">$12.50</div>');
+    expect(html).toContain('<span class="merchant-item-price data">$12.50</span>');
+    expect(html).not.toContain("₹12.50");
   });
 
   it("shows no amount on a denied trace", async () => {

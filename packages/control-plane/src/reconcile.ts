@@ -1,5 +1,5 @@
 import { prisma } from "@praman/db";
-import { append } from "@praman/ledger";
+import { append, readCurrency } from "@praman/ledger";
 import { minorFromDb, minorToJSON } from "@praman/shared";
 import type { Executor } from "@praman/razorpay-exec";
 import { RECONCILE_MIN_AGE_MS } from "./run-intent.js";
@@ -43,6 +43,15 @@ export async function reconcilePending(executor: Executor, now: Date): Promise<n
         throw new TypeError(`intent payload for trace ${rec.traceId} is missing mandate_id/merchant_id`);
       }
 
+      // Same reason as the intent lookup above: the api_call event from T1 is the
+      // durable record of which currency this attempt was in.
+      const apiCallRow = await prisma.ledgerEntry.findFirst({
+        where: { traceId: rec.traceId, eventType: "api_call" },
+        orderBy: { seq: "desc" },
+      });
+      if (apiCallRow === null) throw new Error(`no api_call ledger entry found for trace ${rec.traceId}`);
+      const currency = readCurrency(apiCallRow.payload as Record<string, unknown>);
+
       const found = await executor.findByReceipt(receipt);
 
       await prisma.$transaction(async (tx) => {
@@ -58,6 +67,7 @@ export async function reconcilePending(executor: Executor, now: Date): Promise<n
             order_id: found?.order_id ?? null,
             payment_id: found?.payment_id ?? null,
             amount_minor: minorToJSON(minorFromDb(amountMinor)),
+            currency,
             idempotency_key: rec.key,
             reconciled: true,
           },

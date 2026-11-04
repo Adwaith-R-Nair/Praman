@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@praman/db";
 import { append } from "../src/append.js";
-import { amountIfPresent, deriveState, readAmount } from "../src/derive.js";
+import { amountIfPresent, deriveState, readAmount, readCurrency } from "../src/derive.js";
 
 // Runs against TEST_DATABASE_URL (see vitest.config.ts), never the real one.
 beforeEach(async () => {
@@ -269,5 +269,21 @@ describe("amountIfPresent", () => {
 
   it("returns null when there is no amount, as on a DENY decision", () => {
     expect(amountIfPresent({ kind: "DENY", reason_code: "SKU_UNKNOWN" })).toBeNull();
+  });
+});
+
+describe("readCurrency", () => {
+  it("reads the currency a new entry recorded", () => {
+    expect(readCurrency({ amount_minor: "1250", currency: "USD" })).toBe("USD");
+    expect(readCurrency({ amount_minor: "50000", currency: "INR" })).toBe("INR");
+  });
+
+  it("treats an entry with no currency as INR, because nothing else existed then", () => {
+    expect(readCurrency({ amount_paise: "50000" })).toBe("INR");
+    expect(readCurrency({ amount_minor: "50000" })).toBe("INR");
+  });
+
+  it("refuses a currency it doesn't know rather than showing it as money", () => {
+    expect(() => readCurrency({ amount_minor: "50000", currency: "JPY" })).toThrow(TypeError);
   });
 });

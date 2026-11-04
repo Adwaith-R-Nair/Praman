@@ -45,22 +45,14 @@ export function mulMinor(unit: Minor, qty: number): Minor {
   return minor(unit * BigInt(qty));
 }
 
+const CURRENCY_SYMBOL: Readonly<Record<Currency, string>> = { INR: "₹", USD: "$" };
+
 /**
  * Display only. Never parse this back.
  * Rejects negative values: the brand is erased at compile time, so a value
  * that reached this function via a cast rather than `minor()` would
  * otherwise render as a plausible-looking, silently wrong amount.
  */
-export function formatINR(value: Minor): string {
-  if (value < 0n) throw new RangeError(`Negative Minor reached formatINR: ${value}`);
-  const rupees = value / 100n;
-  const fraction = value % 100n;
-  return `₹${rupees.toString()}.${fraction.toString().padStart(2, "0")}`;
-}
-
-const CURRENCY_SYMBOL: Readonly<Record<Currency, string>> = { INR: "₹", USD: "$" };
-
-/** Display only. Never parse this back. Rejects negatives for the same reason formatINR does. */
 export function formatMoney(value: Minor, currency: Currency): string {
   if (value < 0n) throw new RangeError(`Negative Minor reached formatMoney: ${value}`);
   const whole = value / 100n;

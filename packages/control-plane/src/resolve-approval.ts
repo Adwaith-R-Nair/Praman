@@ -142,7 +142,7 @@ export async function resolveApproval(
       };
     }
 
-    // The human approved a specific rupee figure. If the catalog moved
+    // The human approved a specific figure. If the catalog moved
     // between step-up and approval, this is no longer the purchase they saw
     // — not ALLOW vs STEP_UP, which approval is what resolves either way.
     const approvedAmount = minorFromDb(apr.amountMinor);
@@ -175,6 +175,7 @@ export async function resolveApproval(
         operation: "orders.create",
         receipt,
         amount_minor: minorToJSON(decision.amount_minor),
+        currency: mandate.scope.currency,
         status: "attempted",
       },
     });
@@ -188,6 +189,7 @@ export async function resolveApproval(
       mandateId: mandate.mandate_id,
       merchantId: intent.merchant_id,
       amount: decision.amount_minor,
+      currency: mandate.scope.currency,
     };
   });
 
@@ -197,7 +199,7 @@ export async function resolveApproval(
   // be inside a transaction, so the outbox record was committed before it.
   let outcome: ExecOutcome;
   try {
-    outcome = await executor.createOrder(phase1.amount, phase1.receipt);
+    outcome = await executor.createOrder(phase1.amount, phase1.receipt, phase1.currency);
   } catch (err) {
     return { kind: "IN_FLIGHT", trace_id: phase1.traceId, detail: `call failed with unknown outcome: ${String(err)}` };
   }
@@ -215,6 +217,7 @@ export async function resolveApproval(
         order_id: outcome.order_id,
         payment_id: outcome.payment_id,
         amount_minor: minorToJSON(outcome.amount_minor),
+        currency: phase1.currency,
         merchant_id: phase1.merchantId,
         idempotency_key: phase1.key,
       },

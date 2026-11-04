@@ -188,7 +188,9 @@ export async function runIntent(
         mandate_id: mandate.mandate_id,
         kind: decision.kind,
         reason_code: decision.reason_code,
-        ...(decision.kind === "DENY" ? { detail: decision.detail } : { amount_minor: minorToJSON(decision.amount_minor) }),
+        ...(decision.kind === "DENY"
+          ? { detail: decision.detail }
+          : { amount_minor: minorToJSON(decision.amount_minor), currency: mandate.scope.currency }),
       },
     });
 
@@ -258,6 +260,7 @@ export async function runIntent(
         operation: "orders.create",
         receipt,
         amount_minor: minorToJSON(decision.amount_minor),
+        currency: mandate.scope.currency,
         status: "attempted",
       },
     });
@@ -268,6 +271,7 @@ export async function runIntent(
       receipt,
       mandateId: mandate.mandate_id,
       amount: decision.amount_minor,
+      currency: mandate.scope.currency,
       decision,
     };
   });
@@ -277,7 +281,7 @@ export async function runIntent(
   // ── The external call. Outside any transaction, by necessity. ──
   let outcome: ExecOutcome;
   try {
-    outcome = await executor.createOrder(phase1.amount, phase1.receipt);
+    outcome = await executor.createOrder(phase1.amount, phase1.receipt, phase1.currency);
   } catch (err) {
     // We do NOT know whether the order was created. Leave the record pending.
     return {
@@ -302,6 +306,7 @@ export async function runIntent(
         order_id: outcome.order_id,
         payment_id: outcome.payment_id,
         amount_minor: minorToJSON(outcome.amount_minor),
+        currency: phase1.currency,
         merchant_id: intent.merchant_id,
         idempotency_key: phase1.key,
       },

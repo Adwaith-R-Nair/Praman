@@ -4,7 +4,7 @@ import { append } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
 import { SimulatedExecutor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
-import type { Minor } from "@praman/shared";
+import type { Currency, Minor } from "@praman/shared";
 import { runIntent, RECONCILE_MIN_AGE_MS } from "../src/run-intent.js";
 import { reconcilePending } from "../src/reconcile.js";
 
@@ -19,8 +19,8 @@ const SKU = "TEST_CRASH_SKU";
  */
 class CrashAfterSuccessExecutor implements Executor {
   constructor(private readonly inner: Executor) {}
-  async createOrder(amountMinor: Minor, receipt: string): Promise<ExecOutcome> {
-    await this.inner.createOrder(amountMinor, receipt);
+  async createOrder(amountMinor: Minor, receipt: string, currency: Currency): Promise<ExecOutcome> {
+    await this.inner.createOrder(amountMinor, receipt, currency);
     throw new Error("SIMULATED_CRASH_AFTER_SUCCESS");
   }
   async findByReceipt(receipt: string) {
@@ -139,6 +139,7 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
     expect(payload["mandate_id"]).toBe(mandateId);
     expect(payload["merchant_id"]).toBe(MERCHANT);
     expect(payload["reconciled"]).toBe(true);
+    expect(payload["currency"]).toBe("INR");
   });
 
   it("refuses to reconcile a record younger than RECONCILE_MIN_AGE_MS", async () => {

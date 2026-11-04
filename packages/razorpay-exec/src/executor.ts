@@ -1,4 +1,4 @@
-import { minorFromRazorpay, type Minor } from "@praman/shared";
+import { minorFromRazorpay, type Currency, type Minor } from "@praman/shared";
 
 export interface ExecOutcome {
   readonly order_id: string;
@@ -9,7 +9,7 @@ export interface ExecOutcome {
 }
 
 export interface Executor {
-  createOrder(amountMinor: Minor, receipt: string): Promise<ExecOutcome>;
+  createOrder(amountMinor: Minor, receipt: string, currency: Currency): Promise<ExecOutcome>;
   findByReceipt(receipt: string): Promise<ExecOutcome | null>;
   capture(paymentId: string, amountMinor: Minor): Promise<ExecOutcome>;
 }
@@ -48,10 +48,23 @@ export class LiveExecutor implements Executor {
     return body;
   }
 
-  async createOrder(amountMinor: Minor, receipt: string): Promise<ExecOutcome> {
+  /**
+   * This account takes INR only. Refused before any call, because sending cents
+   * as an INR order would charge ₹12.50 for something priced at $12.50.
+   */
+  async createOrder(amountMinor: Minor, receipt: string, currency: Currency): Promise<ExecOutcome> {
+    if (currency !== "INR") {
+      return {
+        order_id: "",
+        status: "failed",
+        amount_minor: amountMinor,
+        payment_id: null,
+        failure_code: "CURRENCY_NOT_SUPPORTED",
+      };
+    }
     const body = await this.#call("/orders", {
       method: "POST",
-      body: JSON.stringify({ amount: toRazorpayAmount(amountMinor), currency: "INR", receipt }),
+      body: JSON.stringify({ amount: toRazorpayAmount(amountMinor), currency, receipt }),
     });
     return {
       order_id: String(body["id"]),

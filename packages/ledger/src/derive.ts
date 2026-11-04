@@ -1,5 +1,5 @@
 import type { PrismaTx } from "@praman/db";
-import { minor, type LedgerDerivedState } from "@praman/shared";
+import { isCurrency, minor, type Currency, type LedgerDerivedState } from "@praman/shared";
 
 interface Row {
   seq: bigint;
@@ -39,6 +39,19 @@ export function amountIfPresent(payload: Record<string, unknown>): string | null
     if (typeof value === "string") return value;
   }
   return null;
+}
+
+/**
+ * The currency of an entry's amount. Ledger rows are never rewritten, and rows
+ * written before USD existed have no currency field. They are INR, because
+ * evaluate() refused everything else at the time. A value we don't recognise is
+ * refused, not displayed as if it were money.
+ */
+export function readCurrency(payload: Record<string, unknown>): Currency {
+  const currency = payload["currency"];
+  if (currency === undefined) return "INR";
+  if (!isCurrency(currency)) throw new TypeError(`ledger entry has an unknown currency: ${String(currency)}`);
+  return currency;
 }
 
 /**
