@@ -24,12 +24,12 @@ const notAfter = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h validity,
 
 const doc: MandateDocument = {
   mandate_id: `mnd_${randomBytes(6).toString("hex")}`,
-  version: 1,
+  version: 2,
   issuer_id: "usr_adwaith",
   subject_id: "agt_lunchbuyer",
   scope: { merchant_ids: [merchantId], categories: ["food", "beverage"], currency: "INR" },
-  limits: { max_per_txn_paise: "80000", max_total_paise: "500000", max_txns_per_window: 5, window_seconds: 3600, max_denials_per_window: 5 },
-  step_up: { threshold_paise: "50000" },
+  limits: { max_per_txn_minor: "80000", max_total_minor: "500000", max_txns_per_window: 5, window_seconds: 3600, max_denials_per_window: 5 },
+  step_up: { threshold_minor: "50000" },
   validity: { not_before: now.toISOString(), not_after: notAfter.toISOString() },
   nonce: randomBytes(8).toString("hex"),
 };

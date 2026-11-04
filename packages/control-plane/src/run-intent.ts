@@ -4,7 +4,7 @@ import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, redact, type PurchaseIntent, type AgentVisibleDecision } from "@praman/policy";
 import { verifyMandate, type SignedMandate } from "@praman/mandate";
 import { idempotencyKey, receiptFor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
-import { canonical, paiseFromDb, paiseToJSON } from "@praman/shared";
+import { canonical, minorFromDb, minorToJSON } from "@praman/shared";
 
 /** Shared with resolve-approval.ts — the same mandate must serialise through the same lock regardless of which path is mutating its state. */
 export const MANDATE_LOCK_NS = 42;
@@ -134,8 +134,8 @@ export async function runIntent(
     // because it is a row in the same transaction we are already inside.
     const prior = await tx.idempotencyRecord.findUnique({ where: { key } });
     if (prior?.status === "succeeded") {
-      if (prior.amountPaise === null) {
-        throw new TypeError(`idempotency record ${key} is succeeded but has no amount_paise`);
+      if (prior.amountMinor === null) {
+        throw new TypeError(`idempotency record ${key} is succeeded but has no amount_minor`);
       }
       const cached = parseCachedOutcome(prior.outcome, key);
       return {
@@ -143,7 +143,7 @@ export async function runIntent(
         result: {
           kind: "DECIDED" as const,
           trace_id: prior.traceId,
-          agent_visible: { kind: "ALLOW" as const, amount_paise: paiseFromDb(prior.amountPaise) },
+          agent_visible: { kind: "ALLOW" as const, amount_minor: minorFromDb(prior.amountMinor) },
           internal_reason_code: "OK",
           order_id: cached.orderId,
           order_status: cached.status,
@@ -188,7 +188,7 @@ export async function runIntent(
         mandate_id: mandate.mandate_id,
         kind: decision.kind,
         reason_code: decision.reason_code,
-        ...(decision.kind === "DENY" ? { detail: decision.detail } : { amount_paise: paiseToJSON(decision.amount_paise) }),
+        ...(decision.kind === "DENY" ? { detail: decision.detail } : { amount_minor: minorToJSON(decision.amount_minor) }),
       },
     });
 
@@ -204,7 +204,7 @@ export async function runIntent(
           traceId,
           mandateId: mandate.mandate_id,
           intent: JSON.parse(canonical(intent)) as object,
-          amountPaise: decision.amount_paise,
+          amountMinor: decision.amount_minor,
           status: "pending",
         },
       });
@@ -244,7 +244,7 @@ export async function runIntent(
     // The outbox row. Committed BEFORE any external call, so an orphaned
     // order is always accompanied by a record naming its receipt and amount.
     await tx.idempotencyRecord.create({
-      data: { key, traceId, status: "pending", receipt, amountPaise: decision.amount_paise, outcome: {} },
+      data: { key, traceId, status: "pending", receipt, amountMinor: decision.amount_minor, outcome: {} },
     });
     await append(tx, {
       traceId,
@@ -256,7 +256,7 @@ export async function runIntent(
         provider: "razorpay",
         operation: "orders.create",
         receipt,
-        amount_paise: paiseToJSON(decision.amount_paise),
+        amount_minor: minorToJSON(decision.amount_minor),
         status: "attempted",
       },
     });
@@ -266,7 +266,7 @@ export async function runIntent(
       key,
       receipt,
       mandateId: mandate.mandate_id,
-      amount: decision.amount_paise,
+      amount: decision.amount_minor,
       decision,
     };
   });
@@ -300,7 +300,7 @@ export async function runIntent(
         status: outcome.status,
         order_id: outcome.order_id,
         payment_id: outcome.payment_id,
-        amount_paise: paiseToJSON(outcome.amount_paise),
+        amount_minor: minorToJSON(outcome.amount_minor),
         merchant_id: intent.merchant_id,
         idempotency_key: phase1.key,
       },

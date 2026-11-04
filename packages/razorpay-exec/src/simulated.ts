@@ -1,4 +1,4 @@
-import type { Paise } from "@praman/shared";
+import type { Minor } from "@praman/shared";
 import type { ExecOutcome, Executor } from "./executor.js";
 
 /**
@@ -11,14 +11,14 @@ export class SimulatedExecutor implements Executor {
   readonly #orders = new Map<string, ExecOutcome>();
   constructor(private readonly failWith?: "declined" | "timeout") {}
 
-  async createOrder(amountPaise: Paise, receipt: string): Promise<ExecOutcome> {
+  async createOrder(amountMinor: Minor, receipt: string): Promise<ExecOutcome> {
     if (this.failWith === "timeout") throw new Error("ETIMEDOUT");
     const existing = this.#orders.get(receipt);
     if (existing) return existing;
     const outcome: ExecOutcome = {
       order_id: `order_SIM${String(++this.#n).padStart(8, "0")}`,
       status: this.failWith === "declined" ? "failed" : "captured",
-      amount_paise: amountPaise,
+      amount_minor: amountMinor,
       payment_id: this.failWith === "declined" ? null : `pay_SIM${this.#n}`,
       failure_code: this.failWith === "declined" ? "BAD_REQUEST_ERROR" : null,
     };
@@ -30,7 +30,7 @@ export class SimulatedExecutor implements Executor {
     return this.#orders.get(r) ?? null;
   }
 
-  async capture(p: string, a: Paise): Promise<ExecOutcome> {
-    return { order_id: "order_SIM", status: "captured", amount_paise: a, payment_id: p, failure_code: null };
+  async capture(p: string, a: Minor): Promise<ExecOutcome> {
+    return { order_id: "order_SIM", status: "captured", amount_minor: a, payment_id: p, failure_code: null };
   }
 }

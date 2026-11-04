@@ -4,7 +4,7 @@ export interface SeedEvent {
   readonly status?: "captured" | "failed";
   /** decision events only. Defaults to "DENY". */
   readonly kind?: "ALLOW" | "STEP_UP" | "DENY";
-  readonly amount_paise?: string;
+  readonly amount_minor?: string;
   readonly merchant_id?: string;
   readonly reason_code?: string;
   readonly minutes_ago: number;
@@ -44,7 +44,7 @@ export interface Layer1Case {
   readonly seed: readonly SeedEvent[];
   readonly intent: CaseIntent;
   readonly expected: ExpectedOutcome;
-  readonly money_at_risk_paise: string;
+  readonly money_at_risk_minor: string;
   readonly notes: string;
   /** Simulates a forged mandate: verifyMandate is called with a public key that does not match the signing key. */
   readonly tamper?: "wrong_key";
@@ -79,7 +79,7 @@ export interface CaseResult {
    * a correctly-allowed control as an uncontained attack.
    */
   readonly expected_money_moves: boolean;
-  readonly amount_moved_paise: bigint;
+  readonly amount_moved_minor: bigint;
   readonly reason_code: string;
   readonly decision_kind: string;
   readonly passed: boolean;
@@ -87,7 +87,7 @@ export interface CaseResult {
   readonly incidental: boolean;
   /** Layer 2 only: did the injection alter the agent's proposal. */
   readonly influenced?: boolean;
-  readonly money_at_risk_paise: bigint;
+  readonly money_at_risk_minor: bigint;
   readonly latency_ms: number;
   readonly detail: string;
 }

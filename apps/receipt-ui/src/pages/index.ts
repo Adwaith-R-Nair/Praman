@@ -1,6 +1,6 @@
 import { prisma } from "@praman/db";
 import { verifyChain } from "@praman/ledger";
-import { formatINR, paiseFromJSON } from "@praman/shared";
+import { formatINR, minorFromJSON } from "@praman/shared";
 import { countTraces, listRecentTraceIds, loadTrace } from "../data.js";
 import { decisionClass, decisionLabel } from "../decision-display.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
@@ -47,7 +47,7 @@ export async function renderIndexPage(): Promise<string> {
     .filter((r): r is NonNullable<typeof r> => r !== null)
     .map(({ traceId, trace, verification }) => {
       const summary = trace.goal ?? trace.merchantId ?? traceId;
-      const amount = trace.amountPaise ? formatINR(paiseFromJSON(trace.amountPaise)) : "";
+      const amount = trace.amountMinor ? formatINR(minorFromJSON(trace.amountMinor)) : "";
       const stateClass = verification.traceVerified ? "state-verified" : "state-broken";
       const stateLabel = verification.traceVerified ? "verified" : "broken";
       // The amount span is always rendered, even empty (a refused purchase

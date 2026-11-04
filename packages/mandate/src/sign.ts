@@ -5,27 +5,50 @@ import {
   createPublicKey,
   generateKeyPairSync,
 } from "node:crypto";
-import { canonical, paiseFromJSON } from "@praman/shared";
+import { canonical, minorFromJSON } from "@praman/shared";
 import type { VerifiedMandate } from "@praman/policy";
 
-/** Wire format: amounts as decimal strings, times as ISO 8601. */
-export interface MandateDocument {
+/** Everything that did not change between schema versions. */
+interface MandateDocumentCommon {
   readonly mandate_id: string;
-  readonly version: 1;
   readonly issuer_id: string;
   readonly subject_id: string;
   readonly scope: { readonly merchant_ids: string[]; readonly categories: string[]; readonly currency: "INR" };
-  readonly limits: {
-    readonly max_per_txn_paise: string;
-    readonly max_total_paise: string;
-    readonly max_txns_per_window: number;
-    readonly window_seconds: number;
-    readonly max_denials_per_window: number;
-  };
-  readonly step_up: { readonly threshold_paise: string };
   readonly validity: { readonly not_before: string; readonly not_after: string };
   readonly nonce: string;
 }
+
+interface MandateRateLimits {
+  readonly max_txns_per_window: number;
+  readonly window_seconds: number;
+  readonly max_denials_per_window: number;
+}
+
+/**
+ * Mandates issued before the rename to minor units. These names are inside the
+ * signed bytes, so they can never change: a v1 document verifies as written and
+ * is hydrated to minor units afterwards. Not for new mandates.
+ */
+export interface MandateDocumentV1 extends MandateDocumentCommon {
+  readonly version: 1;
+  readonly limits: MandateRateLimits & {
+    readonly max_per_txn_paise: string;
+    readonly max_total_paise: string;
+  };
+  readonly step_up: { readonly threshold_paise: string };
+}
+
+export interface MandateDocumentV2 extends MandateDocumentCommon {
+  readonly version: 2;
+  readonly limits: MandateRateLimits & {
+    readonly max_per_txn_minor: string;
+    readonly max_total_minor: string;
+  };
+  readonly step_up: { readonly threshold_minor: string };
+}
+
+/** Wire format: amounts as decimal strings, times as ISO 8601. */
+export type MandateDocument = MandateDocumentV1 | MandateDocumentV2;
 
 export interface SignedMandate {
   readonly document: MandateDocument;
@@ -44,6 +67,31 @@ export function signMandate(doc: MandateDocument, privateKeyPem: string, keyId: 
   const preimage = Buffer.from(canonical(doc), "utf8");
   const signature = cryptoSign(null, preimage, createPrivateKey(privateKeyPem));
   return { document: doc, signature: { alg: "Ed25519", key_id: keyId, value: signature.toString("base64url") } };
+}
+
+/**
+ * The one place a schema version turns into amounts. Anything other than a
+ * version we know is refused rather than guessed at, including a correctly
+ * signed one: minorFromJSON throws on a missing field, so a document whose
+ * names don't match its version is malformed too.
+ */
+function readAmountLimits(d: MandateDocument): { maxPerTxn: string; maxTotal: string; threshold: string } {
+  switch (d.version) {
+    case 1:
+      return {
+        maxPerTxn: d.limits.max_per_txn_paise,
+        maxTotal: d.limits.max_total_paise,
+        threshold: d.step_up.threshold_paise,
+      };
+    case 2:
+      return {
+        maxPerTxn: d.limits.max_per_txn_minor,
+        maxTotal: d.limits.max_total_minor,
+        threshold: d.step_up.threshold_minor,
+      };
+    default:
+      throw new TypeError("unknown mandate schema version");
+  }
 }
 
 export type VerifyFailure = "SIGNATURE_INVALID" | "UNSUPPORTED_ALG" | "MALFORMED_DOCUMENT";
@@ -69,6 +117,7 @@ export function verifyMandate(
 
   try {
     const d = signed.document;
+    const amounts = readAmountLimits(d);
 
     const notBefore = new Date(d.validity.not_before);
     const notAfter = new Date(d.validity.not_after);
@@ -87,13 +136,13 @@ export function verifyMandate(
         mandate_id: d.mandate_id,
         scope: { merchant_ids: d.scope.merchant_ids, categories: d.scope.categories, currency: "INR" },
         limits: {
-          max_per_txn_paise: paiseFromJSON(d.limits.max_per_txn_paise),
-          max_total_paise: paiseFromJSON(d.limits.max_total_paise),
+          max_per_txn_minor: minorFromJSON(amounts.maxPerTxn),
+          max_total_minor: minorFromJSON(amounts.maxTotal),
           max_txns_per_window: d.limits.max_txns_per_window,
           window_seconds: d.limits.window_seconds,
           max_denials_per_window: d.limits.max_denials_per_window,
         },
-        step_up: { threshold_paise: paiseFromJSON(d.step_up.threshold_paise) },
+        step_up: { threshold_minor: minorFromJSON(amounts.threshold) },
         validity: { not_before: notBefore, not_after: notAfter },
       },
     };

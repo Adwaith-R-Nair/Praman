@@ -41,7 +41,7 @@ These are what the panel will probe. Every one of them is a decision you must be
 
 1. **No LLM in the decision path.** The model may *propose* a purchase intent. It may never *authorise* one. Authorisation is a pure, deterministic, side-effect-free function of `(intent, mandate, ledger_state)`. This is the entire architecture in one sentence.
 2. **Untrusted content is never an instruction.** Merchant catalog text, product descriptions, and API responses are data. They are passed to the model inside a delimited, labelled block, and the system prompt states that content inside it can never change policy, price, or scope.
-3. **Money is integer paise.** Never a float, never a string, never rupees. Every amount field is `_paise` suffixed and typed as `bigint`.
+3. **Money is integer minor units.** Never a float, never a string, never a major-unit value like rupees. Every amount field is `_minor` suffixed and typed as `bigint`. It was `_paise` until the rename recorded in D-28.
 4. **Every money action is idempotent.** `idempotency_key = sha256(mandate_id || canonical_json(intent))`. A retried intent hits the same key and returns the original outcome instead of charging twice.
 5. **The ledger is append-only at the database level**, not by convention. A Postgres rule/trigger rejects `UPDATE` and `DELETE` on the ledger table. Tamper-evidence is enforced by the storage layer, not by application discipline.
 6. **Refusals are typed.** Every `DENY` and `STEP_UP` carries a machine-readable reason code from a closed enum. "The agent refused" is not an outcome; `MANDATE_AMOUNT_EXCEEDED` is.
@@ -135,7 +135,7 @@ These are what the panel will probe. Every one of them is a decision you must be
 3. Agent emits a `PurchaseIntent` via tool use — structured, typed, no prose.
 4. `POST /v1/intents` with the intent + mandate JWT.
 5. Control plane verifies the mandate signature and expiry.
-6. **Policy engine** evaluates. Returns `{ decision, reason_code, explanation, remaining_budget_paise }`.
+6. **Policy engine** evaluates. Returns `{ decision, reason_code, explanation, remaining_budget_minor }`.
 7. Ledger appends `intent` and `decision` entries (hash-chained).
 8. On `ALLOW`: idempotency guard checks the key, then Razorpay test-mode order + payment. Ledger appends `api_call` and `outcome`.
 9. On `STEP_UP`: a pending approval record is created; the flow blocks. A human approves or rejects via the receipt UI. Either way it's in the ledger.

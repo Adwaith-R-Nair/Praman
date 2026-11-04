@@ -1,5 +1,5 @@
 import { prisma, type PrismaTx } from "@praman/db";
-import { read, verifyChain, type LedgerEntryRecord } from "@praman/ledger";
+import { amountIfPresent, read, verifyChain, type LedgerEntryRecord } from "@praman/ledger";
 
 export interface DisputeBundle {
   readonly trace_id: string;
@@ -26,7 +26,7 @@ export interface DisputeBundle {
   readonly authorisation: {
     readonly decision: string | null;
     readonly reason_code: string | null;
-    readonly amount_paise: string | null;
+    readonly amount_minor: string | null;
     readonly evaluated_at: string | null;
   };
   readonly agent: {
@@ -75,11 +75,13 @@ function asString(v: unknown): string | null {
  * produces, parsed back into per-SKU records — duplicated from
  * apps/receipt-ui/src/data.ts's parseMerchantReads() rather than shared,
  * a deliberate tradeoff for time rather than a cross-package refactor.
- * If this drifts from that copy, both need updating together.
+ * If this drifts from that copy, both need updating together. Transcripts
+ * recorded before the rename to minor units say price_paise, and they sit in
+ * the ledger for good, so both names match.
  */
 function parseMerchantReads(raw: readonly string[]): { sku: string; text: string; marked_untrusted: true }[] {
   const pattern =
-    /sku=(\S+)\s+category=(\S+)\s+price_paise=(\S+)\s+in_stock=(\S+)\s*\n<untrusted_merchant_content>\n([\s\S]*?)\n<\/untrusted_merchant_content>/g;
+    /sku=(\S+)\s+category=(\S+)\s+price_(?:paise|minor)=(\S+)\s+in_stock=(\S+)\s*\n<untrusted_merchant_content>\n([\s\S]*?)\n<\/untrusted_merchant_content>/g;
   const seen = new Set<string>();
   const items: { sku: string; text: string; marked_untrusted: true }[] = [];
   for (const block of raw) {
@@ -185,7 +187,7 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
     authorisation: {
       decision: decisionKind,
       reason_code: reasonCode,
-      amount_paise: asString(outcome?.["amount_paise"]) ?? asString(decision?.["amount_paise"]),
+      amount_minor: (outcome && amountIfPresent(outcome)) ?? (decision && amountIfPresent(decision)),
       evaluated_at: decisionEntry ? decisionEntry.ts.toISOString() : null,
     },
     agent: {

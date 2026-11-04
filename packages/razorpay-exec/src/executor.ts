@@ -1,23 +1,23 @@
-import { paiseFromRazorpay, type Paise } from "@praman/shared";
+import { minorFromRazorpay, type Minor } from "@praman/shared";
 
 export interface ExecOutcome {
   readonly order_id: string;
   readonly status: "created" | "captured" | "failed";
-  readonly amount_paise: Paise;
+  readonly amount_minor: Minor;
   readonly payment_id: string | null;
   readonly failure_code: string | null;
 }
 
 export interface Executor {
-  createOrder(amountPaise: Paise, receipt: string): Promise<ExecOutcome>;
+  createOrder(amountMinor: Minor, receipt: string): Promise<ExecOutcome>;
   findByReceipt(receipt: string): Promise<ExecOutcome | null>;
-  capture(paymentId: string, amountPaise: Paise): Promise<ExecOutcome>;
+  capture(paymentId: string, amountMinor: Minor): Promise<ExecOutcome>;
 }
 
 const BASE = "https://api.razorpay.com/v1";
 
 /**
- * bigint → Number for the outbound Razorpay call. paiseFromRazorpay (the
+ * bigint → Number for the outbound Razorpay call. minorFromRazorpay (the
  * inbound boundary) checks Number.isSafeInteger for exactly this reason —
  * this is the same check in the outbound direction. Currently unreachable at
  * this project's mandate caps (well under 2^53), but it's a real system
@@ -25,11 +25,11 @@ const BASE = "https://api.razorpay.com/v1";
  * converting, not after — converting first would lose the precision the
  * check exists to catch.
  */
-function toRazorpayAmount(amountPaise: Paise): number {
-  if (amountPaise > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new RangeError(`amount_paise exceeds safe integer range for Razorpay: ${amountPaise}`);
+function toRazorpayAmount(amountMinor: Minor): number {
+  if (amountMinor > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError(`amount_minor exceeds safe integer range for Razorpay: ${amountMinor}`);
   }
-  return Number(amountPaise);
+  return Number(amountMinor);
 }
 
 export class LiveExecutor implements Executor {
@@ -48,15 +48,15 @@ export class LiveExecutor implements Executor {
     return body;
   }
 
-  async createOrder(amountPaise: Paise, receipt: string): Promise<ExecOutcome> {
+  async createOrder(amountMinor: Minor, receipt: string): Promise<ExecOutcome> {
     const body = await this.#call("/orders", {
       method: "POST",
-      body: JSON.stringify({ amount: toRazorpayAmount(amountPaise), currency: "INR", receipt }),
+      body: JSON.stringify({ amount: toRazorpayAmount(amountMinor), currency: "INR", receipt }),
     });
     return {
       order_id: String(body["id"]),
       status: "created",
-      amount_paise: paiseFromRazorpay(body["amount"]),
+      amount_minor: minorFromRazorpay(body["amount"]),
       payment_id: null,
       failure_code: null,
     };
@@ -71,21 +71,21 @@ export class LiveExecutor implements Executor {
     return {
       order_id: String(o["id"]),
       status: o["status"] === "paid" ? "captured" : "created",
-      amount_paise: paiseFromRazorpay(o["amount"]),
+      amount_minor: minorFromRazorpay(o["amount"]),
       payment_id: null,
       failure_code: null,
     };
   }
 
-  async capture(paymentId: string, amountPaise: Paise): Promise<ExecOutcome> {
+  async capture(paymentId: string, amountMinor: Minor): Promise<ExecOutcome> {
     const body = await this.#call(`/payments/${paymentId}/capture`, {
       method: "POST",
-      body: JSON.stringify({ amount: toRazorpayAmount(amountPaise), currency: "INR" }),
+      body: JSON.stringify({ amount: toRazorpayAmount(amountMinor), currency: "INR" }),
     });
     return {
       order_id: String(body["order_id"]),
       status: body["status"] === "captured" ? "captured" : "failed",
-      amount_paise: paiseFromRazorpay(body["amount"]),
+      amount_minor: minorFromRazorpay(body["amount"]),
       payment_id: paymentId,
       failure_code: null,
     };

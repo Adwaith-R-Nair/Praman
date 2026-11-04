@@ -11,7 +11,7 @@ A mandate is a signed grant of bounded spend authority from a human issuer to an
 ```jsonc
 {
   "mandate_id": "mnd_01J8XK2P9Q",
-  "version": 1,
+  "version": 2,
   "issuer_id": "usr_adwaith",              // the human
   "subject_id": "agt_lunchbuyer",          // the agent
   "scope": {
@@ -20,14 +20,14 @@ A mandate is a signed grant of bounded spend authority from a human issuer to an
     "currency": "INR"
   },
   "limits": {
-    "max_per_txn_paise": 80000,            // ₹800.00
-    "max_total_paise": 500000,             // ₹5,000.00
+    "max_per_txn_minor": 80000,            // ₹800.00
+    "max_total_minor": 500000,             // ₹5,000.00
     "max_txns_per_window": 5,
     "window_seconds": 3600,
     "max_denials_per_window": 5             // closes D-20's probe oracle
   },
   "step_up": {
-    "threshold_paise": 50000               // above ₹500 → human approval
+    "threshold_minor": 50000               // above ₹500 → human approval
   },
   "validity": {
     "not_before": "2026-08-28T00:00:00Z",
@@ -47,6 +47,7 @@ A mandate is a signed grant of bounded spend authority from a human issuer to an
 
 - `merchant_ids` and `categories` are closed allowlists. There is no wildcard. Absence of a value denies.
 - Signature covers the canonical JSON of every field except `signature` itself. Canonicalisation: sorted keys, no whitespace, UTF-8, integers only (`packages/shared/canonical.ts`).
+- `version` selects the field names, and it is inside the signed bytes. Version 2 uses `_minor` names. Version 1 uses `max_per_txn_paise`, `max_total_paise` and `threshold_paise`; it verifies over its original bytes and is then hydrated to the same in-memory `_minor` fields. Any other version, or names that don't match the version, is refused as `MALFORMED_DOCUMENT`, signed or not. New mandates are version 2. See D-28.
 - Spend consumed is **not** stored on the mandate. It is derived by replaying the ledger, so a tampered mandate row can't grant extra budget.
 - Revocation is an append to the ledger (`event_type: "mandate_revoked"`), not a field flip.
 
@@ -85,15 +86,15 @@ export function evaluate(input: EvaluateInput): Decision;
 export interface EvaluateInput {
   intent: PurchaseIntent;
   mandate: VerifiedMandate;      // signature already verified — see below
-  state: LedgerDerivedState;     // { spent_paise, txn_timestamps, revoked, merchants_transacted, seen_idempotency_keys, denied_attempts }
+  state: LedgerDerivedState;     // { spent_minor, txn_timestamps, revoked, merchants_transacted, seen_idempotency_keys, denied_attempts }
   catalog: CatalogSnapshot;      // trusted, server-side
   now: Date;
   idempotency_key: string;
 }
 
 export type Decision =
-  | { kind: "ALLOW";   amount_paise: bigint; reason_code: "OK"; remaining_paise: bigint }
-  | { kind: "STEP_UP"; amount_paise: bigint; reason_code: StepUpCode }
+  | { kind: "ALLOW";   amount_minor: bigint; reason_code: "OK"; remaining_minor: bigint }
+  | { kind: "STEP_UP"; amount_minor: bigint; reason_code: StepUpCode }
   | { kind: "DENY";    reason_code: DenyCode; detail: string };
 ```
 
@@ -114,13 +115,13 @@ export type Decision =
 7. catalog's own `merchant_id` matches the intent's → else `MERCHANT_OUT_OF_SCOPE` *(a second, distinct check from #6 — the caller could pass a catalog snapshot for the wrong merchant even when the intent itself is in scope)*
 8. cart is non-empty and every line item has a positive integer qty → else `AMOUNT_INVALID`
 9. quantities aggregated per SKU (a SKU split across two line items is one demand on stock, not two independent checks)
-10–12. for each distinct SKU, sorted (so reason codes never depend on line-item order): exists in catalog → else `SKU_UNKNOWN`; category in scope → else `CATEGORY_OUT_OF_SCOPE`; qty ≤ stock → else `INSUFFICIENT_STOCK`; then **resolve amount** — `amount_paise = Σ(catalog[sku].price_paise × qty)`
-13. `amount_paise > 0` → else `AMOUNT_INVALID`
-14. `amount_paise ≤ max_per_txn_paise` → else `MANDATE_AMOUNT_EXCEEDED`
-15. `state.spent_paise + amount_paise ≤ max_total_paise` → else `MANDATE_BUDGET_EXHAUSTED`
+10–12. for each distinct SKU, sorted (so reason codes never depend on line-item order): exists in catalog → else `SKU_UNKNOWN`; category in scope → else `CATEGORY_OUT_OF_SCOPE`; qty ≤ stock → else `INSUFFICIENT_STOCK`; then **resolve amount** — `amount_minor = Σ(catalog[sku].price_minor × qty)`
+13. `amount_minor > 0` → else `AMOUNT_INVALID`
+14. `amount_minor ≤ max_per_txn_minor` → else `MANDATE_AMOUNT_EXCEEDED`
+15. `state.spent_minor + amount_minor ≤ max_total_minor` → else `MANDATE_BUDGET_EXHAUSTED`
 16. txns in `window_seconds` < `max_txns_per_window` → else `VELOCITY_EXCEEDED`
 17. merchant not yet transacted under this mandate → `STEP_UP` with `STEP_UP_FIRST_MERCHANT` *(a mandate's first purchase at any given merchant always requires a human look, regardless of amount)*
-18. `amount_paise ≥ step_up.threshold_paise` → `STEP_UP` with `STEP_UP_THRESHOLD`
+18. `amount_minor ≥ step_up.threshold_minor` → `STEP_UP` with `STEP_UP_THRESHOLD`
 19. otherwise `ALLOW`
 
 **Properties this function must have, and that your tests must assert:**
@@ -190,6 +191,7 @@ The rejected alternative was executing the stored intent directly on approval, w
 ```
 
 - `seq` is a Postgres identity column; a gap means tampering.
+- New events carry amounts as `amount_minor`. Rows written before the rename carry `amount_paise`, and always will, because `payload_hash` covers those bytes. Readers accept both through `readAmount` and `amountIfPresent` in `packages/ledger/src/derive.ts` (D-28).
 - `entry_hash` chains to `prev_hash`. Genesis entry uses 64 zeros.
 - Every 100 entries (or hourly), compute a Merkle root over `entry_hash` values and append a `checkpoint` entry containing it. The checkpoint is what you'd anchor externally in production — say this in the pitch, and be clear you didn't anchor it in the demo.
 - Immutability enforced in migration:

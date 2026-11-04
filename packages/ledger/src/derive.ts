@@ -1,11 +1,44 @@
 import type { PrismaTx } from "@praman/db";
-import { paise, type LedgerDerivedState } from "@praman/shared";
+import { minor, type LedgerDerivedState } from "@praman/shared";
 
 interface Row {
   seq: bigint;
   ts: Date;
   event_type: string;
   payload: Record<string, unknown>;
+}
+
+/**
+ * Ledger rows are never rewritten, so rows from before the rename to minor
+ * units say `amount_paise` for as long as the ledger exists, and their hashes
+ * cover that exact name. Every reader goes through one of these two functions.
+ *
+ * This one is for anything that counts money, and it refuses rather than
+ * guesses: no amount, a malformed amount, or two amounts that disagree.
+ */
+export function readAmount(payload: Record<string, unknown>, seq: bigint): string {
+  const present = ["amount_minor", "amount_paise"].filter((field) => payload[field] !== undefined);
+  const [field, other] = present;
+  if (field === undefined) throw new TypeError(`ledger seq ${seq}: outcome has no amount`);
+  if (other !== undefined && payload[field] !== payload[other]) {
+    throw new TypeError(`ledger seq ${seq}: outcome amounts disagree`);
+  }
+  const amount = payload[field];
+  if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
+    throw new TypeError(`ledger seq ${seq}: outcome ${field} is malformed`);
+  }
+  return amount;
+}
+
+/**
+ * For showing a trace, where having no amount is normal: a DENY decision has
+ * none. Never use this to count money. Use readAmount.
+ */
+export function amountIfPresent(payload: Record<string, unknown>): string | null {
+  for (const value of [payload["amount_minor"], payload["amount_paise"]]) {
+    if (typeof value === "string") return value;
+  }
+  return null;
 }
 
 /**
@@ -49,11 +82,7 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
         const status = row.payload["status"];
         if (status !== "created" && status !== "captured") break;
 
-        const amount = row.payload["amount_paise"];
-        if (typeof amount !== "string" || !/^\d+$/.test(amount)) {
-          throw new TypeError(`ledger seq ${row.seq}: outcome amount_paise is malformed`);
-        }
-        spent += BigInt(amount);
+        spent += BigInt(readAmount(row.payload, row.seq));
         txnTimestamps.push(row.ts);
 
         const merchant = row.payload["merchant_id"];
@@ -80,7 +109,7 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
   }
 
   return {
-    spent_paise: paise(spent),
+    spent_minor: minor(spent),
     txn_timestamps: txnTimestamps,
     revoked,
     merchants_transacted: merchants,

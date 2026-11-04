@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paise } from "@praman/shared";
+import { minor } from "@praman/shared";
 import { evaluate } from "../src/evaluate.js";
 import type {
   PurchaseIntent,
@@ -55,14 +55,14 @@ function makeMandate(overrides: Partial<VerifiedMandate> = {}): VerifiedMandate 
       currency: "INR",
     },
     limits: {
-      max_per_txn_paise: paise(80000n),
-      max_total_paise: paise(500000n),
+      max_per_txn_minor: minor(80000n),
+      max_total_minor: minor(500000n),
       max_txns_per_window: 5,
       window_seconds: 3600,
       max_denials_per_window: 5,
     },
     step_up: {
-      threshold_paise: paise(50000n),
+      threshold_minor: minor(50000n),
     },
     validity: {
       not_before: NOT_BEFORE,
@@ -86,7 +86,7 @@ function makeIntent(overrides: Partial<PurchaseIntent> = {}): PurchaseIntent {
 
 function makeState(overrides: Partial<LedgerDerivedState> = {}): LedgerDerivedState {
   return {
-    spent_paise: paise(0n),
+    spent_minor: minor(0n),
     txn_timestamps: [],
     revoked: false,
     merchants_transacted: new Set<string>(),
@@ -105,7 +105,7 @@ function makeCatalog(overrides: Partial<CatalogSnapshot> = {}): CatalogSnapshot 
         {
           sku: SKU,
           category: CATEGORY,
-          price_paise: paise(10000n),
+          price_minor: minor(10000n),
           stock_qty: 10,
         },
       ],
@@ -399,7 +399,7 @@ describe("evaluate", () => {
             {
               sku: "SKU_ELEC_001",
               category: "electronics",
-              price_paise: paise(10000n),
+              price_minor: minor(10000n),
               stock_qty: 5,
             },
           ],
@@ -444,7 +444,7 @@ describe("evaluate", () => {
             {
               sku: SKU,
               category: CATEGORY,
-              price_paise: paise(0n),
+              price_minor: minor(0n),
               stock_qty: 10,
             },
           ],
@@ -464,7 +464,7 @@ describe("evaluate", () => {
 
   // ── 12. MANDATE_AMOUNT_EXCEEDED ──────────────────────────────
   describe("MANDATE_AMOUNT_EXCEEDED", () => {
-    it("denies when amount exceeds max_per_txn_paise", () => {
+    it("denies when amount exceeds max_per_txn_minor", () => {
       const catalog: CatalogSnapshot = {
         merchant_id: MERCHANT,
         items: new Map([
@@ -473,7 +473,7 @@ describe("evaluate", () => {
             {
               sku: SKU,
               category: CATEGORY,
-              price_paise: paise(90000n),
+              price_minor: minor(90000n),
               stock_qty: 10,
             },
           ],
@@ -493,10 +493,10 @@ describe("evaluate", () => {
 
   // ── 13. MANDATE_BUDGET_EXHAUSTED ─────────────────────────────
   describe("MANDATE_BUDGET_EXHAUSTED", () => {
-    it("denies when spent + amount > max_total_paise", () => {
+    it("denies when spent + amount > max_total_minor", () => {
       const result = evaluate({
         ...makeInput(),
-        state: makeState({ spent_paise: paise(495000n) }),
+        state: makeState({ spent_minor: minor(495000n) }),
         // amount = 10000 (default SKU price × 1 qty), spent + amount = 505000 > 500000
       });
       expect(result).toEqual({
@@ -506,11 +506,11 @@ describe("evaluate", () => {
       });
     });
 
-    it("denies at exactly one paise over budget", () => {
+    it("denies at exactly one minor unit over budget", () => {
       const mandate = makeMandate({
         limits: {
-          max_per_txn_paise: paise(100000n),
-          max_total_paise: paise(20000n),
+          max_per_txn_minor: minor(100000n),
+          max_total_minor: minor(20000n),
           max_txns_per_window: 5,
           window_seconds: 3600,
           max_denials_per_window: 5,
@@ -524,7 +524,7 @@ describe("evaluate", () => {
             {
               sku: SKU,
               category: CATEGORY,
-              price_paise: paise(10001n),
+              price_minor: minor(10001n),
               stock_qty: 10,
             },
           ],
@@ -534,7 +534,7 @@ describe("evaluate", () => {
         ...makeInput(),
         mandate,
         catalog,
-        state: makeState({ spent_paise: paise(10000n) }),
+        state: makeState({ spent_minor: minor(10000n) }),
         // spent=10000, amount=10001, total=20001 > 20000
       });
       expect(result).toEqual({
@@ -588,7 +588,7 @@ describe("evaluate", () => {
       const result = evaluate(makeInput());
       expect(result).toEqual({
         kind: "STEP_UP",
-        amount_paise: paise(10000n),
+        amount_minor: minor(10000n),
         reason_code: "STEP_UP_FIRST_MERCHANT",
       });
     });
@@ -605,7 +605,7 @@ describe("evaluate", () => {
             {
               sku: SKU,
               category: CATEGORY,
-              price_paise: paise(50000n),
+              price_minor: minor(50000n),
               stock_qty: 10,
             },
           ],
@@ -618,14 +618,14 @@ describe("evaluate", () => {
       });
       expect(result).toEqual({
         kind: "STEP_UP",
-        amount_paise: paise(50000n),
+        amount_minor: minor(50000n),
         reason_code: "STEP_UP_THRESHOLD",
       });
     });
 
     it("at exactly the threshold (≥, not >)", () => {
       const mandate = makeMandate({
-        step_up: { threshold_paise: paise(10000n) },
+        step_up: { threshold_minor: minor(10000n) },
       });
       const result = evaluate({
         ...makeInput(),
@@ -634,7 +634,7 @@ describe("evaluate", () => {
       });
       expect(result).toEqual({
         kind: "STEP_UP",
-        amount_paise: paise(10000n),
+        amount_minor: minor(10000n),
         reason_code: "STEP_UP_THRESHOLD",
       });
     });
@@ -642,25 +642,25 @@ describe("evaluate", () => {
 
   // ── 17. ALLOW ────────────────────────────────────────────────
   describe("ALLOW", () => {
-    it("returns amount and remaining_paise", () => {
+    it("returns amount and remaining_minor", () => {
       const result = evaluate({
         ...makeInput(),
         state: makeState({
-          spent_paise: paise(100000n),
+          spent_minor: minor(100000n),
           merchants_transacted: new Set([MERCHANT]),
         }),
       });
       expect(result).toEqual({
         kind: "ALLOW",
-        amount_paise: paise(10000n),
+        amount_minor: minor(10000n),
         reason_code: "OK",
-        remaining_paise: paise(390000n), // 500000 - 100000 - 10000
+        remaining_minor: minor(390000n), // 500000 - 100000 - 10000
       });
     });
 
-    it("allows at exactly max_per_txn_paise (boundary: allowed, not denied)", () => {
+    it("allows at exactly max_per_txn_minor (boundary: allowed, not denied)", () => {
       const mandate = makeMandate({
-        step_up: { threshold_paise: paise(80001n) },
+        step_up: { threshold_minor: minor(80001n) },
       });
       const catalog: CatalogSnapshot = {
         merchant_id: MERCHANT,
@@ -670,7 +670,7 @@ describe("evaluate", () => {
             {
               sku: SKU,
               category: CATEGORY,
-              price_paise: paise(80000n),
+              price_minor: minor(80000n),
               stock_qty: 10,
             },
           ],
@@ -684,9 +684,9 @@ describe("evaluate", () => {
       });
       expect(result).toEqual({
         kind: "ALLOW",
-        amount_paise: paise(80000n),
+        amount_minor: minor(80000n),
         reason_code: "OK",
-        remaining_paise: paise(420000n), // 500000 - 0 - 80000
+        remaining_minor: minor(420000n), // 500000 - 0 - 80000
       });
     });
   });
@@ -736,7 +736,7 @@ describe("evaluate", () => {
             {
               sku: SKU,
               category: CATEGORY,
-              price_paise: paise(45000n),
+              price_minor: minor(45000n),
               stock_qty: 10,
             },
           ],
@@ -745,7 +745,7 @@ describe("evaluate", () => {
             {
               sku: SKU_B,
               category: CATEGORY,
-              price_paise: paise(45000n),
+              price_minor: minor(45000n),
               stock_qty: 10,
             },
           ],
@@ -784,7 +784,7 @@ describe("evaluate", () => {
             {
               sku: SKU,
               category: CATEGORY,
-              price_paise: paise(1000n),
+              price_minor: minor(1000n),
               stock_qty: 10,
             },
           ],
@@ -820,7 +820,7 @@ describe("evaluate", () => {
             {
               sku: "SKU_ELEC_001",
               category: "electronics",
-              price_paise: paise(1000n),
+              price_minor: minor(1000n),
               stock_qty: 10,
             },
           ],
@@ -864,7 +864,7 @@ describe("evaluate", () => {
             {
               sku: SKU,
               category: CATEGORY,
-              price_paise: paise(90000n), // exceeds max_per_txn_paise (80000) alone
+              price_minor: minor(90000n), // exceeds max_per_txn_minor (80000) alone
               stock_qty: 10,
             },
           ],
@@ -912,7 +912,7 @@ describe("evaluate", () => {
             {
               sku: SKU,
               category: CATEGORY,
-              price_paise: paise(60000n), // above default threshold of 50000
+              price_minor: minor(60000n), // above default threshold of 50000
               stock_qty: 10,
             },
           ],
@@ -925,7 +925,7 @@ describe("evaluate", () => {
       });
       expect(result).toEqual({
         kind: "STEP_UP",
-        amount_paise: paise(60000n),
+        amount_minor: minor(60000n),
         reason_code: "STEP_UP_FIRST_MERCHANT",
       });
     });
@@ -941,9 +941,9 @@ describe("evaluate", () => {
     });
 
     it("budget denial is monotonic across a sweep of increasing spend", () => {
-      // Default mandate: max_total_paise = 500000n. Default intent resolves
+      // Default mandate: max_total_minor = 500000n. Default intent resolves
       // to amount = 10000n (SKU price 10000 * qty 1). Denial begins the
-      // first paise past (max_total - amount); once true, it must stay true
+      // first minor unit past (max_total - amount); once true, it must stay true
       // for every higher spend — a real sweep, not two spot checks.
       const maxTotal = 500000n;
       const amount = 10000n;
@@ -952,7 +952,7 @@ describe("evaluate", () => {
       for (let spend = denialStarts; spend <= denialStarts + 100000n; spend += 5000n) {
         const result = evaluate({
           ...makeInput(),
-          state: makeState({ spent_paise: paise(spend) }),
+          state: makeState({ spent_minor: minor(spend) }),
         });
         expect(result).toMatchObject({
           kind: "DENY",
@@ -990,16 +990,16 @@ describe("evaluate", () => {
           },
           mandate: makeMandate({
             limits: {
-              max_per_txn_paise: paise(maxPerTxn),
-              max_total_paise: paise(maxTotal),
+              max_per_txn_minor: minor(maxPerTxn),
+              max_total_minor: minor(maxTotal),
               max_txns_per_window: maxTxns,
               window_seconds: windowSec,
               max_denials_per_window: 5,
             },
-            step_up: { threshold_paise: paise(threshold) },
+            step_up: { threshold_minor: minor(threshold) },
           }),
           state: makeState({
-            spent_paise: paise(spent),
+            spent_minor: minor(spent),
             merchants_transacted: new Set([transactedMerchant]),
             txn_timestamps: Array.from({ length: numPastTxns }, (_, j) =>
               new Date(NOW.getTime() - j * 60000),
@@ -1012,7 +1012,7 @@ describe("evaluate", () => {
                 {
                   sku: SKU,
                   category: CATEGORY,
-                  price_paise: paise(price),
+                  price_minor: minor(price),
                   stock_qty: stock,
                 },
               ],

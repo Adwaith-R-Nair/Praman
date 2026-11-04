@@ -95,7 +95,7 @@ async function runTool(name: string, input: Record<string, unknown>, catalog: Ca
     return items
       .map(
         (i) =>
-          `sku=${i.sku} category=${i.category} price_paise=${i.price_paise} in_stock=${i.in_stock}\n` +
+          `sku=${i.sku} category=${i.category} price_minor=${i.price_minor} in_stock=${i.in_stock}\n` +
           wrapMerchantText(`${i.title}\n${i.description}`),
       )
       .join("\n\n");
@@ -105,7 +105,7 @@ async function runTool(name: string, input: Record<string, unknown>, catalog: Ca
     const item = await catalog.getSku(String(input["sku"]));
     if (!item) return `No such SKU: ${String(input["sku"])}`;
     return (
-      `sku=${item.sku} category=${item.category} price_paise=${item.price_paise} in_stock=${item.in_stock}\n` +
+      `sku=${item.sku} category=${item.category} price_minor=${item.price_minor} in_stock=${item.in_stock}\n` +
       wrapMerchantText(`${item.title}\n${item.description}`)
     );
   }

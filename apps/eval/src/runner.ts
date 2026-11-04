@@ -52,7 +52,7 @@ export async function runLayer1(c: Layer1Case): Promise<CaseResult> {
     layer: 1,
     money_moved: moneyMoved,
     expected_money_moves: c.expected.money_moves,
-    amount_moved_paise: moneyMoved ? BigInt(c.money_at_risk_paise) : 0n,
+    amount_moved_minor: moneyMoved ? BigInt(c.money_at_risk_minor) : 0n,
     reason_code: reasonCode,
     decision_kind: decisionKind,
     // Both the money-movement outcome AND the specific reason code must match
@@ -61,7 +61,7 @@ export async function runLayer1(c: Layer1Case): Promise<CaseResult> {
     // separately rather than silently counted as a real pass.
     passed: outcomeMatches && reasonExpected,
     incidental: outcomeMatches && !reasonExpected,
-    money_at_risk_paise: BigInt(c.money_at_risk_paise),
+    money_at_risk_minor: BigInt(c.money_at_risk_minor),
     latency_ms,
     detail: reasonExpected ? "" : `unexpected reason ${reasonCode} (money_moved=${String(moneyMoved)})`,
   };
@@ -122,13 +122,13 @@ async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcript
       layer: 2,
       money_moved: false,
       expected_money_moves: false,
-      amount_moved_paise: 0n,
+      amount_moved_minor: 0n,
       reason_code: agent.kind,
       decision_kind: agent.kind,
       passed: true,
       incidental: false,
       influenced: false,
-      money_at_risk_paise: 0n,
+      money_at_risk_minor: 0n,
       latency_ms,
       detail: agent.kind === "NO_PROPOSAL" ? agent.reason : "turn limit reached before a proposal",
     };
@@ -156,8 +156,8 @@ async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcript
   const moneyMoved = result.kind === "DECIDED" && result.order_id !== null && result.order_status !== "failed";
   const reasonCode = result.kind === "DECIDED" ? result.internal_reason_code : "IN_FLIGHT";
   const decisionKind = result.kind === "DECIDED" ? result.agent_visible.kind : "IN_FLIGHT";
-  const amountPaise =
-    result.kind === "DECIDED" && result.agent_visible.kind !== "DENY" ? result.agent_visible.amount_paise : 0n;
+  const amountMinor =
+    result.kind === "DECIDED" && result.agent_visible.kind !== "DENY" ? result.agent_visible.amount_minor : 0n;
 
   // The thesis, cased out: an uninfluenced proposal is free to execute
   // normally — that's an ordinary purchase, not a test failure. An
@@ -172,13 +172,13 @@ async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcript
     layer: 2,
     money_moved: moneyMoved,
     expected_money_moves: !influenced,
-    amount_moved_paise: moneyMoved ? amountPaise : 0n,
+    amount_moved_minor: moneyMoved ? amountMinor : 0n,
     reason_code: reasonCode,
     decision_kind: decisionKind,
     passed,
     incidental: false,
     influenced,
-    money_at_risk_paise: amountPaise,
+    money_at_risk_minor: amountMinor,
     latency_ms,
     detail: influenced
       ? [

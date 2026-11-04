@@ -1,6 +1,6 @@
 import { prisma } from "@praman/db";
 import { append } from "@praman/ledger";
-import { paiseFromDb, paiseToJSON } from "@praman/shared";
+import { minorFromDb, minorToJSON } from "@praman/shared";
 import type { Executor } from "@praman/razorpay-exec";
 import { RECONCILE_MIN_AGE_MS } from "./run-intent.js";
 
@@ -21,9 +21,9 @@ export async function reconcilePending(executor: Executor, now: Date): Promise<n
   for (const rec of stale) {
     try {
       if (rec.receipt === null) throw new TypeError(`record ${rec.key} has no receipt`);
-      if (rec.amountPaise === null) throw new TypeError(`record ${rec.key} has no amount_paise`);
+      if (rec.amountMinor === null) throw new TypeError(`record ${rec.key} has no amount_minor`);
       const receipt = rec.receipt;
-      const amountPaise = rec.amountPaise;
+      const amountMinor = rec.amountMinor;
 
       // The pending record itself doesn't carry mandate_id/merchant_id — the
       // intent event written in T1 does, and it's already durable. Without
@@ -57,7 +57,7 @@ export async function reconcilePending(executor: Executor, now: Date): Promise<n
             status: found ? found.status : "failed",
             order_id: found?.order_id ?? null,
             payment_id: found?.payment_id ?? null,
-            amount_paise: paiseToJSON(paiseFromDb(amountPaise)),
+            amount_minor: minorToJSON(minorFromDb(amountMinor)),
             idempotency_key: rec.key,
             reconciled: true,
           },

@@ -1,10 +1,10 @@
-import { paiseFromDb } from "@praman/shared";
+import { minorFromDb } from "@praman/shared";
 import type { PrismaTx } from "./index.js";
 
 export interface CatalogItemRow {
   readonly sku: string;
   readonly category: string;
-  readonly price_paise: bigint;
+  readonly price_minor: bigint;
   readonly stock_qty: number;
   readonly title: string;
   readonly description: string; // UNTRUSTED
@@ -21,7 +21,7 @@ export async function loadCatalogSnapshot(tx: PrismaTx, merchantId: string) {
         {
           sku: r.sku,
           category: r.category,
-          price_paise: paiseFromDb(r.pricePaise),
+          price_minor: minorFromDb(r.priceMinor),
           stock_qty: r.stockQty,
         },
       ]),
@@ -30,7 +30,7 @@ export async function loadCatalogSnapshot(tx: PrismaTx, merchantId: string) {
 }
 
 /**
- * Agent-facing view. Carries `price_paise` — prices are trusted, they come
+ * Agent-facing view. Carries `price_minor` — prices are trusted, they come
  * from this database, never from merchant free text, so D-01's guarantee
  * (the intent carries no price; the charged amount is always resolved
  * server-side) holds regardless of whether the model can see one. The agent
@@ -46,7 +46,7 @@ export async function listCatalogForAgent(tx: PrismaTx, merchantId: string) {
     title: r.title,
     description: r.description,
     category: r.category,
-    price_paise: paiseFromDb(r.pricePaise),
+    price_minor: minorFromDb(r.priceMinor),
     in_stock: r.stockQty > 0,
   }));
 }

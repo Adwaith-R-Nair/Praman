@@ -1,4 +1,4 @@
-import { addPaise, mulPaise, subPaise, ZERO_PAISE } from "@praman/shared";
+import { addMinor, mulMinor, subMinor, ZERO_MINOR } from "@praman/shared";
 import type { Decision, EvaluateInput } from "./types.js";
 
 export function evaluate(input: EvaluateInput): Decision {
@@ -128,7 +128,7 @@ export function evaluate(input: EvaluateInput): Decision {
   // code for an invalid cart never depends on the order the agent happened
   // to list its line items in — the same requirement canonical(intent)
   // will need for idempotency keys once carts can contain multiple SKUs.
-  let amount = ZERO_PAISE;
+  let amount = ZERO_MINOR;
   const sortedQuantities = [...quantities].sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
   );
@@ -155,11 +155,11 @@ export function evaluate(input: EvaluateInput): Decision {
         detail: `Requested quantity ${qty} for SKU ${sku} exceeds available stock ${catalogItem.stock_qty}.`,
       };
     }
-    amount = addPaise(amount, mulPaise(catalogItem.price_paise, qty));
+    amount = addMinor(amount, mulMinor(catalogItem.price_minor, qty));
   }
 
   // 13. Amount must be positive.
-  if (amount === ZERO_PAISE) {
+  if (amount === ZERO_MINOR) {
     return {
       kind: "DENY",
       reason_code: "AMOUNT_INVALID",
@@ -168,20 +168,20 @@ export function evaluate(input: EvaluateInput): Decision {
   }
 
   // 14. Per-transaction cap.
-  if (amount > mandate.limits.max_per_txn_paise) {
+  if (amount > mandate.limits.max_per_txn_minor) {
     return {
       kind: "DENY",
       reason_code: "MANDATE_AMOUNT_EXCEEDED",
-      detail: `Amount ${amount.toString()} paise exceeds per-transaction limit ${mandate.limits.max_per_txn_paise.toString()} paise.`,
+      detail: `Amount ${amount.toString()} minor units exceeds per-transaction limit ${mandate.limits.max_per_txn_minor.toString()} minor units.`,
     };
   }
 
   // 15. Cumulative budget.
-  if (addPaise(state.spent_paise, amount) > mandate.limits.max_total_paise) {
+  if (addMinor(state.spent_minor, amount) > mandate.limits.max_total_minor) {
     return {
       kind: "DENY",
       reason_code: "MANDATE_BUDGET_EXHAUSTED",
-      detail: `Spending ${addPaise(state.spent_paise, amount).toString()} paise would exceed total budget ${mandate.limits.max_total_paise.toString()} paise.`,
+      detail: `Spending ${addMinor(state.spent_minor, amount).toString()} minor units would exceed total budget ${mandate.limits.max_total_minor.toString()} minor units.`,
     };
   }
 
@@ -202,16 +202,16 @@ export function evaluate(input: EvaluateInput): Decision {
   if (!state.merchants_transacted.has(intent.merchant_id)) {
     return {
       kind: "STEP_UP",
-      amount_paise: amount,
+      amount_minor: amount,
       reason_code: "STEP_UP_FIRST_MERCHANT",
     };
   }
 
   // 18. Threshold step-up — amount at or above the human-approval threshold.
-  if (amount >= mandate.step_up.threshold_paise) {
+  if (amount >= mandate.step_up.threshold_minor) {
     return {
       kind: "STEP_UP",
-      amount_paise: amount,
+      amount_minor: amount,
       reason_code: "STEP_UP_THRESHOLD",
     };
   }
@@ -219,8 +219,8 @@ export function evaluate(input: EvaluateInput): Decision {
   // 19. All clear.
   return {
     kind: "ALLOW",
-    amount_paise: amount,
+    amount_minor: amount,
     reason_code: "OK",
-    remaining_paise: subPaise(subPaise(mandate.limits.max_total_paise, state.spent_paise), amount),
+    remaining_minor: subMinor(subMinor(mandate.limits.max_total_minor, state.spent_minor), amount),
   };
 }

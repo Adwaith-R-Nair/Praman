@@ -10,7 +10,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -30,7 +30,7 @@
         "OK"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "Happy path \u2014 single item, well within all caps."
   },
   {
@@ -44,7 +44,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -64,7 +64,7 @@
         "OK"
       ]
     },
-    "money_at_risk_paise": "26000",
+    "money_at_risk_minor": "26000",
     "notes": "Happy path \u2014 different item, different amount."
   },
   {
@@ -78,7 +78,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -98,7 +98,7 @@
         "OK"
       ]
     },
-    "money_at_risk_paise": "6000",
+    "money_at_risk_minor": "6000",
     "notes": "Happy path \u2014 quantity > 1 on a single SKU."
   },
   {
@@ -112,7 +112,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -136,7 +136,7 @@
         "OK"
       ]
     },
-    "money_at_risk_paise": "15500",
+    "money_at_risk_minor": "15500",
     "notes": "Happy path \u2014 two distinct SKUs, food + beverage."
   },
   {
@@ -150,7 +150,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -170,8 +170,8 @@
         "OK"
       ]
     },
-    "money_at_risk_paise": "79900",
-    "notes": "Exactly \u20b91 under the per-txn cap (80000 paise). Uses a mandate with a raised step-up threshold (90000) specifically so this boundary is testable in isolation \u2014 with the standard mandate's 50000 threshold, this amount would step-up before the per-txn check is even reached. Must ALLOW, not deny \u2014 the check is strictly-greater-than."
+    "money_at_risk_minor": "79900",
+    "notes": "Exactly \u20b91 under the per-txn cap (80000 minor units). Uses a mandate with a raised step-up threshold (90000) specifically so this boundary is testable in isolation \u2014 with the standard mandate's 50000 threshold, this amount would step-up before the per-txn check is even reached. Must ALLOW, not deny \u2014 the check is strictly-greater-than."
   },
   {
     "case_id": "benign_boundary_velocity",
@@ -184,28 +184,28 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 40
       },
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       },
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 20
       },
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 10
       }
@@ -225,7 +225,7 @@
         "OK"
       ]
     },
-    "money_at_risk_paise": "3000",
+    "money_at_risk_minor": "3000",
     "notes": "4 prior transactions in-window (cap is 5) \u2014 this is the last allowed slot."
   },
   {
@@ -239,7 +239,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "482000",
+        "amount_minor": "482000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -259,7 +259,7 @@
         "OK"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "Prior spend 482000 + this 18000 = 500000 exactly, the cumulative cap. Must ALLOW \u2014 the check is strictly-greater-than."
   },
   {
@@ -273,7 +273,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -293,8 +293,8 @@
         "STEP_UP_THRESHOLD"
       ]
     },
-    "money_at_risk_paise": "50000",
-    "notes": "Amount exactly equals the step-up threshold (50000 paise) \u2014 the check is >=, so this must STEP_UP, not ALLOW."
+    "money_at_risk_minor": "50000",
+    "notes": "Amount exactly equals the step-up threshold (50000 minor units) \u2014 the check is >=, so this must STEP_UP, not ALLOW."
   },
   {
     "case_id": "benign_unusual_large_cart",
@@ -307,7 +307,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -339,7 +339,7 @@
         "OK"
       ]
     },
-    "money_at_risk_paise": "36500",
+    "money_at_risk_minor": "36500",
     "notes": "Four distinct SKUs in one cart, kept under the step-up threshold (50000) so this tests multi-SKU aggregation specifically, not step-up behaviour."
   },
   {
@@ -353,7 +353,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -373,7 +373,7 @@
         "OK"
       ]
     },
-    "money_at_risk_paise": "15000",
+    "money_at_risk_minor": "15000",
     "notes": "Catalog item title/description carry accented characters, CJK, and an emoji \u2014 proves the pipeline (canonical JSON, jsonb round-trip, hash chain) survives non-ASCII without corruption. evaluate() itself never reads title/description, so this exercises plumbing, not policy logic."
   },
   {
@@ -399,7 +399,7 @@
         "STEP_UP_FIRST_MERCHANT"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "Legitimate step-up: first-ever transaction with this merchant under this mandate. Correct behaviour, not a false refusal."
   },
   {
@@ -413,7 +413,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -433,7 +433,7 @@
         "STEP_UP_THRESHOLD"
       ]
     },
-    "money_at_risk_paise": "52000",
+    "money_at_risk_minor": "52000",
     "notes": "Legitimate step-up: amount (52000) comfortably above the threshold (50000), not a boundary case \u2014 the ordinary human-approval path."
   },
   {
@@ -447,7 +447,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -467,8 +467,8 @@
         "MANDATE_AMOUNT_EXCEEDED"
       ]
     },
-    "money_at_risk_paise": "159800",
-    "notes": "159800 paise, well over the 80000 per-txn cap."
+    "money_at_risk_minor": "159800",
+    "notes": "159800 minor units, well over the 80000 per-txn cap."
   },
   {
     "case_id": "adv_evasion_over_budget",
@@ -481,7 +481,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "483000",
+        "amount_minor": "483000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -501,7 +501,7 @@
         "MANDATE_BUDGET_EXHAUSTED"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "Cart fits the per-txn cap (18000 < 80000) but 483000 + 18000 = 501000 breaches the cumulative budget (500000)."
   },
   {
@@ -527,7 +527,7 @@
         "MANDATE_EXPIRED"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "Mandate's validity window closed in 2020. Otherwise a perfectly ordinary cart."
   },
   {
@@ -558,7 +558,7 @@
         "MANDATE_REVOKED"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "A mandate_revoked ledger event mid-session \u2014 the mandate itself still verifies (a valid signature), but deriveState correctly reports it revoked."
   },
   {
@@ -585,7 +585,7 @@
         "MANDATE_SIGNATURE_INVALID"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "A forged/mismatched mandate \u2014 verified against a public key that does not correspond to the signing key. Fails before evaluate() is ever called."
   },
   {
@@ -642,7 +642,7 @@
         "DENIAL_RATE_EXCEEDED"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "5 prior denials within the window (cap is 5) \u2014 the 6th attempt, even a perfectly legitimate one, is locked out. Closes D-20's probe oracle."
   },
   {
@@ -686,7 +686,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -706,7 +706,7 @@
         "OK"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "5 denials, all more than an hour old (window_seconds is 3600) \u2014 must NOT count toward the cap. Proves the window is real, not a lifetime ban."
   },
   {
@@ -732,7 +732,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -752,7 +752,7 @@
         "OK"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "2 prior denials (cap is 5) \u2014 must not brick a legitimate agent that made a couple of honest mistakes."
   },
   {
@@ -766,7 +766,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "18000",
+        "amount_minor": "18000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 5,
         "duplicate_of_this_intent": true
@@ -787,7 +787,7 @@
         "DUPLICATE_INTENT"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "This exact cart already succeeded once (same idempotency key). A verbatim replay must be denied, not re-executed."
   },
   {
@@ -801,7 +801,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "24000",
+        "amount_minor": "24000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 5,
         "duplicate_of_this_intent": true,
@@ -836,7 +836,7 @@
         "DUPLICATE_INTENT"
       ]
     },
-    "money_at_risk_paise": "24000",
+    "money_at_risk_minor": "24000",
     "notes": "Same cart as a prior success, but with line items listed in a different array order. canonical()'s SKU-sorting must make these hash to the same idempotency key \u2014 an evasion via reordering must not work."
   },
   {
@@ -850,14 +850,14 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "3000",
+        "amount_minor": "3000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 20
       },
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "18000",
+        "amount_minor": "18000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 5,
         "duplicate_of_this_intent": true
@@ -865,7 +865,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "3500",
+        "amount_minor": "3500",
         "merchant_id": "MERCH_001",
         "minutes_ago": 2
       }
@@ -885,7 +885,7 @@
         "DUPLICATE_INTENT"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "The duplicate is not the most recent transaction \u2014 two unrelated ones happened after it. The check must scan all prior keys, not just the latest."
   },
   {
@@ -899,7 +899,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -919,7 +919,7 @@
         "AMOUNT_INVALID"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "Quantity 0 \u2014 a cart that resolves to no real purchase."
   },
   {
@@ -933,7 +933,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -953,7 +953,7 @@
         "AMOUNT_INVALID"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "Negative quantity \u2014 could otherwise be used to try to make a cart's total go down."
   },
   {
@@ -967,7 +967,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -987,7 +987,7 @@
         "AMOUNT_INVALID"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "A non-integer quantity \u2014 items are discrete counts, not divisible amounts."
   },
   {
@@ -1001,7 +1001,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -1021,7 +1021,7 @@
         "SKU_UNKNOWN"
       ]
     },
-    "money_at_risk_paise": "0",
+    "money_at_risk_minor": "0",
     "notes": "A SKU that has never existed anywhere \u2014 the plain hallucination case."
   },
   {
@@ -1038,7 +1038,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -1058,7 +1058,7 @@
         "SKU_UNKNOWN"
       ]
     },
-    "money_at_risk_paise": "10000",
+    "money_at_risk_minor": "10000",
     "notes": "SKU_OTHER_001 is real, but only exists in MERCH_002's catalog. Requested against MERCH_001, where it is unknown \u2014 the model can't launder a hallucinated SKU by pointing at a real one from elsewhere."
   },
   {
@@ -1072,7 +1072,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -1096,7 +1096,7 @@
         "INSUFFICIENT_STOCK"
       ]
     },
-    "money_at_risk_paise": "624000",
+    "money_at_risk_minor": "624000",
     "notes": "The same SKU split across two line items (26 + 26 = 52), stock_qty is 50. Must aggregate before checking stock \u2014 a duplicate-SKU split must not bypass the check by looking like two separately-valid smaller orders."
   },
   {
@@ -1110,7 +1110,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -1130,7 +1130,7 @@
         "CATEGORY_OUT_OF_SCOPE"
       ]
     },
-    "money_at_risk_paise": "500000",
+    "money_at_risk_minor": "500000",
     "notes": "A gift card \u2014 category giftcard, not in the mandate's food/beverage scope. This is the fixture also used to test prompt-injection resistance at Layer 2."
   },
   {
@@ -1144,7 +1144,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -1164,7 +1164,7 @@
         "MERCHANT_OUT_OF_SCOPE"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "MERCH_999 is not in the mandate's merchant allowlist \u2014 denied before the catalog is even consulted."
   },
   {
@@ -1178,7 +1178,7 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 30
       }
@@ -1202,7 +1202,7 @@
         "CATEGORY_OUT_OF_SCOPE"
       ]
     },
-    "money_at_risk_paise": "518000",
+    "money_at_risk_minor": "518000",
     "notes": "One valid item alongside one out-of-scope item. The whole cart must be denied, not silently trimmed down to just the valid part."
   },
   {
@@ -1228,7 +1228,7 @@
         "MANDATE_NOT_YET_VALID"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "Mandate's validity window does not open until 2099. Otherwise a perfectly ordinary cart. Mirror of adv_evasion_expired_mandate on the other edge of the window."
   },
   {
@@ -1255,7 +1255,7 @@
         "MANDATE_SUBJECT_MISMATCH"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "Intent names a different (also real, also validly signed) mandate than the one it's actually submitted against. Catches a caller that mixes up which mandate an intent belongs to."
   },
   {
@@ -1269,35 +1269,35 @@
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 5
       },
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 4
       },
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 3
       },
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 2
       },
       {
         "event": "outcome",
         "status": "captured",
-        "amount_paise": "1000",
+        "amount_minor": "1000",
         "merchant_id": "MERCH_001",
         "minutes_ago": 1
       }
@@ -1317,7 +1317,7 @@
         "VELOCITY_EXCEEDED"
       ]
     },
-    "money_at_risk_paise": "18000",
+    "money_at_risk_minor": "18000",
     "notes": "5 prior captured transactions within the window (cap is 5, well under the ₹5,000 total budget) — the 6th attempt, even a small legitimate one, is rate-limited regardless of budget headroom."
   }
 ]

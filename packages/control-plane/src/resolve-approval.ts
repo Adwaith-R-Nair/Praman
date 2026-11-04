@@ -3,7 +3,7 @@ import { append, deriveState, maybeCheckpoint } from "@praman/ledger";
 import { evaluate, type PurchaseIntent } from "@praman/policy";
 import { verifyMandate, type SignedMandate } from "@praman/mandate";
 import { idempotencyKey, receiptFor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
-import { paiseFromDb, paiseToJSON } from "@praman/shared";
+import { minorFromDb, minorToJSON } from "@praman/shared";
 import { MANDATE_LOCK_NS } from "./run-intent.js";
 
 /** A human's attention is not indefinite authority. */
@@ -145,8 +145,8 @@ export async function resolveApproval(
     // The human approved a specific rupee figure. If the catalog moved
     // between step-up and approval, this is no longer the purchase they saw
     // — not ALLOW vs STEP_UP, which approval is what resolves either way.
-    const approvedAmount = paiseFromDb(apr.amountPaise);
-    if (decision.amount_paise !== approvedAmount) {
+    const approvedAmount = minorFromDb(apr.amountMinor);
+    if (decision.amount_minor !== approvedAmount) {
       await tx.approval.update({ where: { approvalId }, data: { status: "rejected", resolvedAt: now } });
       await maybeCheckpoint(tx, now);
       return {
@@ -155,14 +155,14 @@ export async function resolveApproval(
           kind: "REFUSED" as const,
           trace_id: apr.traceId,
           reason_code: "AMOUNT_CHANGED_SINCE_APPROVAL",
-          detail: `approved ${approvedAmount.toString()}, now resolves to ${decision.amount_paise.toString()}`,
+          detail: `approved ${approvedAmount.toString()}, now resolves to ${decision.amount_minor.toString()}`,
         },
       };
     }
 
     const receipt = receiptFor(key);
     await tx.idempotencyRecord.create({
-      data: { key, traceId: apr.traceId, status: "pending", receipt, amountPaise: decision.amount_paise, outcome: {} },
+      data: { key, traceId: apr.traceId, status: "pending", receipt, amountMinor: decision.amount_minor, outcome: {} },
     });
     await append(tx, {
       traceId: apr.traceId,
@@ -174,7 +174,7 @@ export async function resolveApproval(
         provider: "razorpay",
         operation: "orders.create",
         receipt,
-        amount_paise: paiseToJSON(decision.amount_paise),
+        amount_minor: minorToJSON(decision.amount_minor),
         status: "attempted",
       },
     });
@@ -187,7 +187,7 @@ export async function resolveApproval(
       traceId: apr.traceId,
       mandateId: mandate.mandate_id,
       merchantId: intent.merchant_id,
-      amount: decision.amount_paise,
+      amount: decision.amount_minor,
     };
   });
 
@@ -214,7 +214,7 @@ export async function resolveApproval(
         status: outcome.status,
         order_id: outcome.order_id,
         payment_id: outcome.payment_id,
-        amount_paise: paiseToJSON(outcome.amount_paise),
+        amount_minor: minorToJSON(outcome.amount_minor),
         merchant_id: phase1.merchantId,
         idempotency_key: phase1.key,
       },

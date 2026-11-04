@@ -685,3 +685,61 @@ these files. That trust now rests on the failing test, the isolated commit and
 the builder's review, all of which can be read in the history. Docs that state
 the claim are reworded as history. Dated records, meaning `docs/BUILD_LOG.md` and
 the shipped phases in `docs/ROADMAP.md`, stay as written.
+
+### D-28 · Schema evolution when old records can't be rewritten · Accepted
+
+PayPal brings a second currency, and an amount called `amount_paise` would be a lie
+the moment it held US cents. So every amount is now `_minor`, typed `Minor`. That is
+easy in code and impossible in two places, because two kinds of record are protected
+on purpose:
+
+- **Ledger rows.** The hash chain covers each payload's exact bytes, and triggers
+  reject `UPDATE`. Rewriting `amount_paise` in an old row would break the chain from
+  that row onward, which is exactly the tampering the chain exists to detect.
+- **Signed mandates.** The Ed25519 signature covers the canonical document, field
+  names included. Renaming a field in an old mandate invalidates its signature.
+
+**Decision: old records stay as written, and readers accept both shapes permanently.**
+
+- Mandates get a schema version. `MandateDocument = MandateDocumentV1 | MandateDocumentV2`.
+  `verifyMandate` checks the signature over the bytes as they are, then hydrates either
+  version into the same `VerifiedMandate` with `_minor` fields. `evaluate()` never sees
+  a difference. New mandates are version 2.
+- Ledger amounts go through two functions in `packages/ledger/src/derive.ts`.
+  `readAmount` is for counting money and throws on a missing, malformed or conflicting
+  amount. `amountIfPresent` is for display, where a DENY decision legitimately has no
+  amount. New events write `amount_minor`.
+- The trace page and the dispute bundle also parse catalog text out of stored
+  transcripts, so their patterns match both `price_paise=` and `price_minor=`.
+- Ordinary columns are not protected, so they do change: `catalog_item.price_minor`,
+  `idempotency_record.amount_minor` and `approval.amount_minor`, by `RENAME COLUMN`.
+  The migration does not touch `ledger_entry` or its triggers.
+
+**The version gate fails closed.** Before this, `verifyMandate` never looked at
+`version`. It now refuses an unknown version, and a document whose names don't match
+its version, as `MALFORMED_DOCUMENT` even when correctly signed. Every mandate ever
+issued was version 1 with `_paise` names, so no real mandate is affected. A signed v1
+can't be relabelled as v2, since `version` is inside the signed bytes.
+
+**Idempotency keys don't move.** The key hashes the mandate id, intent id, merchant
+and line items, and an intent carries no amount. A retry that straddles the rename
+still finds its original record.
+
+**Rejected: a data migration that rewrites old payloads and recomputes the chain.**
+A recomputed chain is indistinguishable from a forged one, and any published
+checkpoint would stop matching. Destroying the evidence to tidy a field name is the
+wrong trade in a system whose output is evidence.
+
+**Rejected: keeping `_paise` and storing cents in it.** No migration at all, and a
+field whose name is wrong for half its values, on the money path, in a repo whose
+readers look for this exact kind of bug.
+
+**Rejected: an upcasting layer that converts rows as they are read.** It is the same
+behaviour as `readAmount` with more machinery, and it would invite code to treat
+converted payloads as the stored ones, which they are not when hashing.
+
+**Consequence.** `_paise` stays in the source permanently in the v1 type, the two
+ledger readers and the two transcript patterns, plus tests. Committed eval output under
+`eval/` is left as generated, since it records past runs. The price label the model
+reads changes from `price_paise=` to `price_minor=`; the policy never read that text.
+

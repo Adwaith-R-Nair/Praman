@@ -14,7 +14,7 @@ interface CatalogFixtureItem {
   readonly title: string;
   readonly description: string;
   readonly category: string;
-  readonly price_paise: string;
+  readonly price_minor: string;
   readonly stock_qty: number;
 }
 interface CatalogFixture {
@@ -77,7 +77,7 @@ async function seedEvents(mandateId: string, defaultMerchantId: string, c: Layer
             status,
             order_id: `order_SEED_${i.toString()}`,
             payment_id: status === "captured" ? `pay_SEED_${i.toString()}` : null,
-            amount_paise: ev.amount_paise ?? "0",
+            amount_minor: ev.amount_minor ?? "0",
             merchant_id: merchantId,
             idempotency_key: key,
           },
@@ -93,7 +93,7 @@ async function seedEvents(mandateId: string, defaultMerchantId: string, c: Layer
           mandate_id: mandateId,
           kind,
           reason_code: ev.reason_code ?? (kind === "DENY" ? "AMOUNT_INVALID" : "OK"),
-          ...(kind === "DENY" ? { detail: "seed" } : { amount_paise: ev.amount_paise ?? "0" }),
+          ...(kind === "DENY" ? { detail: "seed" } : { amount_minor: ev.amount_minor ?? "0" }),
         },
       });
     });
@@ -127,7 +127,7 @@ export async function seedCase(c: Layer1Case | Layer2Case): Promise<SeededCase> 
         title: i.title,
         description: i.description,
         category: i.category,
-        pricePaise: BigInt(i.price_paise),
+        priceMinor: BigInt(i.price_minor),
         stockQty: i.stock_qty,
       })),
     });

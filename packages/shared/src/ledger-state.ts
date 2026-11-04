@@ -1,8 +1,8 @@
-import type { Paise } from "./money.js";
+import type { Minor } from "./money.js";
 
 /** Derived by replaying the ledger. Never stored on the mandate. See D-03. */
 export interface LedgerDerivedState {
-  readonly spent_paise: Paise;
+  readonly spent_minor: Minor;
   readonly txn_timestamps: readonly Date[];   // successful txns, this mandate
   readonly revoked: boolean;
   readonly merchants_transacted: ReadonlySet<string>;

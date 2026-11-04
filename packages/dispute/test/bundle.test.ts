@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@praman/db";
-import { append } from "@praman/ledger";
+import { append, type EventType } from "@praman/ledger";
 import { buildBundle } from "../src/bundle.js";
 
 beforeEach(async () => {
@@ -37,7 +37,7 @@ describe("buildBundle", () => {
         ts: new Date("2026-09-05T10:00:01.000Z"),
         actor: "praman",
         eventType: "decision",
-        payload: { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_paise: "52000" },
+        payload: { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "52000" },
       });
       await append(tx, {
         traceId,
@@ -60,7 +60,7 @@ describe("buildBundle", () => {
                   id: "c1",
                   name: "list_catalog",
                   content:
-                    "sku=SKU_FOOD_002 category=food price_paise=26000 in_stock=true\n" +
+                    "sku=SKU_FOOD_002 category=food price_minor=26000 in_stock=true\n" +
                     "<untrusted_merchant_content>\nChicken Biryani\nDum-style biryani\n</untrusted_merchant_content>",
                 },
               ],
@@ -77,7 +77,7 @@ describe("buildBundle", () => {
           mandate_id: "mnd_test",
           status: "captured",
           order_id: "order_x",
-          amount_paise: "52000",
+          amount_minor: "52000",
           merchant_id: "MERCH_001",
           idempotency_key: "idem_x",
         },
@@ -92,7 +92,7 @@ describe("buildBundle", () => {
     expect(bundle.mandate.id).toBe("mnd_test");
     expect(bundle.mandate.signature_verified).toBe(true);
     expect(bundle.authorisation.decision).toBe("ALLOW");
-    expect(bundle.authorisation.amount_paise).toBe("52000");
+    expect(bundle.authorisation.amount_minor).toBe("52000");
     expect(bundle.agent.goal).toBe("order lunch for two");
     expect(bundle.agent.rationale).toBe("two biryanis fit the budget");
     expect(bundle.agent.tool_calls).toHaveLength(1);
@@ -107,6 +107,40 @@ describe("buildBundle", () => {
     expect(bundle.chain.entries).toHaveLength(4);
     expect(bundle.chain.global_chain_ok).toBe(true);
     expect(bundle.chain.trace_fully_verified).toBe(true);
+  });
+
+  it("reads a trace recorded before the rename, with old field names", async () => {
+    const traceId = "trace_dispute_old";
+    const event = (eventType: EventType, payload: Record<string, unknown>) =>
+      prisma.$transaction((tx) =>
+        append(tx, { traceId, ts: new Date("2026-09-05T10:00:00.000Z"), actor: "system", eventType, payload }),
+      );
+    await event("agent_transcript", {
+      transcript: [
+        {
+          role: "tool_results",
+          results: [
+            {
+              id: "c1",
+              name: "list_catalog",
+              content:
+                "sku=SKU_FOOD_002 category=food price_paise=26000 in_stock=true\n" +
+                "<untrusted_merchant_content>\nChicken Biryani\nDum-style biryani\n</untrusted_merchant_content>",
+            },
+          ],
+        },
+      ],
+    });
+    await event("intent", { mandate_id: "mnd_test" });
+    await event("decision", { mandate_id: "mnd_test", kind: "STEP_UP", reason_code: "STEP_UP_THRESHOLD", amount_paise: "52000" });
+    await event("outcome", { mandate_id: "mnd_test", status: "captured", order_id: "order_old", amount_paise: "48000" });
+
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, traceId));
+    if (bundle === null) throw new Error("unreachable");
+
+    expect(bundle.authorisation.amount_minor).toBe("48000");
+    expect(bundle.merchant_content_read.map((r) => r.sku)).toEqual(["SKU_FOOD_002"]);
+    expect(bundle.chain.global_chain_ok).toBe(true);
   });
 
   it("marks signature_verified false when the trace was denied for an invalid signature", async () => {

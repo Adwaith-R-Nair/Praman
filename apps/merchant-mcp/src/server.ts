@@ -14,14 +14,14 @@ const MERCHANT_ID = process.env["MERCHANT_MCP_MERCHANT_ID"] ?? "MERCH_001";
 
 type CatalogItem = Awaited<ReturnType<typeof listCatalogForAgent>>[number];
 
-/** JSON.stringify throws on a bare bigint — price_paise (a Paise brand) needs converting first. */
+/** JSON.stringify throws on a bare bigint — price_minor (a Minor brand) needs converting first. */
 function toolItem(item: CatalogItem) {
   return {
     sku: item.sku,
     title: item.title,
     description: item.description,
     category: item.category,
-    price_paise: item.price_paise.toString(),
+    price_minor: item.price_minor.toString(),
     in_stock: item.in_stock,
   };
 }

@@ -139,7 +139,7 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
 
   const v = result.agent_visible;
   console.log(`▸ decision: ${v.kind}`);
-  if (v.kind !== "DENY") console.log(`  amount: ${formatINR(v.amount_paise)}`);
+  if (v.kind !== "DENY") console.log(`  amount: ${formatINR(v.amount_minor)}`);
   else console.log(`  reason: ${v.reason_code}`);
   console.log(`  trace:  ${result.trace_id}`);
   if (result.order_id) console.log(`  order:  ${result.order_id} (${result.order_status ?? "n/a"})`);

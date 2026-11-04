@@ -7,7 +7,7 @@ describe("assertLedgerPayload", () => {
       assertLedgerPayload({
         mandate_id: "mnd_01",
         status: "captured",
-        amount_paise: "48000", // string, not bigint — the required form
+        amount_minor: "48000", // string, not bigint — the required form
         qty: 2,
         note: null,
         tags: ["a", "b"],
@@ -16,7 +16,7 @@ describe("assertLedgerPayload", () => {
   });
 
   it("rejects a bigint, naming the field", () => {
-    expect(() => assertLedgerPayload({ amount_paise: 48000n })).toThrow(/amount_paise: bigint/);
+    expect(() => assertLedgerPayload({ amount_minor: 48000n })).toThrow(/amount_minor: bigint/);
   });
 
   it("rejects a bigint nested inside an array, with the index in the path", () => {

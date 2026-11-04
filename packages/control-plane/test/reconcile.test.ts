@@ -4,7 +4,7 @@ import { append } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
 import { SimulatedExecutor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
-import type { Paise } from "@praman/shared";
+import type { Minor } from "@praman/shared";
 import { runIntent, RECONCILE_MIN_AGE_MS } from "../src/run-intent.js";
 import { reconcilePending } from "../src/reconcile.js";
 
@@ -19,15 +19,15 @@ const SKU = "TEST_CRASH_SKU";
  */
 class CrashAfterSuccessExecutor implements Executor {
   constructor(private readonly inner: Executor) {}
-  async createOrder(amountPaise: Paise, receipt: string): Promise<ExecOutcome> {
-    await this.inner.createOrder(amountPaise, receipt);
+  async createOrder(amountMinor: Minor, receipt: string): Promise<ExecOutcome> {
+    await this.inner.createOrder(amountMinor, receipt);
     throw new Error("SIMULATED_CRASH_AFTER_SUCCESS");
   }
   async findByReceipt(receipt: string) {
     return this.inner.findByReceipt(receipt);
   }
-  async capture(paymentId: string, amountPaise: Paise) {
-    return this.inner.capture(paymentId, amountPaise);
+  async capture(paymentId: string, amountMinor: Minor) {
+    return this.inner.capture(paymentId, amountMinor);
   }
 }
 
@@ -35,7 +35,7 @@ beforeEach(async () => {
   await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record RESTART IDENTITY`;
   await prisma.$executeRaw`DELETE FROM catalog_item WHERE merchant_id = ${MERCHANT}`;
   await prisma.catalogItem.create({
-    data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", pricePaise: 5000n, stockQty: 10 },
+    data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", priceMinor: 5000n, stockQty: 10 },
   });
 });
 
@@ -47,12 +47,12 @@ function buildSignedMandate(mandateId: string) {
   const { privateKeyPem, publicKeyPem } = generateKeypair();
   const doc: MandateDocument = {
     mandate_id: mandateId,
-    version: 1,
+    version: 2,
     issuer_id: "usr_t",
     subject_id: "agt_t",
     scope: { merchant_ids: [MERCHANT], categories: ["food"], currency: "INR" },
-    limits: { max_per_txn_paise: "80000", max_total_paise: "500000", max_txns_per_window: 5, window_seconds: 3600, max_denials_per_window: 5 },
-    step_up: { threshold_paise: "50000" },
+    limits: { max_per_txn_minor: "80000", max_total_minor: "500000", max_txns_per_window: 5, window_seconds: 3600, max_denials_per_window: 5 },
+    step_up: { threshold_minor: "50000" },
     validity: { not_before: "2026-08-28T00:00:00.000Z", not_after: "2026-12-31T00:00:00.000Z" },
     nonce: "n1",
   };
@@ -74,7 +74,7 @@ async function seedPriorHistory(mandateId: string) {
         status: "captured",
         order_id: "order_SEED",
         payment_id: "pay_SEED",
-        amount_paise: "1000",
+        amount_minor: "1000",
         merchant_id: MERCHANT,
         idempotency_key: "seed",
       },
@@ -112,7 +112,7 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
     const record = await prisma.idempotencyRecord.findFirst({ where: { traceId } });
     expect(record?.status).toBe("pending");
     expect(record?.receipt).not.toBeNull();
-    expect(record?.amountPaise).toBe(5000n);
+    expect(record?.amountMinor).toBe(5000n);
 
     const ledgerRows = await prisma.ledgerEntry.findMany({ where: { traceId }, orderBy: { seq: "asc" } });
     expect(ledgerRows.map((r) => r.eventType)).toEqual(["intent", "decision", "api_call"]);

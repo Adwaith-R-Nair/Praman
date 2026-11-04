@@ -1835,3 +1835,54 @@ The section says plainly that PayPal is not built yet.
 
 Em dashes were also removed from the "three primitives" lists in the README and
 `docs/ARCHITECTURE.md`, so those lists read the same after the rewording.
+
+### Phase P2 · 2026-11-05 · paise becomes minor units
+
+No behaviour changed in this one. It renames every amount from `_paise` to `_minor`,
+because `amount_paise` would be a false name the day it holds US cents. It's one big
+mechanical commit on purpose, about 70 files, so it can be reviewed as one thing and
+nothing else hides inside it.
+
+**The interesting part is what can't be renamed.** Ledger rows and signed mandates
+have the old names inside the bytes that their hashes and signatures cover. Rewriting
+an old row would break the chain, and renaming a field in an old mandate would break
+its signature. So those records stay as they are forever, and the code reads both
+shapes. D-28 has the reasoning.
+
+- **Mandates** now have a version. Version 1 keeps `_paise`, version 2 uses `_minor`,
+  and both turn into the same thing in memory, so `evaluate()` can't tell them apart.
+  An unknown version, or names that don't match the version, is refused even if the
+  signature is good. That check is new: nothing looked at `version` before.
+- **Ledger amounts** go through `readAmount`, which throws if an amount is missing,
+  malformed, or given twice with different values. Display code uses `amountIfPresent`,
+  because a DENY has no amount and that's normal.
+- **A catch the plan didn't list:** the trace page and the dispute bundle pull catalog
+  text out of stored transcripts with a pattern that had `price_paise=` in it. A plain
+  rename would have made every old trace show no merchant content, with no error. Both
+  patterns now accept both names, and tests cover both.
+- **Database columns** were renamed with `RENAME COLUMN`. The migration doesn't touch
+  `ledger_entry` or its triggers.
+
+**How I know old data still works.** Against the dev database, which has 104 ledger
+rows with `amount_paise` and none with `amount_minor` yet, after migrating:
+
+- `pnpm verify-ledger` gives the same result before and after: 242 entries, head
+  `62a68c3b...`. The rows were not touched.
+- Spend derived for all 15 mandates with outcomes matches a raw SQL sum of the stored
+  amounts, with 0 mismatches.
+- An old trace shows the right amount and its 21 merchant reads on the trace page and
+  in the dispute bundle.
+- The local v1 `mandate.json` still verifies.
+
+Two of the new tests use values produced by the code before the rename: a real v1
+signature from a discarded key, and a payload hash. A signature created today couldn't
+catch a change to what gets signed. These can. One eval fixture,
+`lunch_5000_high_stepup`, stays v1, so Layer 1 still runs a v1 mandate through a real
+ALLOW at a limit boundary. Layer 1 passed 35 of 35.
+
+**One thing to watch.** The model now reads `price_minor=48000` where it used to read
+`price_paise=48000`, so that line no longer says which unit it is. Prices still come
+from the catalog and the policy never reads this text, so no money decision depends on
+it, but the model may judge a budget less well. Layer 2 wasn't rerun here. Task 3 is
+the natural place to show the currency next to the price, and Task 11 reruns Layer 2.
+

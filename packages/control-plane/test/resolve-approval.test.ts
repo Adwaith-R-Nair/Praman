@@ -4,7 +4,7 @@ import { append } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument, type SignedMandate } from "@praman/mandate";
 import { SimulatedExecutor, type ExecOutcome, type Executor } from "@praman/razorpay-exec";
-import type { Paise } from "@praman/shared";
+import type { Minor } from "@praman/shared";
 import { runIntent } from "../src/run-intent.js";
 import { resolveApproval } from "../src/resolve-approval.js";
 
@@ -15,15 +15,15 @@ const SKU = "TEST_APR_SKU";
 class CountingExecutor implements Executor {
   callCount = 0;
   constructor(private readonly inner: Executor) {}
-  async createOrder(amountPaise: Paise, receipt: string): Promise<ExecOutcome> {
+  async createOrder(amountMinor: Minor, receipt: string): Promise<ExecOutcome> {
     this.callCount += 1;
-    return this.inner.createOrder(amountPaise, receipt);
+    return this.inner.createOrder(amountMinor, receipt);
   }
   async findByReceipt(receipt: string) {
     return this.inner.findByReceipt(receipt);
   }
-  async capture(paymentId: string, amountPaise: Paise) {
-    return this.inner.capture(paymentId, amountPaise);
+  async capture(paymentId: string, amountMinor: Minor) {
+    return this.inner.capture(paymentId, amountMinor);
   }
 }
 
@@ -31,7 +31,7 @@ beforeEach(async () => {
   await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record, approval RESTART IDENTITY`;
   await prisma.$executeRaw`DELETE FROM catalog_item WHERE merchant_id = ${MERCHANT}`;
   await prisma.catalogItem.create({
-    data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", pricePaise: 5000n, stockQty: 10 },
+    data: { merchantId: MERCHANT, sku: SKU, title: "t", description: "d", category: "food", priceMinor: 5000n, stockQty: 10 },
   });
 });
 
@@ -43,12 +43,12 @@ function buildSignedMandate(mandateId: string, notAfter = "2026-12-31T00:00:00.0
   const { privateKeyPem, publicKeyPem } = generateKeypair();
   const doc: MandateDocument = {
     mandate_id: mandateId,
-    version: 1,
+    version: 2,
     issuer_id: "usr_t",
     subject_id: "agt_t",
     scope: { merchant_ids: [MERCHANT], categories: ["food"], currency: "INR" },
-    limits: { max_per_txn_paise: "80000", max_total_paise: "500000", max_txns_per_window: 5, window_seconds: 3600, max_denials_per_window: 5 },
-    step_up: { threshold_paise: "50000" },
+    limits: { max_per_txn_minor: "80000", max_total_minor: "500000", max_txns_per_window: 5, window_seconds: 3600, max_denials_per_window: 5 },
+    step_up: { threshold_minor: "50000" },
     validity: { not_before: "2026-08-28T00:00:00.000Z", not_after: notAfter },
     nonce: "n1",
   };
@@ -141,11 +141,11 @@ describe("resolveApproval closes bypasses a naive approve-the-stored-intent woul
     const { signed, publicKeyPem } = buildSignedMandate(mandateId);
     const approvalId = await stepUp(mandateId, signed, publicKeyPem, "int_apr_repriced");
 
-    // The human saw and approved 5000 paise. The merchant changes the price
+    // The human saw and approved 5000 minor units. The merchant changes the price
     // before they click approve.
     await prisma.catalogItem.update({
       where: { merchantId_sku: { merchantId: MERCHANT, sku: SKU } },
-      data: { pricePaise: 6000n },
+      data: { priceMinor: 6000n },
     });
 
     const result = await resolveApproval(

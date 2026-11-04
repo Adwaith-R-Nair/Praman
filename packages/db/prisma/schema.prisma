@@ -41,7 +41,7 @@ model CatalogItem {
   title       String
   description String
   category    String
-  pricePaise  BigInt @map("price_paise")
+  priceMinor  BigInt @map("price_minor")
   stockQty    Int    @map("stock_qty")
 
   @@id([merchantId, sku])
@@ -53,7 +53,7 @@ model IdempotencyRecord {
   traceId     String   @map("trace_id")
   status      String   @default("pending")
   receipt     String?
-  amountPaise BigInt?  @map("amount_paise")
+  amountMinor BigInt?  @map("amount_minor")
   outcome     Json?
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
@@ -66,7 +66,7 @@ model Approval {
   traceId     String    @map("trace_id")
   mandateId   String    @map("mandate_id")
   intent      Json
-  amountPaise BigInt    @map("amount_paise")
+  amountMinor BigInt    @map("amount_minor")
   status      String
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz(3)

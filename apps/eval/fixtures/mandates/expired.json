@@ -1,6 +1,6 @@
 {
   "mandate_id": "mnd_eval_expired",
-  "version": 1,
+  "version": 2,
   "issuer_id": "usr_eval",
   "subject_id": "agt_eval",
   "scope": {
@@ -9,14 +9,14 @@
     "currency": "INR"
   },
   "limits": {
-    "max_per_txn_paise": "80000",
-    "max_total_paise": "500000",
+    "max_per_txn_minor": "80000",
+    "max_total_minor": "500000",
     "max_txns_per_window": 5,
     "window_seconds": 3600,
     "max_denials_per_window": 5
   },
   "step_up": {
-    "threshold_paise": "50000"
+    "threshold_minor": "50000"
   },
   "validity": {
     "not_before": "2020-01-01T00:00:00.000Z",

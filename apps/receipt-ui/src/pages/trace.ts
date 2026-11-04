@@ -1,4 +1,4 @@
-import { formatINR, paiseFromJSON, type ReasonCode } from "@praman/shared";
+import { formatINR, minorFromJSON, type ReasonCode } from "@praman/shared";
 import type { EventType } from "@praman/ledger";
 import { loadTrace } from "../data.js";
 import { decisionClass, decisionLabel } from "../decision-display.js";
@@ -46,7 +46,7 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
   const reasonPlain =
     trace.refusalReason ??
     (trace.reasonCode && trace.reasonCode !== "OK" ? (REASON_CODE_PLAIN[trace.reasonCode as ReasonCode] ?? trace.reasonCode) : null);
-  const amount = trace.amountPaise ? formatINR(paiseFromJSON(trace.amountPaise)) : null;
+  const amount = trace.amountMinor ? formatINR(minorFromJSON(trace.amountMinor)) : null;
 
   // One card per item, not one undifferentiated wall of text — the whole
   // point is that a reviewer can actually read each product on its own,
@@ -57,7 +57,7 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
       (item) => `<div class="merchant-item">
         <div class="merchant-item-header">
           <span class="merchant-item-title">${escFreeText(item.title)}</span>
-          <span class="merchant-item-price data">${formatINR(paiseFromJSON(item.pricePaise))}</span>
+          <span class="merchant-item-price data">${formatINR(minorFromJSON(item.priceMinor))}</span>
         </div>
         <div class="merchant-item-sku data">${escapeHtml(item.sku)}</div>
         <div class="untrusted">

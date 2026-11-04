@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@praman/db";
 import { append } from "../src/append.js";
-import { deriveState } from "../src/derive.js";
+import { amountIfPresent, deriveState, readAmount } from "../src/derive.js";
 
 // Runs against TEST_DATABASE_URL (see vitest.config.ts), never the real one.
 beforeEach(async () => {
@@ -16,7 +16,7 @@ const MANDATE = "mnd_derive_test";
 const OTHER_MANDATE = "mnd_other";
 
 describe("deriveState", () => {
-  it("created and captured outcomes move spent_paise; failed does not", async () => {
+  it("created and captured outcomes move spent_minor; failed does not", async () => {
     await prisma.$transaction((tx) =>
       append(tx, {
         traceId: "t1",
@@ -44,7 +44,7 @@ describe("deriveState", () => {
         payload: {
           mandate_id: MANDATE,
           status: "captured",
-          amount_paise: "5000",
+          amount_minor: "5000",
           merchant_id: "MERCH_001",
           idempotency_key: "idem_1",
         },
@@ -62,7 +62,7 @@ describe("deriveState", () => {
         payload: {
           mandate_id: MANDATE,
           status: "created",
-          amount_paise: "1200",
+          amount_minor: "1200",
           merchant_id: "MERCH_003",
           idempotency_key: "idem_3",
         },
@@ -77,7 +77,7 @@ describe("deriveState", () => {
         payload: {
           mandate_id: MANDATE,
           status: "failed",
-          amount_paise: "9999",
+          amount_minor: "9999",
           merchant_id: "MERCH_002",
         },
       }),
@@ -85,7 +85,7 @@ describe("deriveState", () => {
 
     const state = await prisma.$transaction((tx) => deriveState(tx, MANDATE));
 
-    expect(state.spent_paise).toBe(6200n);
+    expect(state.spent_minor).toBe(6200n);
     expect(state.txn_timestamps).toHaveLength(2);
     expect([...state.merchants_transacted].sort()).toEqual(["MERCH_001", "MERCH_003"]);
     expect([...state.seen_idempotency_keys].sort()).toEqual(["idem_1", "idem_3"]);
@@ -173,30 +173,101 @@ describe("deriveState", () => {
         payload: {
           mandate_id: OTHER_MANDATE,
           status: "captured",
-          amount_paise: "999999",
+          amount_minor: "999999",
           merchant_id: "MERCH_003",
         },
       }),
     );
 
     const state = await prisma.$transaction((tx) => deriveState(tx, MANDATE));
-    expect(state.spent_paise).toBe(0n);
+    expect(state.spent_minor).toBe(0n);
     expect(state.merchants_transacted.size).toBe(0);
   });
 
-  it("throws on a captured outcome with a malformed amount_paise", async () => {
+  it("throws on a captured outcome with a malformed amount_minor", async () => {
     await prisma.$transaction((tx) =>
       append(tx, {
         traceId: "t1",
         ts: new Date("2026-09-04T10:00:00.000Z"),
         actor: "system",
         eventType: "outcome",
-        payload: { mandate_id: MANDATE, status: "captured", amount_paise: "not-a-number" },
+        payload: { mandate_id: MANDATE, status: "captured", amount_minor: "not-a-number" },
       }),
     );
 
     await expect(prisma.$transaction((tx) => deriveState(tx, MANDATE))).rejects.toThrow(
+      /amount_minor is malformed/,
+    );
+  });
+
+  async function appendOutcome(traceId: string, fields: Record<string, unknown>): Promise<void> {
+    await prisma.$transaction((tx) =>
+      append(tx, {
+        traceId,
+        ts: new Date("2026-09-04T10:00:00.000Z"),
+        actor: "system",
+        eventType: "outcome",
+        payload: { mandate_id: MANDATE, status: "captured", ...fields },
+      }),
+    );
+  }
+
+  it("derives spend from old amount_paise and new amount_minor outcomes", async () => {
+    await appendOutcome("t_old", { amount_paise: "5000" });
+    await appendOutcome("t_new", { amount_minor: "700" });
+
+    const state = await prisma.$transaction((tx) => deriveState(tx, MANDATE));
+    expect(state.spent_minor).toBe(5700n);
+    expect(state.txn_timestamps).toHaveLength(2);
+  });
+
+  it("rejects an outcome with neither amount field", async () => {
+    await appendOutcome("t1", {});
+    await expect(prisma.$transaction((tx) => deriveState(tx, MANDATE))).rejects.toThrow(
+      /ledger seq 1: outcome has no amount/,
+    );
+  });
+
+  it("rejects an outcome whose two amount fields disagree", async () => {
+    await appendOutcome("t1", { amount_paise: "5000", amount_minor: "1" });
+    await expect(prisma.$transaction((tx) => deriveState(tx, MANDATE))).rejects.toThrow(/amounts disagree/);
+  });
+
+  it("throws on a malformed old amount_paise too", async () => {
+    await appendOutcome("t1", { amount_paise: "not-a-number" });
+    await expect(prisma.$transaction((tx) => deriveState(tx, MANDATE))).rejects.toThrow(
       /amount_paise is malformed/,
     );
+  });
+});
+
+describe("readAmount", () => {
+  it("reads either shape", () => {
+    expect(readAmount({ amount_paise: "5000" }, 1n)).toBe("5000");
+    expect(readAmount({ amount_minor: "5000" }, 1n)).toBe("5000");
+  });
+
+  it("accepts both fields when they agree", () => {
+    expect(readAmount({ amount_paise: "5000", amount_minor: "5000" }, 1n)).toBe("5000");
+  });
+
+  it.each([
+    ["a number", { amount_minor: 5000 }],
+    ["a negative", { amount_minor: "-5000" }],
+    ["a decimal", { amount_paise: "50.00" }],
+    ["null", { amount_minor: null }],
+  ])("rejects %s", (_name, payload) => {
+    expect(() => readAmount(payload, 7n)).toThrow(/ledger seq 7: outcome amount_(minor|paise) is malformed/);
+  });
+});
+
+describe("amountIfPresent", () => {
+  it("reads either shape, new first", () => {
+    expect(amountIfPresent({ amount_paise: "5000" })).toBe("5000");
+    expect(amountIfPresent({ amount_minor: "700" })).toBe("700");
+  });
+
+  it("returns null when there is no amount, as on a DENY decision", () => {
+    expect(amountIfPresent({ kind: "DENY", reason_code: "SKU_UNKNOWN" })).toBeNull();
   });
 });

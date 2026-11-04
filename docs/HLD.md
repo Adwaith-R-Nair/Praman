@@ -148,7 +148,7 @@ Decision is `STEP_UP` → a pending approval row is written, the ledger records 
 
 ### 5.3 Denial
 
-Nothing executes. The agent receives `{ decision: "DENY", reason_code, remaining_paise }`. It may re-plan, but a re-plan produces a *different* intent and therefore a different idempotency key — it cannot retry its way past the gate, and each attempt is separately recorded.
+Nothing executes. The agent receives `{ decision: "DENY", reason_code, remaining_minor }`. It may re-plan, but a re-plan produces a *different* intent and therefore a different idempotency key — it cannot retry its way past the gate, and each attempt is separately recorded.
 
 ### 5.4 Execution failure
 

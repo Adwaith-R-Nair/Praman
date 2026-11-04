@@ -39,12 +39,12 @@ praman/
 
 ```ts
 // Money — the only representation of an amount anywhere in the repo.
-export type Paise = bigint & { readonly __brand: "Paise" };
-export const paise = (n: bigint): Paise => {
-  if (n < 0n) throw new Error("Paise cannot be negative");
-  return n as Paise;
+export type Minor = bigint & { readonly __brand: "Minor" };
+export const minor = (n: bigint): Minor => {
+  if (n < 0n) throw new Error("Minor cannot be negative");
+  return n as Minor;
 };
-export const formatINR = (p: Paise): string => `₹${(Number(p) / 100).toFixed(2)}`;
+export const formatINR = (p: Minor): string => `₹${(Number(p) / 100).toFixed(2)}`;
 
 // Result — no thrown exceptions anywhere in the money path.
 export type Result<T, E> =
@@ -58,7 +58,7 @@ export type PramanError =
   | { kind: "LEDGER_FAILED";    detail: string };
 ```
 
-**Why a branded type for money:** a plain `bigint` can be accidentally assigned from a count, an index, or a timestamp. The brand makes `paise(qty)` a deliberate act you can grep for. This is a 4-line change that eliminates a whole bug class — a good thing to point at in the interview.
+**Why a branded type for money:** a plain `bigint` can be accidentally assigned from a count, an index, or a timestamp. The brand makes `minor(qty)` a deliberate act you can grep for. This is a 4-line change that eliminates a whole bug class — a good thing to point at in the interview.
 
 ### Canonical JSON (`canonical.ts`)
 
@@ -104,7 +104,7 @@ CREATE TABLE mandate (
   key_id          TEXT        NOT NULL,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- NOTE: no spent_paise column. Deliberate. Spend is derived from the ledger.
+-- NOTE: no spent_minor column. Deliberate. Spend is derived from the ledger.
 
 CREATE TABLE catalog_item (
   merchant_id   TEXT   NOT NULL,
@@ -112,7 +112,7 @@ CREATE TABLE catalog_item (
   title         TEXT   NOT NULL,
   description   TEXT   NOT NULL,            -- UNTRUSTED. never enters policy.
   category      TEXT   NOT NULL,
-  price_paise   BIGINT NOT NULL CHECK (price_paise > 0),
+  price_minor   BIGINT NOT NULL CHECK (price_minor > 0),
   stock_qty     INT    NOT NULL CHECK (stock_qty >= 0),
   PRIMARY KEY (merchant_id, sku)
 );
@@ -152,7 +152,7 @@ CREATE TABLE approval (
   trace_id      TEXT        NOT NULL,
   mandate_id    TEXT        NOT NULL,
   intent        JSONB       NOT NULL,
-  amount_paise  BIGINT      NOT NULL,
+  amount_minor  BIGINT      NOT NULL,
   status        TEXT        NOT NULL,       -- pending | approved | rejected | expired
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   resolved_at   TIMESTAMPTZ
@@ -161,7 +161,7 @@ CREATE TABLE approval (
 
 **Two details worth defending out loud:**
 
-- `mandate` has no `spent_paise`. Anyone with DB write access could raise it. Deriving spend from an append-only, hash-chained log means inflating a budget requires forging the entire chain.
+- `mandate` has no `spent_minor`. Anyone with DB write access could raise it. Deriving spend from an append-only, hash-chained log means inflating a budget requires forging the entire chain.
 - `ledger_entry.seq` is auto-assigned by the database on every insert (`BIGSERIAL` as built, not `GENERATED ALWAYS AS IDENTITY` as originally planned here — the shipped column can technically accept an application-supplied value where `IDENTITY` would reject one outright; `append()` never provides one, so the guarantee holds through the single code path that writes this table, not through a schema-level constraint). A gap in the sequence is still evidence worth investigating.
 
 ---
@@ -181,7 +181,7 @@ export async function append(
 
 export async function deriveState(
   tx: PrismaTx, mandateId: string, now: Date
-): Promise<LedgerDerivedState>;    // { spent_paise, txn_timestamps[], revoked }
+): Promise<LedgerDerivedState>;    // { spent_minor, txn_timestamps[], revoked }
 
 export async function verifyChain(
   from = 0n
@@ -240,7 +240,7 @@ The intent includes `intent_id`, so two *genuinely different* attempts differ. A
 
 ### The concurrency guard
 
-Two identical intents arriving simultaneously would both read `spent_paise` before either writes. Fix, at the top of the transaction:
+Two identical intents arriving simultaneously would both read `spent_minor` before either writes. Fix, at the top of the transaction:
 
 ```sql
 SELECT pg_advisory_xact_lock(hashtext($1));   -- $1 = mandate_id
@@ -256,7 +256,7 @@ Belt and braces: `idempotency_record.key` is the primary key, so a duplicate ins
 
 ```ts
 export async function execute(
-  tx: PrismaTx, intent: PurchaseIntent, amount: Paise, key: string
+  tx: PrismaTx, intent: PurchaseIntent, amount: Minor, key: string
 ): Promise<Result<ExecOutcome, PramanError>>;
 ```
 
@@ -282,8 +282,8 @@ Response shape for `/v1/intents` — same envelope for all three outcomes so cal
   "trace_id": "trc_…",
   "decision": "ALLOW" | "STEP_UP" | "DENY",
   "reason_code": "OK",
-  "amount_paise": "48000",           // string, because JSON has no bigint
-  "remaining_paise": "452000",
+  "amount_minor": "48000",           // string, because JSON has no bigint
+  "remaining_minor": "452000",
   "explanation": "Within per-txn cap ₹800 and remaining budget ₹5000.",
   "payment": { "id": "pay_…", "status": "captured" },   // ALLOW only
   "approval_id": null,

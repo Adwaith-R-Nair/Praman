@@ -1,4 +1,4 @@
-import type { Paise, StepUpCode, DenyCode, LedgerDerivedState } from "@praman/shared";
+import type { Minor, StepUpCode, DenyCode, LedgerDerivedState } from "@praman/shared";
 
 export type { LedgerDerivedState };
 
@@ -26,15 +26,15 @@ export interface VerifiedMandate {
     readonly currency: "INR";
   };
   readonly limits: {
-    readonly max_per_txn_paise: Paise;
-    readonly max_total_paise: Paise;
+    readonly max_per_txn_minor: Minor;
+    readonly max_total_minor: Minor;
     readonly max_txns_per_window: number;
     readonly window_seconds: number;
     /** Denial-rate cap closing D-20's probe oracle — see evaluate() step 2b. */
     readonly max_denials_per_window: number;
   };
   readonly step_up: {
-    readonly threshold_paise: Paise;
+    readonly threshold_minor: Minor;
   };
   readonly validity: {
     readonly not_before: Date;
@@ -51,19 +51,19 @@ export interface CatalogSnapshot {
 export interface CatalogItem {
   readonly sku: string;
   readonly category: string;
-  readonly price_paise: Paise;
+  readonly price_minor: Minor;
   readonly stock_qty: number;
 }
 
 export type Decision =
-  | { readonly kind: "ALLOW"; readonly amount_paise: Paise; readonly reason_code: "OK"; readonly remaining_paise: Paise }
-  | { readonly kind: "STEP_UP"; readonly amount_paise: Paise; readonly reason_code: StepUpCode }
+  | { readonly kind: "ALLOW"; readonly amount_minor: Minor; readonly reason_code: "OK"; readonly remaining_minor: Minor }
+  | { readonly kind: "STEP_UP"; readonly amount_minor: Minor; readonly reason_code: StepUpCode }
   | { readonly kind: "DENY"; readonly reason_code: DenyCode; readonly detail: string };
 
 /** What the agent is allowed to see. Never carries mandate limits. See D-08. */
 export type AgentVisibleDecision =
-  | { readonly kind: "ALLOW"; readonly amount_paise: Paise }
-  | { readonly kind: "STEP_UP"; readonly amount_paise: Paise }
+  | { readonly kind: "ALLOW"; readonly amount_minor: Minor }
+  | { readonly kind: "STEP_UP"; readonly amount_minor: Minor }
   | { readonly kind: "DENY"; readonly reason_code: DenyCode };
 
 export interface EvaluateInput {
