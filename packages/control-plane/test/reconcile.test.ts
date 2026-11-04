@@ -372,6 +372,26 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
       expect(state.spent_minor).toBe(5000n);
     });
 
+    it("never lets a simulator answer for a live rail", async () => {
+      // The simulator has never heard of this order. If it were asked, its "not
+      // found" would write a failed outcome, and a real order would stop counting.
+      const now = new Date();
+      const mandateId = "mnd_crash_wrong_rail";
+      const traceId = await crashOnce(mandateId, "int_crash_wrong_rail", crashesOnCreate(new SimulatedExecutor(), "paypal"), now);
+      expect((await prisma.idempotencyRecord.findFirst({ where: { traceId } }))?.rail).toBe("paypal");
+      const simulator = new SimulatedExecutor();
+      const findOrder = vi.spyOn(simulator, "findOrder");
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const resolved = await reconcilePending(routeAllTo(simulator), now);
+
+      error.mockRestore();
+      expect(resolved).toBe(0);
+      expect(findOrder).not.toHaveBeenCalled();
+      expect((await prisma.idempotencyRecord.findFirst({ where: { traceId } }))?.status).toBe("pending");
+      expect(await prisma.ledgerEntry.count({ where: { traceId, eventType: "outcome" } })).toBe(0);
+    });
+
     it("does not believe a found order in another currency", async () => {
       const now = new Date();
       const inner = new SimulatedExecutor();

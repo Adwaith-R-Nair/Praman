@@ -13,8 +13,8 @@ import { RECONCILE_MIN_AGE_MS } from "./run-intent.js";
  * this whole structure exists to prevent. Waiting is the correct behaviour.
  *
  * Asks the rail named on the record, which is the one that was called. A record
- * whose rail has no executor here stays pending, because "I can't ask" is not
- * "it didn't happen".
+ * whose rail has no executor here, or whose router hands back another rail, stays
+ * pending, because "I can't ask" is not "it didn't happen".
  */
 export async function reconcilePending(route: ExecutorRouter, now: Date): Promise<number> {
   const stale = await prisma.idempotencyRecord.findMany({
@@ -57,6 +57,10 @@ export async function reconcilePending(route: ExecutorRouter, now: Date): Promis
       if (!isRail(rec.rail)) throw new TypeError(`record ${rec.key} has an unknown rail: ${rec.rail}`);
       const executor = route(rec.rail);
       if (executor === null) throw new Error(`no executor for rail ${rec.rail}`);
+      // routeAllTo answers every rail with one executor. Here that would be a
+      // simulator saying "not found" about a real order, which writes a failed
+      // outcome and frees the budget that order holds.
+      if (executor.rail !== rec.rail) throw new Error(`record ${rec.key} is on rail ${rec.rail}, and rail ${executor.rail} can't answer for it`);
 
       const authorised = minorFromDb(amountMinor);
       const rawFound = await executor.findOrder({
