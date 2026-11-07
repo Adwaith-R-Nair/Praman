@@ -66,6 +66,40 @@ function purchaseReply(result: PurchaseResult, extra: Record<string, unknown> = 
   return reply(`${result.status}: ${result.message}`, { ...result, ...extra });
 }
 
+/**
+ * Identifiers go into Postgres text columns, which can't hold a NUL byte, and into
+ * ledger payloads. No real merchant, SKU, trace or approval id has a control
+ * character, so the schema refuses them before any query runs.
+ */
+const NO_CONTROL = /^[^\p{Cc}]*$/u;
+const CONTROL_MESSAGE = "must not contain a control character";
+function idField(max: number) {
+  return z.string().min(1).max(max).regex(NO_CONTROL, CONTROL_MESSAGE);
+}
+/** A search query may hold tabs and line breaks, which split words; any other control character is refused. */
+const QUERY_TEXT = /^[^\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]*$/u;
+
+/**
+ * Runs a tool body and turns anything it throws into a typed ERROR. The error's own
+ * text (a Prisma frame with source paths, a Postgres code) goes to stderr for the
+ * operator, never to the agent. stdout is the MCP channel.
+ */
+async function guarded(tool: string, message: string, run: () => Promise<CallToolResult>): Promise<CallToolResult> {
+  try {
+    return await run();
+  } catch (err) {
+    console.error(`praman-mcp: ${tool} failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    return reply(`ERROR: ${message}`, { status: "ERROR", message }, true);
+  }
+}
+
+/** It may have failed after the rail was called (T2), so it can't promise nothing was bought; the pending record is what pnpm reconcile settles. */
+const PROPOSE_FAILED =
+  "Praman hit an internal error and has no decision for this proposal. Don't propose it again; ask the person running Praman to check the server log and run pnpm reconcile.";
+const CAPTURE_FAILED =
+  "Praman hit an internal error during this capture and doesn't know if it went through. Don't call complete_checkout again; check with get_receipt later and ask the person running Praman to check the server log.";
+const READ_FAILED = "Praman hit an internal error answering this. Nothing was changed. Ask the person running Praman to check the server log.";
+
 function notFound(what: string): CallToolResult {
   return reply(`NOT_FOUND: ${what}`, { status: "NOT_FOUND", message: what }, true);
 }
@@ -147,9 +181,9 @@ export function createGateway(deps: GatewayDeps): McpServer {
     {
       title: "Search products",
       description: `Search the products this agent may buy from. Matches every word of the query against the product's title, description, category and SKU. An empty query lists everything (up to ${MAX_RESULTS.toString()}). ${NOTE}`,
-      inputSchema: z.strictObject({ query: z.string().max(200), merchant_id: z.string().max(64).optional() }),
+      inputSchema: z.strictObject({ query: z.string().max(200).regex(QUERY_TEXT, CONTROL_MESSAGE), merchant_id: idField(64).optional() }),
     },
-    async ({ query, merchant_id }) => {
+    async ({ query, merchant_id }) => guarded("search_products", READ_FAILED, async () => {
       const words = query.toLowerCase().split(/\s+/).filter((w) => w !== "");
       const all = await catalog(merchant_id);
       const hits = all.filter((i) => {
@@ -163,7 +197,7 @@ export function createGateway(deps: GatewayDeps): McpServer {
         content: [{ type: "text", text: `${shown.length.toString()} of ${hits.length.toString()} matching product(s). ${NOTE}\n\n${text}` }],
         structuredContent: { count: hits.length, items: shown.map(productData), note: NOTE },
       };
-    },
+    }),
   );
 
   server.registerTool(
@@ -171,15 +205,15 @@ export function createGateway(deps: GatewayDeps): McpServer {
     {
       title: "Get one product",
       description: `One product by merchant and SKU, with the price Praman will charge. ${NOTE}`,
-      inputSchema: z.strictObject({ merchant_id: z.string().max(64), sku: z.string().max(80) }),
+      inputSchema: z.strictObject({ merchant_id: idField(64), sku: idField(80) }),
     },
-    async ({ merchant_id, sku }) => {
+    async ({ merchant_id, sku }) => guarded("get_product", READ_FAILED, async () => {
       const item = (await catalog(merchant_id)).find((i) => i.sku === sku);
       if (item === undefined) return notFound(`no product ${sku} at ${merchant_id}`);
       const text = productText(item);
       remember("get_product", { merchant_id, sku }, text);
       return { content: [{ type: "text", text: `${NOTE}\n\n${text}` }], structuredContent: { item: productData(item), note: NOTE } };
-    },
+    }),
   );
 
   server.registerTool(
@@ -188,9 +222,9 @@ export function createGateway(deps: GatewayDeps): McpServer {
       title: "Propose a purchase",
       description:
         "Ask Praman to buy qty of one product. You name only the merchant, the SKU and the quantity: the price comes from the catalog, the currency from the signed mandate, and the payment rail from the merchant's configuration. Praman answers EXECUTED (with a receipt), APPROVAL_REQUIRED (a person must approve first, nothing is bought yet) or DENIED (with a reason code). An identical proposal within two minutes is treated as a retry and returns the first answer.",
-      inputSchema: z.strictObject({ merchant_id: z.string().min(1).max(64), sku: z.string().min(1).max(80), qty: z.number().int().min(1).max(100) }),
+      inputSchema: z.strictObject({ merchant_id: idField(64), sku: idField(80), qty: z.number().int().min(1).max(100) }),
     },
-    async ({ merchant_id, sku, qty }) => {
+    async ({ merchant_id, sku, qty }) => guarded("propose_purchase", PROPOSE_FAILED, async () => {
       const now = deps.now();
       const retryKey = JSON.stringify([merchant_id, sku, qty]);
       const prior = recent.get(retryKey);
@@ -229,7 +263,7 @@ export function createGateway(deps: GatewayDeps): McpServer {
       // Only a mandate that failed verification leaves no intent under this mandate.
       const code = result.agent_visible.kind === "DENY" ? result.agent_visible.reason_code : null;
       return reply(`DENIED: ${code ?? "refused"}`, { status: "DENIED", trace_id: result.trace_id, reason_code: code, message: "The mandate this gateway holds was refused.", links: linksFor(deps.receiptBaseUrl, result.trace_id) });
-    },
+    }),
   );
 
   server.registerTool(
@@ -237,14 +271,14 @@ export function createGateway(deps: GatewayDeps): McpServer {
     {
       title: "Check an approval",
       description: "Where a purchase that needed a person's approval stands now: still waiting, rejected, refused on a re-check, or executed.",
-      inputSchema: z.strictObject({ approval_id: z.string().min(1).max(80) }),
+      inputSchema: z.strictObject({ approval_id: idField(80) }),
     },
-    async ({ approval_id }) => {
+    async ({ approval_id }) => guarded("check_approval", READ_FAILED, async () => {
       const approval = await prisma.approval.findFirst({ where: { approvalId: approval_id, mandateId } });
       if (approval === null) return notFound(`no approval ${approval_id} under this gateway's mandate`);
       const view = await readPurchase(approval.traceId, mandateId, deps.receiptBaseUrl, deps.now());
       return view === null ? notFound(`no trace for approval ${approval_id}`) : purchaseReply(view);
-    },
+    }),
   );
 
   server.registerTool(
@@ -253,9 +287,9 @@ export function createGateway(deps: GatewayDeps): McpServer {
       title: "Complete a PayPal checkout",
       description:
         "After the buyer has paid at the pay_url of an EXECUTED purchase, ask Praman to capture it. Praman re-checks the mandate first (revoked or expired means no capture). Takes only the trace_id: the amount is the one Praman authorised.",
-      inputSchema: z.strictObject({ trace_id: z.string().min(1).max(120) }),
+      inputSchema: z.strictObject({ trace_id: idField(120) }),
     },
-    async ({ trace_id }) => {
+    async ({ trace_id }) => guarded("complete_checkout", CAPTURE_FAILED, async () => {
       const before = await readPurchase(trace_id, mandateId, deps.receiptBaseUrl, deps.now());
       if (before === null) return notFound(`no trace ${trace_id} under this gateway's mandate`);
       if (before.status !== "EXECUTED" || before.receipt?.payment !== "awaiting_buyer") {
@@ -275,7 +309,7 @@ export function createGateway(deps: GatewayDeps): McpServer {
       if (captured.kind === "MISMATCH") return purchaseReply(after, { capture: captured.detail });
       if (captured.kind === "NOT_FOUND") return purchaseReply(after, { capture: captured.detail });
       return purchaseReply(after);
-    },
+    }),
   );
 
   server.registerTool(
@@ -283,13 +317,13 @@ export function createGateway(deps: GatewayDeps): McpServer {
     {
       title: "Get a receipt",
       description: "Where a purchase stands, its ledger events, and links to the trace page and the dispute bundle (both served by pnpm receipt-ui).",
-      inputSchema: z.strictObject({ trace_id: z.string().min(1).max(120) }),
+      inputSchema: z.strictObject({ trace_id: idField(120) }),
     },
-    async ({ trace_id }) => {
+    async ({ trace_id }) => guarded("get_receipt", READ_FAILED, async () => {
       const view = await readPurchase(trace_id, mandateId, deps.receiptBaseUrl, deps.now());
       if (view === null) return notFound(`no trace ${trace_id} under this gateway's mandate`);
       return purchaseReply(view, { events: await traceEvents(trace_id) });
-    },
+    }),
   );
 
   return server;

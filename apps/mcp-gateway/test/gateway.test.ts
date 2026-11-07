@@ -111,7 +111,7 @@ interface Harness {
 }
 
 let n = 0;
-async function harness(): Promise<Harness> {
+async function harness(overrides: Partial<GatewayDeps> = {}): Promise<Harness> {
   const rail = new FakePayPal();
   const m = mandate(SHOP);
   const h: { clock: Date } = { clock: T0 };
@@ -122,6 +122,7 @@ async function harness(): Promise<Harness> {
     receiptBaseUrl: "http://localhost:4100",
     now: () => h.clock,
     newIntentId: () => `mcp_test_${(++n).toString()}`,
+    ...overrides,
   };
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await createGateway(deps).connect(serverSide);
@@ -185,6 +186,42 @@ describe("what an agent can say to the gateway", () => {
     const r = await call(h, "propose_purchase", { merchant_id: SHOP, sku: "C3_MUG", qty: 1, price_minor: "1" });
     expect(r.isError).toBe(true);
     expect(await prisma.ledgerEntry.count()).toBe(0);
+  });
+});
+
+/** What a database or stack error looks like in text: a source path, a Prisma frame, a Postgres code. */
+const INTERNALS = /\/home\/|\.ts:\d|invocation|prisma|22P05|Database error/i;
+
+describe("inputs the database can't hold", () => {
+  const NUL = "\u0000";
+  const cases: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+    ["propose_purchase", { merchant_id: SHOP, sku: `C3_${NUL}A`, qty: 1 }],
+    ["propose_purchase", { merchant_id: `${SHOP}${NUL}`, sku: "C3_MUG", qty: 1 }],
+    ["get_product", { merchant_id: SHOP, sku: `C3_${NUL}A` }],
+    ["search_products", { query: `mug${NUL}` }],
+    ["get_receipt", { trace_id: `trc_${NUL}x` }],
+    ["complete_checkout", { trace_id: `trc_${NUL}x` }],
+    ["check_approval", { approval_id: `apr_${NUL}` }],
+  ];
+
+  it.each(cases)("%s refuses a control character before it reaches the database, and leaks nothing", async (tool, args) => {
+    const h = await harness();
+    const r = await call(h, tool, args);
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/control character/);
+    expect(r.text).not.toMatch(INTERNALS);
+    expect(await prisma.ledgerEntry.count()).toBe(0);
+  });
+
+  it("answers a failure inside Praman with a typed ERROR, never a stack or a database error", async () => {
+    // A server-side fault, not agent input: an intent id Postgres can't store makes T1 throw and roll back.
+    const h = await harness({ newIntentId: () => `mcp_test_${NUL}` });
+    const r = await call(h, "propose_purchase", { merchant_id: SHOP, sku: "C3_MUG", qty: 1 });
+    expect(r.isError).toBe(true);
+    expect(r.data).toMatchObject({ status: "ERROR" });
+    expect(String(r.data["message"])).toMatch(/no decision/);
+    expect(r.text).not.toMatch(INTERNALS);
+    expect(h.rail.creates).toBe(0);
   });
 });
 
