@@ -1880,3 +1880,83 @@ since no rail is called.
   case identical except for currency and rail, which is the one thing being checked.
 - *Rerunning Layer 2 to refresh its figures.* It calls a paid model. The README and report instead label the Layer 2 figures as
   recorded on 2026-09-05, before the catalog line the model reads changed on 2026-11-05.
+
+### D-49 · What a live PayPal capture does in the sandbox · Accepted
+
+An implementer's record for the builder to check. It moves D-26, D-37 and D-38 forward with live sandbox runs from 2026-11-08,
+made with throwaway scripts outside the repo and buyer approvals clicked by hand in a browser. Nothing in the repo changed because
+of them: each answer matches what the code already assumed, and the section after the tables says where.
+
+**Captures, checkout orders.**
+
+| Question | Observed |
+|---|---|
+| Capture an approved order | 201, order `COMPLETED`, one capture `COMPLETED` for $15.00, with a capture id |
+| The same capture again, same `PayPal-Request-Id` | **200 and the same capture id.** No second capture. |
+| Capture again with a new key | 422 `ORDER_ALREADY_CAPTURED`. A GET of the order then shows `COMPLETED` with that one capture. |
+| Capture before approval, then the same key after approval | first 422 `ORDER_NOT_APPROVED`, then **201 `COMPLETED`** under the same key. The refusal is not replayed. |
+
+The last row was run once, on a $2.00 order. A $3.00 order approved in the same run was captured beside it and also gave 201
+`COMPLETED`.
+
+**Saved payment method, no buyer present.**
+
+| Question | Observed |
+|---|---|
+| Payment token from a setup token the buyer approved | 201, with a customer |
+| An order with `payment_source.paypal.vault_id` and intent `CAPTURE` | **201, order `COMPLETED`, already captured** ($4.00). No approval step and no capture call. |
+| The same create, same key | 200, the same capture |
+| The same key, $9.00 instead of $4.00 | **200 and the original $4.00 capture,** with no error |
+
+**Read back through `paypal-exec`.** The rows above came from scripts that called PayPal directly. Afterwards I looked up the order
+behind each of the four captures (`GET /v2/payments/captures/{id}` names it) and ran `PayPalExecutor` against them. `findOrder` by
+id reported `captured` with PayPal's capture id and amount for all four, the no-buyer order included. `capture` with a fresh key got
+`ORDER_ALREADY_CAPTURED` on each, read the order back, and reported that same capture. So D-38's read-back has now run against real
+captured orders, not only against the documented sample in `documented-shapes.ts`.
+
+**Sandbox accounts.**
+
+- The seller is an India Business sandbox account, the app's default. It accepts USD orders.
+- An India Personal buyer can't pay it. A USD order showed "This seller doesn't accept payments in your currency", and the vault
+  approval page showed "Things don't appear to be working".
+- A US Personal buyer approves checkout orders and setup tokens. That is the demo buyer.
+- A second checkout in the same browser session was sometimes declined before any click, with "To comply with international
+  regulations, this transaction has been declined". The same order then approved in a fresh browser session. A control order with
+  no early capture attempt did the same, so this is a sandbox risk check tied to the session, not something the early
+  capture caused.
+
+**What each result means for the code.**
+
+1. **The sweep's resend is safe, as D-41 and D-46 assumed.** A repeated capture key returns the first capture with 200, and a new
+   key gets `ORDER_ALREADY_CAPTURED`, which `paypal-exec` reads back as the capture that happened. Either way one order gives one
+   capture.
+2. **D-40's per-attempt capture keys stay.** They were partly a hedge against PayPal replaying a 422 to a reused key, and PayPal
+   doesn't. The other reason still holds: a retry must not hit the failed record's primary key. Nothing changes.
+3. **A no-buyer charge works in this sandbox, so plan Task 14 no longer waits on PayPal.** The vault feature on the app (D-37) and
+   one buyer approval of a setup token are all it took. Whether to build Task 14 is still the plan's call, and it is first to cut.
+4. **Task 14 must send the no-buyer answer through `acceptOutcome`.** The $9.00 row is D-26's silent reuse again, but this time the
+   money has already moved at the old amount. `acceptOutcome` already turns a `captured` answer at other money into a `mismatch`,
+   which holds budget (D-33). A no-buyer path that skipped it would record $9.00 against a $4.00 charge, or the reverse.
+5. **The demo uses a US Personal buyer and a fresh browser session for each checkout,** and the judge instructions say so. This is
+   advice for Tasks 12 and 15, not code.
+
+**Rejected: going back to one capture key per order,** now that PayPal doesn't replay a refused key. A retry would collide with
+the failed record's primary key again, and nothing is gained.
+
+**Not done: a live capture test in `pnpm test`.** A new capture needs a buyer to click through PayPal's checkout, so it can't run
+unattended. A test that reads the four captured orders back could, but it would depend on sandbox data that only this account has
+and PayPal may expire. That is the builder's call. `live.test.ts` stays as it is, creating and reading unapproved orders.
+
+**Still unverified live.**
+
+- A real webhook delivery. Nothing is hosted, so PayPal has had nowhere to send one (D-45).
+- What a GET of an order shows while a capture is still completing, and how long `ORDER_COMPLETION_IN_PROGRESS` lasts (D-40, D-41).
+  Every capture here finished in its first answer, so neither was seen, and neither was `AUTO_CAPTURE_ENABLED`.
+- D-38's third question: whether repeating a checkout order's create after it was captured shows the order as it is now or as first
+  created. Not tried. The reconciler reads a capture record's order by id (D-40), so it doesn't depend on the answer.
+- Praman's own `captureOrder`, end to end, after a live approval. The control plane has only captured on its stand-in rail. The
+  demo (Task 12) is the first place it will.
+- How long PayPal keeps a key. Direct card wasn't re-tested, so D-26's 422 stands.
+
+**Limits.** One app on one sandbox account, on one day, and most rows were run once. Sandbox risk checks and live ones differ, and
+live keys stay out of scope for this repo.
