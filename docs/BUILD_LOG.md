@@ -2887,3 +2887,16 @@ no warning existed. The "no case has failed" test was added and seen failing on 
 
 **Worth knowing.** The `.env` list in the README's Quickstart doesn't mention the `PAYPAL_*` variables, which `.env.example` has.
 Not changed here, since it isn't a number.
+
+### Phase P11 · 2026-11-08 · review fix: the decision record count was still wrong
+
+**What a reviewer found.** The P11 entry above says the README's "24 records" became "47 with D-48". That is wrong. The README
+fix (`e9d0d34`) was committed before D-48 was written (`b35e0fd`), so the README said 47 while `docs/DECISIONS.md` held 48
+records, D-01 to D-48, none missing. In a phase meant to remove stale numbers, the fix for one stale number went stale itself.
+
+**Fix (`52d7de9`).** The README now says 48. The count had gone wrong twice because it was typed by hand, so a test in
+`apps/eval/test/readme-counts.test.ts` now counts the D- headings in `docs/DECISIONS.md` and checks the README states the same
+number. It failed first (expected 47 to be 48) and passed after the fix. Adding D-49 without updating the README will now fail
+`pnpm test`.
+
+**Tests.** 636, up from 635. None weakened or removed.
