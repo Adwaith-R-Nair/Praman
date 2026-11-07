@@ -46,7 +46,7 @@ export function describePayPalFailure(code: string): string | null {
 }
 
 /** Without this, a hung connection would hold up T2 with no outcome. A timeout rejects, which is an unknown outcome. */
-const REQUEST_TIMEOUT_MS = 30_000;
+export const PAYPAL_REQUEST_TIMEOUT_MS = 30_000;
 /** Don't start a call on a token about to run out. */
 const TOKEN_MARGIN_MS = 60_000;
 /** These statuses mean a refusal, but only count once PayPal has named the reason: anything could send a bare 4xx. */
@@ -100,7 +100,7 @@ export class PayPalClient {
   async #send(what: string, url: string, init: RequestInit): Promise<{ readonly status: number; readonly text: string }> {
     const send = this.#config.fetch;
     try {
-      const res = await send(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      const res = await send(url, { ...init, signal: AbortSignal.timeout(PAYPAL_REQUEST_TIMEOUT_MS) });
       return { status: res.status, text: await res.text() };
     } catch (err) {
       throw new PayPalUnknownOutcome(`${what}: no answer from PayPal (${err instanceof Error ? err.name : "unknown error"})`);
