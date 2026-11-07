@@ -7,6 +7,16 @@ import { config } from "dotenv";
 // nothing, and the host's own environment is used.
 config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)), quiet: true });
 
+// Before anything else: no live credentials, no live base URL, and never the local
+// mandate key on a server that signs mandates for strangers. Exits rather than limps.
+const { checkStartup } = await import("./startup.js");
+const startup = await checkStartup(process.env, globalThis.fetch);
+if (!startup.ok) {
+  for (const reason of startup.reasons) console.error(`receipt-ui: refusing to start: ${reason}`);
+  process.exit(1);
+}
+for (const note of startup.notes) console.log(`receipt-ui: ${note}`);
+
 const { createApp } = await import("./app.js");
 const { payPalWebhookDepsFromEnv } = await import("./webhooks.js");
 const { createDemoHandler, releaseAllSessions, sweepExpiredSessions } = await import("./demo/routes.js");
