@@ -1,8 +1,84 @@
 import { prisma } from "@praman/db";
 import { append } from "@praman/ledger";
 import { currencyFromDb, isRail, minorFromDb, minorToJSON } from "@praman/shared";
-import { acceptOutcome, outcomeFields, type ExecutorRouter } from "@praman/exec-core";
-import { RECONCILE_MIN_AGE_MS } from "./run-intent.js";
+import { acceptOutcome, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
+import { executorFor } from "./capture-order.js";
+import { readOrderView } from "./order-view.js";
+import { MANDATE_LOCK_NS, RECONCILE_MIN_AGE_MS } from "./run-intent.js";
+
+type PendingRecord = Awaited<ReturnType<typeof prisma.idempotencyRecord.findMany>>[number];
+
+/**
+ * A capture record is checked by reading its order by id. Repeating the create would
+ * hand back the order as first created, and say nothing about the capture (D-38).
+ *
+ * Captured at the rail: the capture is recorded, under the ORDER's key. Anything else
+ * means this capture took no money, so it is recorded as failed. That keeps the hold,
+ * and the order can be captured again or released later (D-40). The record is
+ * re-read under the mandate lock, so a late T2 and this can't both write.
+ */
+async function reconcileCapture(rec: PendingRecord, route: ExecutorRouter, now: Date): Promise<boolean> {
+  if (rec.orderKey === null || rec.orderId === null) throw new TypeError(`capture record ${rec.key} names no order`);
+  if (rec.amountMinor === null) throw new TypeError(`capture record ${rec.key} has no amount_minor`);
+  const orderKey = rec.orderKey;
+  const orderId = rec.orderId;
+  const amount = minorFromDb(rec.amountMinor);
+  const currency = currencyFromDb(rec.currency);
+  const executor = executorFor(route, rec.rail);
+  if (executor === null) throw new Error(`no executor for rail ${rec.rail}`);
+
+  const view = await prisma.$transaction((tx) => readOrderView(tx, orderKey, orderId));
+  if (view === null) throw new Error(`no ledger outcome for order ${orderId} on ${orderKey}`);
+
+  const read = await executor.findOrder({ receipt: rec.receipt ?? receiptFor(orderKey), idempotency_key: orderKey, order_id: orderId, amount_minor: amount, currency });
+  if (read !== null && read.order_id !== orderId) throw new Error(`the rail answered about order ${read.order_id}, not ${orderId}`);
+
+  let outcome: AcceptedOutcome;
+  if (read !== null && (read.status === "captured" || read.status === "failed")) {
+    outcome = acceptOutcome(read, { amount_minor: amount, currency });
+  } else {
+    outcome = {
+      rail: executor.rail,
+      order_id: orderId,
+      status: "failed",
+      amount_minor: amount,
+      currency,
+      payment_id: null,
+      approve_url: null,
+      failure_code: read === null ? "RECONCILE_ORDER_NOT_FOUND" : "RECONCILE_NOT_CAPTURED",
+    };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${view.mandateId}))`;
+    const current = await tx.idempotencyRecord.findUnique({ where: { key: rec.key }, select: { status: true } });
+    if (current?.status !== "pending") return false;
+    await append(tx, {
+      traceId: rec.traceId,
+      ts: now,
+      actor: "reconciler",
+      eventType: "outcome",
+      payload: {
+        ...outcomeFields(outcome),
+        mandate_id: view.mandateId,
+        merchant_id: view.merchantId,
+        idempotency_key: orderKey,
+        order_id: orderId,
+        capture_key: rec.key,
+        reconciled: true,
+      },
+    });
+    await tx.idempotencyRecord.update({
+      where: { key: rec.key },
+      data: {
+        status: outcome.status === "failed" ? "failed" : "succeeded",
+        outcome: { order_id: orderId, status: outcome.status, payment_id: outcome.payment_id, failure_code: outcome.failure_code },
+        updatedAt: now,
+      },
+    });
+    return true;
+  });
+}
 
 /**
  * Resolves pending records left by a crash or an ambiguous failure.
@@ -11,6 +87,9 @@ import { RECONCILE_MIN_AGE_MS } from "./run-intent.js";
  * lookup lags creation by seconds, so an early reconcile would see nothing,
  * conclude no order exists, and create a duplicate — the exact double-charge
  * this whole structure exists to prevent. Waiting is the correct behaviour.
+ *
+ * An order record is checked by repeating the create with its key (D-26). A capture
+ * record is checked by reading its order by id, in reconcileCapture.
  *
  * Asks the rail named on the record, which is the one that was called. A record
  * whose rail has no executor here, or whose router hands back another rail, stays
@@ -24,6 +103,11 @@ export async function reconcilePending(route: ExecutorRouter, now: Date): Promis
   let resolved = 0;
   for (const rec of stale) {
     try {
+      if (rec.kind === "capture") {
+        if (await reconcileCapture(rec, route, now)) resolved += 1;
+        continue;
+      }
+      if (rec.kind !== "order") throw new TypeError(`record ${rec.key} has an unknown kind: ${rec.kind}`);
       if (rec.receipt === null) throw new TypeError(`record ${rec.key} has no receipt`);
       if (rec.amountMinor === null) throw new TypeError(`record ${rec.key} has no amount_minor`);
       const receipt = rec.receipt;

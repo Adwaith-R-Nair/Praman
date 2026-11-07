@@ -225,6 +225,9 @@ importers:
       '@praman/mandate':
         specifier: workspace:*
         version: link:packages/mandate
+      '@praman/paypal-exec':
+        specifier: workspace:*
+        version: link:packages/paypal-exec
       '@praman/razorpay-exec':
         specifier: workspace:*
         version: link:packages/razorpay-exec
