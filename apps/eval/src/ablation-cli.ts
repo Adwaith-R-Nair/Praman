@@ -11,6 +11,8 @@ import type { CaseResult, Layer2Case } from "./types.js";
 // nothing starts; CI has none.
 const { startTracing } = await import("@praman/buyer-agent");
 const tracing = await startTracing(env);
+const { startScoreSink } = await import("./scores.js");
+const scores = await startScoreSink(env);
 
 const geminiKey = env["GEMINI_API_KEY"];
 if (!geminiKey) throw new Error("GEMINI_API_KEY is not set");
@@ -62,7 +64,7 @@ for (const arm of ARMS) {
     for (const c of cases) {
       if (callsSoFar > 0) await sleep(GAP_MS);
       callsSoFar++;
-      const result = await runLayer2(c, provider, `ablation/${arm}-run${run.toString()}`, arm, run);
+      const result = await runLayer2(c, provider, `ablation/${arm}-run${run.toString()}`, arm, run, scores.sink);
       console.log(
         `  ${result.case_id.padEnd(22)} influenced=${String(result.influenced).padEnd(6)} money_moved=${String(result.money_moved)}`,
       );
@@ -125,4 +127,5 @@ console.log(`\nWrote ${outDir}*.json and summary.md`);
 
 const { prisma } = await import("./db.js");
 await prisma.$disconnect();
+await scores.stop();
 await tracing.stop();

@@ -7,15 +7,16 @@ import "./db.js";
 import { propagateAttributes } from "@langfuse/tracing";
 import { runIntent } from "@praman/control-plane";
 import { deriveState } from "@praman/ledger";
-import { verifyMandate } from "@praman/mandate";
+import { verifyMandate, type SignedMandate } from "@praman/mandate";
 import { evaluateCapture } from "@praman/policy";
-import { minorFromJSON } from "@praman/shared";
+import { minorFromJSON, type Currency } from "@praman/shared";
 import { routeAllTo, SimulatedExecutor } from "@praman/exec-core";
 import type { PurchaseIntent } from "@praman/policy";
-import { runAgent } from "@praman/buyer-agent";
+import { runAgent, type AgentResult } from "@praman/buyer-agent";
 import type { ModelProvider } from "@praman/agent-core";
 import { prisma } from "./db.js";
 import { seedCase } from "./seed.js";
+import type { ScoreSink } from "./scores.js";
 import { writeTranscript } from "./transcript.js";
 import type { CaseCapture, CaseResult, Layer1Case, Layer2Case } from "./types.js";
 
@@ -140,6 +141,7 @@ export async function runLayer2(
   transcriptSubdir?: string,
   arm?: "defended" | "undefended",
   repeat?: number,
+  scores?: ScoreSink,
 ): Promise<CaseResult> {
   return propagateAttributes(
     {
@@ -151,11 +153,16 @@ export async function runLayer2(
         ...(repeat !== undefined ? { repeat: repeat.toString() } : {}),
       },
     },
-    () => runLayer2Inner(c, provider, transcriptSubdir),
+    () => runLayer2Inner(c, provider, transcriptSubdir, scores),
   );
 }
 
-async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcriptSubdir?: string): Promise<CaseResult> {
+async function runLayer2Inner(
+  c: Layer2Case,
+  provider: ModelProvider,
+  transcriptSubdir: string | undefined,
+  scores: ScoreSink | undefined,
+): Promise<CaseResult> {
   const { signed, publicKeyPem, now, merchantId, currency } = await seedCase(c);
 
   const t0 = performance.now();
@@ -164,6 +171,21 @@ async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcript
 
   writeTranscript(c.case_id, agent.transcript, transcriptSubdir);
 
+  const result = await decideLayer2(c, agent, signed, publicKeyPem, now, currency, latency_ms);
+  // A copy for the trace, after the result is final. Nothing reads it back.
+  if (scores !== undefined && agent.langfuseTraceId !== undefined) scores.push(agent.langfuseTraceId, result);
+  return result;
+}
+
+async function decideLayer2(
+  c: Layer2Case,
+  agent: AgentResult,
+  signed: SignedMandate,
+  publicKeyPem: string,
+  now: Date,
+  currency: Currency | null,
+  latency_ms: number,
+): Promise<CaseResult> {
   if (agent.kind !== "PROPOSED") {
     // No cart, no money at risk — but a turn-limit or refusal on a goal that
     // should have been simple is itself worth seeing in the report, not
@@ -253,11 +275,12 @@ export async function runLayer2Corpus(
   cases: readonly Layer2Case[],
   provider: ModelProvider,
   gapMs = 5000,
+  scores?: ScoreSink,
 ): Promise<CaseResult[]> {
   const results: CaseResult[] = [];
   for (const [i, c] of cases.entries()) {
     if (i > 0) await new Promise((resolve) => setTimeout(resolve, gapMs));
-    results.push(await runLayer2(c, provider));
+    results.push(await runLayer2(c, provider, undefined, undefined, undefined, scores));
   }
   return results;
 }

@@ -13,6 +13,8 @@ import type { CaseResult, Layer1Case, Layer2Case } from "./types.js";
 // nothing starts; CI has none.
 const { startTracing } = await import("@praman/buyer-agent");
 const tracing = await startTracing(env);
+const { startScoreSink } = await import("./scores.js");
+const scores = await startScoreSink(env);
 
 /**
  * Reads whatever ablation-cli.ts already wrote to eval/ablation/, if it's
@@ -81,7 +83,7 @@ if (wantLayer2) {
   // actually tested instead of falling back to "n/a".
   env["PRAMAN_MODEL"] = provider.id;
   console.log(`Layer 2: running ${cases.length.toString()} cases live against ${provider.id}, ~5s apart...`);
-  results.push(...(await runLayer2Corpus(cases, provider)));
+  results.push(...(await runLayer2Corpus(cases, provider, 5000, scores.sink)));
 }
 
 const metrics = computeMetrics(results);
@@ -113,5 +115,6 @@ console.log(`\nWrote ${outDir}report.md, report.json, badge.json`);
 
 const { prisma } = await import("./db.js");
 await prisma.$disconnect();
+await scores.stop();
 await tracing.stop();
 process.exit(failed > 0 ? 1 : 0);

@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
+    "@langfuse/client": "5.11.1",
     "@langfuse/otel": "5.11.1",
     "@langfuse/tracing": "5.11.1",
     "@opentelemetry/sdk-node": "0.222.0",
