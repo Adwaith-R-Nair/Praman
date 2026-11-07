@@ -2046,6 +2046,8 @@ at PayPal's login.
 
 ### D-51 · The demo has no inputs · Accepted
 
+Status: two parts below were wrong, and both are fixed (BUILD_LOG, P12 review fix). "A double click can't make a second purchase" did not hold when a step threw after its charge; a step is now recorded before Praman is asked (`8359a32`). The checkout link now goes to a different browser, not a new private window, since private windows of one browser share one PayPal session (`c2c5471`).
+
 An implementer's decision for the builder to check, made in plan Task 12 on 2026-11-08. The design said there is no public
 intent API and no free-text goal. This record says how the demo's routes make that hold.
 

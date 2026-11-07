@@ -3142,3 +3142,37 @@ sentence come from the numbers rather than always saying the budget held. `6c8b1
 
 **Tests.** 685 in 51 files, up from 639 in 47. The plan's nine Task 12 tests and two Task 14 tests are all present, plus the trace
 page failure tests, the token test, session expiry releasing the token, and the PayPal vault calls.
+
+### Phase P12 · 2026-11-08 · review fix: a retry could charge twice, and the checkout advice kept the same session
+
+**What reviewers found.** Two problems in the demo, both real.
+
+1. **A retry could make a second real charge.** A purchase step was saved on the session only after `runIntent` and the
+   transcript write had both finished. If either threw after PayPal had charged the saved account, the visitor got the error page
+   and the step's button came back. Pressing it again asked the model again and built a new intent id. A new intent id means a new
+   idempotency key, so Praman saw a new purchase and charged again. A reviewer showed it with a throwaway test: one "buy a
+   coffee" step, two $4.50 charges with different keys. The budget still capped it, but the page invited the second click. This is
+   the "double charge on retry with an unstable key" bug from CLAUDE.md, and D-51's line that a double click can't make a second
+   purchase was wrong for this case.
+2. **The checkout advice didn't give a fresh PayPal session.** PayPal's sandbox declines a checkout in the browser session that
+   already logged in to PayPal (D-49), and in the demo that happens in step 2, Connect PayPal. The page said to open the checkout
+   link in a new private window. In Chrome and Firefox every private window shares one session, so that was the same session, and
+   the **Open here** button opened the link in it too. A judge following the page would be declined again and again at the
+   story's climax.
+
+**Fix 1 (`8359a32`).** The step is now saved as pending, with its trace id, before Praman is asked. When `runIntent` returns, the
+result replaces it. If `runIntent` throws, the pending step stays, says Praman lost track of it, links the trace, and is never
+offered again; the reconcile sweep settles any payment call left open. A failed transcript write is logged and no longer hides a
+purchase that went through. The new test makes the transcript write fail once after the charge: the page answers normally, the
+button is gone, a second press charges nothing, and the trace has one outcome. It failed first (500 instead of 303).
+
+**Fix 2 (`c2c5471`).** The start page, the checkout box, the "not approved yet" message and `docs/DEMO_INSTRUCTIONS.md` now say to
+use a different browser for the checkout (Firefox if the demo is in Chrome, or a phone), and say why another private window is not
+enough. The **Open here** button is removed; the link is copied by hand. The return page says to go back to the browser where the
+demo is open. An existing test asserted the old "new private window" wording, so it pinned the bug; it now asserts the new wording
+and the absence of the old one, and a new test checks the start page.
+
+**Still needs you.** `captureOrder` has still not run after a real buyer approval through the demo. That run is the one that shows
+whether a different browser really avoids the decline, and it should happen before submitting.
+
+**Tests.** 687, up from 685. None weakened or removed.
