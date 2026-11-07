@@ -173,7 +173,7 @@ Built solo in nine days. These are decisions, not oversights.
 - `TRUNCATE` bypasses the append-only triggers — Postgres does not fire row-level triggers for it. Closing this needs a statement-level event trigger. The project's own tests rely on this gap to reset state.
 - Merkle roots are computed and verified but not anchored externally. An attacker who can rewrite the whole chain can rewrite the checkpoints too.
 - The denial-rate cap is per-window, so a patient attacker can still probe a mandate's limits slowly across windows ([D-20](docs/DECISIONS.md)).
-- Between T1 and T2 an attempt is recorded with no outcome, so a concurrent intent can evaluate against a marginally understated budget. The window is one API call wide ([D-22](docs/DECISIONS.md)).
+- A call whose outcome is unknown holds its budget and a velocity slot until `pnpm reconcile` settles it, and nothing schedules that sweep yet. This fails closed. Before the fix this replaces, attempts in flight weren't counted at all: 20 concurrent intents created 4 times a mandate's budget, and an attempt whose call failed stayed uncounted until a sweep ran, not for one API call as this line used to say ([D-42](docs/DECISIONS.md)).
 - Ledger appends are serialised by one global lock, since the chain is a single linked list. Per-mandate sub-chains would remove this.
 - `mandate.issuer` is `null` in dispute bundles: issuer identity is not durably recorded anywhere the ledger can reach, and populating it from a mutable local file could misattribute an old trace.
 
