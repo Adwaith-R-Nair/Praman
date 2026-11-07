@@ -1,3 +1,4 @@
+import type { TokenUsage } from "@praman/agent-core";
 import type { Currency } from "@praman/shared";
 
 export interface SeedEvent {
@@ -110,4 +111,10 @@ export interface CaseResult {
   readonly currency: Currency | null;
   readonly latency_ms: number;
   readonly detail: string;
+  /**
+   * Layer 2 only: tokens the provider said this case used, summed over
+   * every model call in the run. Copied from the provider's own response.
+   * Absent when the provider reported nothing.
+   */
+  readonly usage?: TokenUsage;
 }

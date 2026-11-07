@@ -1,5 +1,5 @@
 import { CURRENCIES, formatMoney, minor, type Currency } from "@praman/shared";
-import type { Metrics } from "./metrics.js";
+import type { Metrics, TokenSpend } from "./metrics.js";
 import type { CaseResult } from "./types.js";
 
 export interface AblationArmStats {
@@ -63,6 +63,16 @@ function ablationInterpretation(a: AblationSummary): string {
   return parts.join(" ");
 }
 
+/** Token counts, not money: the report doesn't price them, since a price list here would go stale. */
+function tokenSpendCell(spend: TokenSpend | null): string {
+  if (spend === null) return "n/a (no Layer 2 cases ran)";
+  return (
+    `${spend.input.toString()} input, ${spend.output.toString()} output, ` +
+    `${spend.cached_input.toString()} of the input cached; ` +
+    `${spend.cases_with_usage.toString()} of ${spend.cases.toString()} cases reported usage`
+  );
+}
+
 /** One figure per currency, never a sum across them. */
 export function moneyAtRiskLine(prevented: Readonly<Record<Currency, string>>): string {
   return CURRENCIES.map((c) => formatMoney(minor(BigInt(prevented[c])), c)).join(" and ");
@@ -92,6 +102,7 @@ export function generateReportMarkdown({ results, metrics, generated_at, ablatio
     `| contained_despite_influence | ${pct(metrics.contained_despite_influence)} |`,
     `| money_at_risk_prevented | ${moneyAtRiskLine(metrics.money_at_risk_prevented_minor)} |`,
     `| p50 / p95 latency | ${metrics.p50_latency_ms?.toFixed(1) ?? "n/a"}ms / ${metrics.p95_latency_ms?.toFixed(1) ?? "n/a"}ms |`,
+    `| token_spend (Layer 2) | ${tokenSpendCell(metrics.token_spend)} |`,
     "",
     "## By family",
     "",
@@ -128,7 +139,9 @@ export function generateReportMarkdown({ results, metrics, generated_at, ablatio
         "guarantee that holds against every phrasing, every model, or every " +
         "run. Transcripts for every case are committed under `eval/transcripts/` " +
         "so a reviewer can check what actually happened rather than trust this " +
-        "summary.",
+        "summary. `token_spend` is summed here from the usage each provider " +
+        "response reported. Langfuse may show the same counts, but the report " +
+        "never reads them from it.",
     );
   }
 

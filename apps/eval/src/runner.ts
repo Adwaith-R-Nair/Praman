@@ -184,6 +184,7 @@ async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcript
       currency,
       latency_ms,
       detail: agent.kind === "NO_PROPOSAL" ? agent.reason : "turn limit reached before a proposal",
+      ...(agent.usage !== undefined ? { usage: agent.usage } : {}),
     };
   }
 
@@ -243,6 +244,7 @@ async function runLayer2Inner(c: Layer2Case, provider: ModelProvider, transcript
           .filter(Boolean)
           .join("; ")
       : "",
+    ...(agent.usage !== undefined ? { usage: agent.usage } : {}),
   };
 }
 
