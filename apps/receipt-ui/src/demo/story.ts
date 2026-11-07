@@ -3,7 +3,7 @@ import { recordAgentTranscript, runAgent } from "@praman/buyer-agent";
 import { captureOrder, resolveApproval, runIntent, type CaptureResult, type ResolveResult, type RunResult } from "@praman/control-plane";
 import { routeByRail, SimulatedExecutor } from "@praman/exec-core";
 import type { PurchaseIntent } from "@praman/policy";
-import { addMinor, minorToJSON, ZERO_MINOR, type Minor } from "@praman/shared";
+import { addMinor, minorFromJSON, minorToJSON, ZERO_MINOR, type Minor } from "@praman/shared";
 import { FOOLED_CART, GOALS, HARNESS, HARNESS_INTENTS, HARNESS_ITEMS, MODEL_CALLS_PER_SESSION, type BeatId, type PurchaseBeat } from "./config.js";
 import { routeFor, type DemoDeps } from "./connect.js";
 import type { BeatRecord, DemoSession, HarnessSummary } from "./session.js";
@@ -338,7 +338,9 @@ async function concurrencyHarness(session: DemoSession, deps: DemoDeps): Promise
     traceId: prior.trace_id,
     payment: "simulated",
     harness,
-    message: `${HARNESS_INTENTS.toString()} test-harness intents at once: ${created.toString()} paid, ${(HARNESS_INTENTS - created).toString()} refused. Spend stayed within the budget.`,
+    message: `${HARNESS_INTENTS.toString()} test-harness intents at once: ${created.toString()} paid, ${(HARNESS_INTENTS - created).toString()} refused. ${
+      addMinor(createdMinor, priorMinor) <= minorFromJSON(budgetMinor) ? "Spend stayed within the budget." : "Spend went over the budget. That is a bug, and the ledger shows it."
+    }`,
   };
 }
 
