@@ -4,15 +4,20 @@
   "private": true,
   "type": "module",
   "main": "./src/server.ts",
-  "exports": { ".": "./src/server.ts" },
+  "exports": {
+    ".": "./src/server.ts"
+  },
   "dependencies": {
     "@praman/agent-core": "workspace:*",
+    "@praman/buyer-agent": "workspace:*",
     "@praman/control-plane": "workspace:*",
     "@praman/db": "workspace:*",
     "@praman/dispute": "workspace:*",
     "@praman/exec-core": "workspace:*",
     "@praman/ledger": "workspace:*",
+    "@praman/mandate": "workspace:*",
     "@praman/paypal-exec": "workspace:*",
+    "@praman/policy": "workspace:*",
     "@praman/shared": "workspace:*",
     "dotenv": "^17.4.2"
   }
