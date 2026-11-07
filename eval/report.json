@@ -15,7 +15,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 28.589560000000006,
+      "latency_ms": 28.043105000000082,
       "detail": ""
     },
     {
@@ -33,7 +33,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 10.957503999999972,
+      "latency_ms": 11.406523000000107,
       "detail": ""
     },
     {
@@ -51,7 +51,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 10.170886999999993,
+      "latency_ms": 10.69687799999997,
       "detail": ""
     },
     {
@@ -69,7 +69,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 10.766145000000051,
+      "latency_ms": 11.58521200000007,
       "detail": ""
     },
     {
@@ -87,7 +87,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 9.909556000000066,
+      "latency_ms": 9.917071000000078,
       "detail": ""
     },
     {
@@ -105,7 +105,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 10.331158000000187,
+      "latency_ms": 10.415093999999954,
       "detail": ""
     },
     {
@@ -123,7 +123,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 10.445842999999968,
+      "latency_ms": 9.569291999999905,
       "detail": ""
     },
     {
@@ -141,7 +141,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 6.601355000000012,
+      "latency_ms": 6.478015000000141,
       "detail": ""
     },
     {
@@ -159,7 +159,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 9.808717000000115,
+      "latency_ms": 9.480041999999912,
       "detail": ""
     },
     {
@@ -177,7 +177,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 9.158035000000154,
+      "latency_ms": 10.56815400000005,
       "detail": ""
     },
     {
@@ -195,7 +195,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 5.726030999999921,
+      "latency_ms": 5.6993989999998576,
       "detail": ""
     },
     {
@@ -213,7 +213,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 5.527839000000085,
+      "latency_ms": 5.947869999999966,
       "detail": ""
     },
     {
@@ -231,7 +231,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 5.062214999999924,
+      "latency_ms": 5.037876000000097,
       "detail": ""
     },
     {
@@ -249,7 +249,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 5.428112000000056,
+      "latency_ms": 7.006887000000006,
       "detail": ""
     },
     {
@@ -267,7 +267,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 5.550772999999936,
+      "latency_ms": 5.284040999999888,
       "detail": ""
     },
     {
@@ -285,7 +285,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 4.852781999999934,
+      "latency_ms": 4.837566000000152,
       "detail": ""
     },
     {
@@ -303,7 +303,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 2.3129529999998795,
+      "latency_ms": 2.4752800000001116,
       "detail": ""
     },
     {
@@ -321,7 +321,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 6.234295999999858,
+      "latency_ms": 6.285098999999946,
       "detail": ""
     },
     {
@@ -339,7 +339,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 9.230831999999964,
+      "latency_ms": 8.957672000000002,
       "detail": ""
     },
     {
@@ -357,7 +357,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 8.63673700000004,
+      "latency_ms": 8.560639999999921,
       "detail": ""
     },
     {
@@ -375,7 +375,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 7.229694999999992,
+      "latency_ms": 7.8877860000000055,
       "detail": ""
     },
     {
@@ -393,7 +393,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 5.121104999999943,
+      "latency_ms": 5.045018999999911,
       "detail": ""
     },
     {
@@ -411,7 +411,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 4.547188000000006,
+      "latency_ms": 4.711307000000033,
       "detail": ""
     },
     {
@@ -429,7 +429,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 5.616194999999834,
+      "latency_ms": 5.307205999999951,
       "detail": ""
     },
     {
@@ -447,7 +447,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 4.911702999999989,
+      "latency_ms": 4.6865999999999985,
       "detail": ""
     },
     {
@@ -465,7 +465,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 2.136150999999927,
+      "latency_ms": 1.9818450000000212,
       "detail": ""
     },
     {
@@ -483,7 +483,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 4.463240000000042,
+      "latency_ms": 4.7036319999999705,
       "detail": ""
     },
     {
@@ -501,7 +501,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 5.562383999999838,
+      "latency_ms": 4.681119999999964,
       "detail": ""
     },
     {
@@ -519,7 +519,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 4.038021999999955,
+      "latency_ms": 4.495227999999997,
       "detail": ""
     },
     {
@@ -537,7 +537,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 4.206657999999834,
+      "latency_ms": 4.9899350000000595,
       "detail": ""
     },
     {
@@ -555,7 +555,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 4.376948000000084,
+      "latency_ms": 4.7501810000001115,
       "detail": ""
     },
     {
@@ -573,7 +573,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 5.287988999999925,
+      "latency_ms": 5.206846000000041,
       "detail": ""
     },
     {
@@ -591,7 +591,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 5.178953999999976,
+      "latency_ms": 5.074696000000131,
       "detail": ""
     },
     {
@@ -609,7 +609,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 5.271727999999939,
+      "latency_ms": 5.505702000000156,
       "detail": ""
     },
     {
@@ -627,7 +627,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 4.765286999999944,
+      "latency_ms": 4.727477999999792,
       "detail": ""
     },
     {
@@ -645,7 +645,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": false,
-      "latency_ms": 7.9809549999999945,
+      "latency_ms": 7.755724999999984,
       "detail": ""
     },
     {
@@ -663,7 +663,7 @@
       "currency": "USD",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 4.348635000000058,
+      "latency_ms": 4.572503999999981,
       "detail": ""
     },
     {
@@ -681,7 +681,7 @@
       "currency": "INR",
       "rail": "paypal",
       "mirrored": false,
-      "latency_ms": 4.140304000000015,
+      "latency_ms": 4.490057999999863,
       "detail": ""
     },
     {
@@ -699,7 +699,7 @@
       "currency": null,
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 2.1665479999999206,
+      "latency_ms": 2.1826249999999163,
       "detail": ""
     },
     {
@@ -717,7 +717,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 0.797937999999931,
+      "latency_ms": 0.8500410000001466,
       "detail": ""
     },
     {
@@ -735,7 +735,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 0.6702089999998861,
+      "latency_ms": 0.7056870000001254,
       "detail": ""
     },
     {
@@ -753,7 +753,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 4.592202000000043,
+      "latency_ms": 4.424583999999868,
       "detail": ""
     },
     {
@@ -771,7 +771,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 4.661963000000014,
+      "latency_ms": 4.911595999999918,
       "detail": ""
     },
     {
@@ -789,7 +789,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 0.676089999999931,
+      "latency_ms": 0.7503520000000208,
       "detail": ""
     },
     {
@@ -807,7 +807,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 7.208914999999934,
+      "latency_ms": 7.729625999999826,
       "detail": ""
     },
     {
@@ -825,7 +825,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": false,
-      "latency_ms": 7.326375999999982,
+      "latency_ms": 7.619085999999925,
       "detail": ""
     },
     {
@@ -843,7 +843,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 7.231056999999964,
+      "latency_ms": 7.550405999999839,
       "detail": ""
     },
     {
@@ -861,7 +861,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 11.801058000000012,
+      "latency_ms": 10.47425700000008,
       "detail": ""
     },
     {
@@ -879,7 +879,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 8.304984000000104,
+      "latency_ms": 7.810018000000127,
       "detail": ""
     },
     {
@@ -897,7 +897,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 7.963712999999871,
+      "latency_ms": 7.713645999999926,
       "detail": ""
     },
     {
@@ -915,7 +915,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 7.730244999999968,
+      "latency_ms": 7.663259999999809,
       "detail": ""
     },
     {
@@ -933,7 +933,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 7.978069000000005,
+      "latency_ms": 7.605470000000196,
       "detail": ""
     },
     {
@@ -951,7 +951,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 5.048028999999815,
+      "latency_ms": 5.117557000000033,
       "detail": ""
     },
     {
@@ -969,7 +969,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 7.751635000000078,
+      "latency_ms": 8.746924000000035,
       "detail": ""
     },
     {
@@ -987,7 +987,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 7.690219999999954,
+      "latency_ms": 7.9746399999999085,
       "detail": ""
     },
     {
@@ -1005,7 +1005,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 5.2789029999999,
+      "latency_ms": 5.2813169999999445,
       "detail": ""
     },
     {
@@ -1023,7 +1023,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 5.7126160000000255,
+      "latency_ms": 4.769907999999987,
       "detail": ""
     },
     {
@@ -1041,7 +1041,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.49364700000001,
+      "latency_ms": 4.420626000000084,
       "detail": ""
     },
     {
@@ -1059,7 +1059,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.522061000000122,
+      "latency_ms": 4.533399999999801,
       "detail": ""
     },
     {
@@ -1077,7 +1077,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 5.5343910000001415,
+      "latency_ms": 5.392186999999922,
       "detail": ""
     },
     {
@@ -1095,7 +1095,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.907174000000168,
+      "latency_ms": 4.665269999999964,
       "detail": ""
     },
     {
@@ -1113,7 +1113,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 2.154995999999983,
+      "latency_ms": 2.128672999999935,
       "detail": ""
     },
     {
@@ -1131,7 +1131,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.5315790000001925,
+      "latency_ms": 4.454330000000027,
       "detail": ""
     },
     {
@@ -1149,7 +1149,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 7.600781000000097,
+      "latency_ms": 7.486685999999963,
       "detail": ""
     },
     {
@@ -1167,7 +1167,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 8.744599999999991,
+      "latency_ms": 7.411202000000003,
       "detail": ""
     },
     {
@@ -1185,7 +1185,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.901523999999881,
+      "latency_ms": 4.237749000000122,
       "detail": ""
     },
     {
@@ -1203,7 +1203,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.599847000000182,
+      "latency_ms": 4.346896999999899,
       "detail": ""
     },
     {
@@ -1221,7 +1221,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.2975899999999,
+      "latency_ms": 4.348269000000073,
       "detail": ""
     },
     {
@@ -1239,7 +1239,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.416633000000047,
+      "latency_ms": 4.408953999999994,
       "detail": ""
     },
     {
@@ -1257,7 +1257,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.3983579999999165,
+      "latency_ms": 4.3359559999998964,
       "detail": ""
     },
     {
@@ -1275,7 +1275,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 2.0909059999999045,
+      "latency_ms": 1.898967999999968,
       "detail": ""
     },
     {
@@ -1293,7 +1293,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 5.5408440000001065,
+      "latency_ms": 4.75200400000017,
       "detail": ""
     },
     {
@@ -1311,7 +1311,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 10.467164000000139,
+      "latency_ms": 10.052106999999978,
       "detail": ""
     },
     {
@@ -1329,7 +1329,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.535967000000255,
+      "latency_ms": 4.696399000000156,
       "detail": ""
     },
     {
@@ -1347,7 +1347,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.350358000000142,
+      "latency_ms": 4.449280000000044,
       "detail": ""
     },
     {
@@ -1365,7 +1365,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.359346000000187,
+      "latency_ms": 4.368237000000136,
       "detail": ""
     },
     {
@@ -1383,7 +1383,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.437482000000273,
+      "latency_ms": 4.550972999999885,
       "detail": ""
     },
     {
@@ -1401,7 +1401,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.506932999999663,
+      "latency_ms": 4.517800000000079,
       "detail": ""
     },
     {
@@ -1419,7 +1419,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.658175999999912,
+      "latency_ms": 5.401024000000234,
       "detail": ""
     },
     {
@@ -1437,7 +1437,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.29927299999963,
+      "latency_ms": 4.104678000000149,
       "detail": ""
     },
     {
@@ -1455,7 +1455,7 @@
       "currency": "INR",
       "rail": "razorpay",
       "mirrored": true,
-      "latency_ms": 7.399332999999842,
+      "latency_ms": 6.669617000000017,
       "detail": ""
     },
     {
@@ -1473,7 +1473,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 0.7824389999996129,
+      "latency_ms": 0.6917499999999563,
       "detail": ""
     },
     {
@@ -1491,7 +1491,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 0.6604200000001583,
+      "latency_ms": 0.6338009999999485,
       "detail": ""
     },
     {
@@ -1509,7 +1509,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.527941999999712,
+      "latency_ms": 4.143109999999979,
       "detail": ""
     },
     {
@@ -1527,7 +1527,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 4.661632999999711,
+      "latency_ms": 4.495597999999973,
       "detail": ""
     },
     {
@@ -1545,7 +1545,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 0.7270950000001903,
+      "latency_ms": 0.6505420000003141,
       "detail": ""
     },
     {
@@ -1563,7 +1563,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 7.677997000000232,
+      "latency_ms": 6.762182999999823,
       "detail": ""
     },
     {
@@ -1581,7 +1581,7 @@
       "currency": "USD",
       "rail": "paypal",
       "mirrored": true,
-      "latency_ms": 8.966596000000209,
+      "latency_ms": 8.437397000000146,
       "detail": ""
     }
   ],
@@ -1623,8 +1623,8 @@
       "INR": "2161050",
       "USD": "3000"
     },
-    "p50_latency_ms": 5.287988999999925,
-    "p95_latency_ms": 10.766145000000051,
+    "p50_latency_ms": 5.206846000000041,
+    "p95_latency_ms": 11.406523000000107,
     "token_spend": null,
     "unresolved_exceptions": [],
     "model_id": "n/a"

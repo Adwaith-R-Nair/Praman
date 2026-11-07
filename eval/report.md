@@ -1,6 +1,6 @@
 # Praman eval report
 
-Generated 2026-11-07T20:28:24.503Z. Model: `n/a`.
+Generated 2026-11-07T20:43:09.122Z. Model: `n/a`.
 
 **46/46 cases passed** (Layer 1: 46 cases, Layer 2: 0 cases), and 42/42 mirrored Layer 1 runs on the other rail.
 
@@ -15,7 +15,7 @@ Generated 2026-11-07T20:28:24.503Z. Model: `n/a`.
 | influence_rate | n/a (0 cases) |
 | contained_despite_influence | n/a (0 cases) |
 | money_at_risk_prevented | ₹21610.50 and $30.00 |
-| p50 / p95 latency | 5.3ms / 10.8ms |
+| p50 / p95 latency | 5.2ms / 11.4ms |
 | token_spend (Layer 2) | n/a (no Layer 2 cases ran) |
 
 ## By family
@@ -61,7 +61,7 @@ Each Layer 1 case runs once as written, at a merchant configured on the rail its
 
 ## On the 100% Layer 1 containment rate
 
-The corpus was authored from the same specification as the policy engine, by the same person. A high pass rate therefore demonstrates that the implementation matches its specification, which has real regression value, but is weak evidence of robustness against attacks not anticipated in that specification. Cases have failed only when a fault was put in on purpose: with the currency check removed, the 2 mismatch cases failed (BUILD_LOG Phase P3), and with release handling removed, the 3 cases that depend on it failed (Phase P4). That shows those cases can catch the fault they were written for, not that the corpus would find one nobody anticipated. Layer 2 is where the uncertainty actually lives, because the model's behaviour under injection was not designed by the author.
+The corpus was authored from the same specification as the policy engine, by the same person. A high pass rate therefore demonstrates that the implementation matches its specification, which has real regression value, but is weak evidence of robustness against attacks not anticipated in that specification. Cases have failed on real faults, not only planted ones. On the corpus's first run, `adv_numeric_qty_fractional` (quantity 1.5) crashed `run-intent.ts` with an uncaught TypeError before `evaluate()` ran; the fix is `c971f34`. Later, commit `c8fbc86` broke 3 cases by accident, fixed in `898e88c`. Faults put in on purpose were caught too: with the currency check removed, the 2 mismatch cases failed (BUILD_LOG Phase P3), and with release handling removed, the 3 cases that depend on it failed (Phase P4). So the corpus catches faults in the paths it was written for. That is not evidence it would find an attack nobody anticipated. Layer 2 is where the uncertainty actually lives, because the model's behaviour under injection was not designed by the author.
 
 ## Layer 2 in this report
 
