@@ -3176,3 +3176,23 @@ and the absence of the old one, and a new test checks the start page.
 whether a different browser really avoids the decline, and it should happen before submitting.
 
 **Tests.** 687, up from 685. None weakened or removed.
+
+### Phase P12 · 2026-11-08 · review fix: no way back to the demo from a trace
+
+**The problem.** Every demo step links to its ledger trace in the same tab. The trace page's only link at the top was "← all
+traces", which goes to the index at `/`. The index had no link to `/demo`, so a judge who followed that link was stuck there with
+only the browser's Back button. The index also listed every demo trace in the database, dozens of anonymous `DEMO_HARNESS` rows
+from other runs. Once the demo is hosted, that list would show one visitor the purchases of others.
+
+**The fix (`ef40193`).** A trace whose merchant is one of the demo's three (`DEMO_CAFE`, `DEMO_MARKET`, `DEMO_HARNESS`) now has
+"← back to the demo" at the top instead. `/demo` reads the visitor's own session cookie, so that link returns each visitor to
+their own story, with their steps still filled in. The index leaves out demo traces, both in the list and in the count, and links
+to the demo with a line saying that is where those traces are. The list of demo merchants lives in one place,
+`apps/receipt-ui/src/demo/config.ts`, next to the merchants themselves.
+
+**What this does not change.** A trace page is still open to anyone who has its trace id, as before. A demo trace id carries a
+random 12-hex-digit part from the visitor's session, and is only shown on that visitor's page. The ledger is not touched: this only changes which rows the index asks for.
+
+**Tests.** A new file, `apps/receipt-ui/test/navigation.test.ts`, checks that a trace at each demo merchant links to `/demo`, that
+other traces keep their index link, that the index lists and counts no demo traces, and that the index links to the demo with or
+without traces to show. Six of its seven tests failed before the fix. 694 in total, up from 687. None weakened or removed.
