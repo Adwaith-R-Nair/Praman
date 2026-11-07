@@ -194,7 +194,8 @@ async function agentPurchase(session: DemoSession, deps: DemoDeps, step: Purchas
   const checked = checkCart(agent.cart, plan.merchant);
   if (!checked.ok) return { ...empty, recordedModel, state: "refused", proposal, message: checked.message };
 
-  const n = (session.beats.size + session.modelCalls).toString(36);
+  session.intents += 1;
+  const n = session.intents.toString(36);
   const intent: PurchaseIntent = {
     intent_id: `demo_${session.ref}_${step}_${n}`,
     mandate_id: mandate.document.mandate_id,

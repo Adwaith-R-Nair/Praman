@@ -401,6 +401,31 @@ describe("the demo story", () => {
     expect(paypal.charges).toHaveLength(1);
   });
 
+  it("every ask of a step gets its own intent and trace, even on recorded answers", async () => {
+    // Two live calls: the first ask uses both, and every later ask replays a recording,
+    // which uses no model call and adds no new step. The ids must still differ.
+    usage = new MemoryDailyUsage({ session: 1000, model_call: 2 });
+    deps = makeDeps();
+    handler = createDemoHandler(deps);
+    const v = await startConnected();
+    const traces: (string | null)[] = [];
+    for (let i = 0; i < 3; i++) {
+      await v.post("/demo/step/first");
+      const asked = sessionOf(v).beats.get("first");
+      expect(asked).toMatchObject({ state: "awaiting_approval" });
+      traces.push(asked?.traceId ?? null);
+      if (i < 2) await v.post("/demo/reject/first");
+    }
+    expect(new Set(traces).size).toBe(3);
+    await v.post("/demo/approve/first");
+    expect(sessionOf(v).beats.get("first")).toMatchObject({ state: "done" });
+
+    // The charged trace holds one intent and the one approval that let it through.
+    const rows = await ledgerFor(traces[2] ?? null);
+    expect(rows.filter((r) => r.eventType === "intent")).toHaveLength(1);
+    expect(rows.filter((r) => r.eventType === "step_up_resolved").map((r) => r.payload)).toEqual([expect.objectContaining({ verdict: "approve" })]);
+  });
+
   it("a step that fails after the charge is not offered again, so a retry can't charge twice", async () => {
     const v = await startConnected();
     await v.post("/demo/step/first");

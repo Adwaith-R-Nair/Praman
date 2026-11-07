@@ -70,6 +70,12 @@ export interface DemoSession {
   /** True once a payment token is stored server-side for this session. The token itself is never here. */
   connected: boolean;
   modelCalls: number;
+  /**
+   * Purchase intents this session has made. Each ask of a step takes the next number, so
+   * every intent, and its trace, has an id of its own, even when a recorded answer used
+   * no model call and the step was already in the list.
+   */
+  intents: number;
   /** A step is running for this session; a second click waits its turn by being refused. */
   busy: boolean;
   /** One message for the next page view. */
@@ -115,6 +121,7 @@ export function createDemoSession(now: Date, signer: DemoSigner): DemoSession {
     setupTokenId: null,
     connected: false,
     modelCalls: 0,
+    intents: 0,
     busy: false,
     notice: null,
     beats: new Map(),
