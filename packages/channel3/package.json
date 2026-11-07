@@ -1,0 +1,12 @@
+{
+  "name": "@praman/channel3",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@praman/db": "workspace:*",
+    "@praman/shared": "workspace:*"
+  }
+}

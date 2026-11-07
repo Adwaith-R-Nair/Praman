@@ -1,0 +1,299 @@
+{
+  "products": [
+    {
+      "id": "TnLEXOw",
+      "title": "Moka Ceramic Coffee Mug",
+      "description": "The Moka Mug is a refined, handcrafted ceramic coffee mug featuring a gently tapered silhouette and a finely tuned, slim curved handle for a comfortable and balanced hold. Made from Vegan New Bone China, it offers superior durability and he",
+      "brands": [
+        {
+          "id": "l1H1",
+          "name": "MiiR"
+        }
+      ],
+      "images": [
+        {
+          "url": "https://images.example.com/fixture-0.jpg",
+          "cleaned_url": null,
+          "is_main_image": true,
+          "shot_type": "hero",
+          "alt_text": "Gloss gray ceramic mug on a white background."
+        }
+      ],
+      "category": {
+        "slug": "mugs",
+        "title": "Mugs",
+        "path": [
+          {
+            "slug": "home-garden",
+            "title": "Home & Garden"
+          },
+          {
+            "slug": "kitchen-dining",
+            "title": "Kitchen & Dining"
+          },
+          {
+            "slug": "tableware",
+            "title": "Tableware"
+          },
+          {
+            "slug": "drinkware",
+            "title": "Drinkware"
+          },
+          {
+            "slug": "mugs",
+            "title": "Mugs"
+          }
+        ],
+        "has_children": false
+      },
+      "gender": null,
+      "age": null,
+      "materials": [
+        "Ceramic",
+        "Vegan New Bone China"
+      ],
+      "key_features": [
+        "Microwave safe",
+        "Handcrafted and high-fired for strength"
+      ],
+      "colors": [
+        {
+          "hex": "#cccbc2",
+          "percentage": 0.7753
+        },
+        {
+          "hex": "#a09e96",
+          "percentage": 0.1142
+        },
+        {
+          "hex": "#5f5c56",
+          "percentage": 0.1105
+        }
+      ],
+      "offers": [
+        {
+          "url": "https://buy.example.com/fixture-0-0",
+          "domain": "miir.com",
+          "price": {
+            "price": 20.0,
+            "compare_at_price": null,
+            "currency": "USD"
+          },
+          "availability": "InStock",
+          "condition": "new",
+          "max_commission_rate": 0.0,
+          "dimensions": {
+            "length": null,
+            "width": null,
+            "height": null,
+            "weight": {
+              "number": 381.0,
+              "unit": "g"
+            }
+          }
+        }
+      ],
+      "variants": null,
+      "structured_attributes": {},
+      "ratings": null
+    },
+    {
+      "id": "Yy3DRlE",
+      "title": "Moleskine Classic Expanded Hardcover Notebook - Dotted, Black, Large",
+      "description": "The Moleskine Classic Expanded Hardcover Notebook is a durable, high-capacity journal designed for extensive note-taking and sketching. This large portrait-oriented notebook features a black hard cover and contains 400 pages of ivory-colore",
+      "brands": [
+        {
+          "id": "fiS6",
+          "name": "Moleskine"
+        }
+      ],
+      "images": [
+        {
+          "url": "https://images.example.com/fixture-1.jpg",
+          "cleaned_url": null,
+          "is_main_image": true,
+          "shot_type": "packaging",
+          "alt_text": "Front view of a black Moleskine notebook with branding."
+        }
+      ],
+      "category": {
+        "slug": "journals",
+        "title": "Journals",
+        "path": [
+          {
+            "slug": "office-supplies",
+            "title": "Office Supplies"
+          },
+          {
+            "slug": "general-office-supplies",
+            "title": "General Office Supplies"
+          },
+          {
+            "slug": "paper-products",
+            "title": "Paper Products"
+          },
+          {
+            "slug": "notebooks-notepads",
+            "title": "Notebooks & Notepads"
+          },
+          {
+            "slug": "journals",
+            "title": "Journals"
+          }
+        ],
+        "has_children": false
+      },
+      "gender": null,
+      "age": null,
+      "materials": [
+        "hard cover"
+      ],
+      "key_features": [
+        "Expanded page count",
+        "Dotted page layout"
+      ],
+      "colors": [
+        {
+          "hex": "#181818",
+          "percentage": 0.6766
+        },
+        {
+          "hex": "#eff0e2",
+          "percentage": 0.1866
+        },
+        {
+          "hex": "#a3d4dc",
+          "percentage": 0.0827
+        },
+        {
+          "hex": "#445359",
+          "percentage": 0.0541
+        }
+      ],
+      "offers": [
+        {
+          "url": "https://buy.example.com/fixture-1-0",
+          "domain": "target.com",
+          "price": {
+            "price": 37.95,
+            "compare_at_price": null,
+            "currency": "USD"
+          },
+          "availability": "InStock",
+          "condition": "new",
+          "max_commission_rate": 0.0,
+          "dimensions": null
+        },
+        {
+          "url": "https://buy.example.com/fixture-1-1",
+          "domain": "dickblick.com",
+          "price": {
+            "price": 39.0,
+            "compare_at_price": null,
+            "currency": "USD"
+          },
+          "availability": "InStock",
+          "condition": "new",
+          "max_commission_rate": 0.021,
+          "dimensions": {
+            "length": {
+              "number": 5.0,
+              "unit": "in"
+            },
+            "width": null,
+            "height": {
+              "number": 8.25,
+              "unit": "in"
+            },
+            "weight": null
+          }
+        }
+      ],
+      "variants": null,
+      "structured_attributes": {},
+      "ratings": {
+        "value": 5.0,
+        "count": 3,
+        "source_count": 1
+      }
+    },
+    {
+      "id": "4RyHr6R",
+      "title": "Noise Cancelling Headphones",
+      "description": "Experience immersive sound with these lightweight Sony MDRZX110NC noise-canceling headphones. Featuring dynamic 1.18-inch drivers, they deliver rich, powerful sound with deep bass and clear highs. Enjoy a significant reduction in ambient no",
+      "brands": [
+        {
+          "id": "PURH",
+          "name": "Sony"
+        }
+      ],
+      "images": [
+        {
+          "url": "https://images.example.com/fixture-2.jpg",
+          "cleaned_url": null,
+          "is_main_image": true,
+          "shot_type": "lifestyle",
+          "alt_text": "Sony MDR-ZX110NC noise cancelling over-ear headphones and a pair of in-ear earbuds in black."
+        }
+      ],
+      "category": {
+        "slug": "on-ear-headphones",
+        "title": "On-Ear Headphones",
+        "path": [
+          {
+            "slug": "electronics",
+            "title": "Electronics"
+          },
+          {
+            "slug": "audio",
+            "title": "Audio"
+          },
+          {
+            "slug": "audio-components",
+            "title": "Audio Components"
+          },
+          {
+            "slug": "headphones-headsets",
+            "title": "Headphones & Headsets"
+          },
+          {
+            "slug": "headphones",
+            "title": "Headphones"
+          },
+          {
+            "slug": "on-ear-headphones",
+            "title": "On-Ear Headphones"
+          }
+        ],
+        "has_children": false
+      },
+      "gender": null,
+      "age": null,
+      "materials": [],
+      "key_features": [
+        "Noise Canceling: Featuring a 12-22,000 Hz frequency response for pristine bass, mids, and treble, these lightweight headphones reduce ambient noise by 95 percent, so all you\u2019ll hear is the music",
+        "Noise Canceling Headphones with Proven Sony Technology High-Energy Magnets: High-energy 300 kJ/m3 neodymium magnets facilitate the delivery of rich, powerful sound with deep bass and clear highs"
+      ],
+      "colors": [],
+      "offers": [
+        {
+          "url": "https://buy.example.com/fixture-2-0",
+          "domain": "bestbuy.com",
+          "price": {
+            "price": 79.99,
+            "compare_at_price": 89.99,
+            "currency": "USD"
+          },
+          "availability": "InStock",
+          "condition": "new",
+          "max_commission_rate": 0.004,
+          "dimensions": null
+        }
+      ],
+      "variants": null,
+      "structured_attributes": {},
+      "ratings": null
+    }
+  ],
+  "next_page_token": null
+}

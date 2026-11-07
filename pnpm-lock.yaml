@@ -425,6 +425,15 @@ importers:
         specifier: 5.11.1
         version: 5.11.1(@opentelemetry/api@1.9.1)
 
+  packages/channel3:
+    dependencies:
+      '@praman/db':
+        specifier: workspace:*
+        version: link:../db
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../shared
+
   packages/control-plane:
     dependencies:
       '@praman/db':
