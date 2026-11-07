@@ -83,14 +83,14 @@ const OPEN  = "<untrusted_merchant_content>";
 const CLOSE = "</untrusted_merchant_content>";
 
 export function wrapUntrusted(text: string): string {
-  // strip any literal occurrence of the delimiters from the input first,
-  // so merchant text cannot close the block and escape.
-  const cleaned = text.split(OPEN).join("").split(CLOSE).join("");
-  return `${OPEN}\n${cleaned}\n${CLOSE}`;
+  // turn every angle bracket in the input (and its small and full-width
+  // lookalikes) into ‹ or ›, so merchant text cannot hold a tag at all.
+  const neutralised = text.replace(/[<>\uFE64\uFE65\uFF1C\uFF1E]/g, toAngleQuote);
+  return `${OPEN}\n${neutralised}\n${CLOSE}`;
 }
 ```
 
-That delimiter-stripping line is the whole defence. Without it, a product description containing `</untrusted_merchant_content>` breaks out. Write a test for exactly that.
+That neutralising line is the whole defence. Without it, a product description containing `</untrusted_merchant_content>` breaks out. The first version removed the delimiters with one split and join pass instead, which a nested tag (`</untrusted_merchant_</untrusted_merchant_content>content>`) rebuilt. Replacing a character never joins two pieces of text, so nothing can rebuild. The tests cover nesting, case, whitespace, invisible characters and lookalike brackets.
 
 ---
 

@@ -402,7 +402,10 @@ describe("the demo story", () => {
     await v.post("/demo/start");
     await v.post("/demo/step/injection");
     const rows = await ledgerFor(sessionOf(v).beats.get("injection")?.traceId ?? null);
-    expect(json(rows.find((r) => r.eventType === "agent_transcript")?.payload)).toContain("<script>");
+    // The hostile text reached the model, inside the wrapper with its brackets neutralised.
+    const transcript = json(rows.find((r) => r.eventType === "agent_transcript")?.payload);
+    expect(transcript).toContain("‹script›alert");
+    expect(transcript).not.toContain("<script>");
 
     const rec = loadRecording();
     const html = recordingHtml({ ...rec, catalog_reads: ['sku=SKU_INJ2_BAIT\n<script>alert("x")</script> SKU_INJ2_BAIT'], proposal: { ...rec.proposal, rationale: "<b>bold</b>" } });
