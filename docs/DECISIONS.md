@@ -1619,6 +1619,8 @@ fixed a way to spend past a budget. Freezing the inputs would protect the claim 
 
 ### D-44 · A sweep must not act while a call can still be running · Accepted
 
+Status: D-45 adds PayPal webhooks, and a late T2 now checks its record before writing a capture outcome. The Razorpay gap below stays open, since Razorpay webhooks are out of scope.
+
 An implementer's decision for the builder to check. It corrects D-42, which a review showed claimed more than the code gave.
 
 **What D-42 got wrong.** It said a reservation "fails closed: the worst case is a refusal, never an overspend", and its window table
@@ -1666,3 +1668,66 @@ made, and an answer that arrives would be thrown away instead of counted. Each e
 
 **Rejected: raising `RECONCILE_MIN_AGE_MS`.** It holds budget longer on every failed call and doesn't close the Razorpay case,
 which needs a read of the order after the fact, not a longer wait before it.
+
+### D-45 · Webhooks speed up reconciliation, the sweep stays · Accepted
+
+An implementer's decision for the builder to check, made in plan Task 9 on 2026-11-08.
+
+**Not yet seen live.** No PayPal webhook has reached this project, because nothing is hosted for PayPal to send to. Everything
+below is tested against synthetic events written from PayPal's published schemas (`packages/paypal-exec/test/fixtures/README.md`
+names the sources), with PayPal's verification answer stood in by a fake. A test with a real sandbox delivery is owed once the app
+is hosted.
+
+**What a webhook may do.** `POST /webhooks/paypal` acts on two events, `PAYMENT.CAPTURE.COMPLETED` and `PAYMENT.CAPTURE.DECLINED`.
+Every other type is answered 200 and ignored. For the two it acts on:
+
+1. **Verify first, over the exact bytes.** The handler sends the delivery to PayPal's `verify-webhook-signature` with the body
+   spliced in as `webhook_event`, byte for byte, and acts only on `SUCCESS`. PayPal's webhook guide warns that a parsed and
+   re-serialised body can fail to verify. One check runs before that: the body must be a single JSON object, or splicing it could
+   add keys of its own, such as a second `webhook_id` pointing at someone else's webhook.
+2. **Keep ids, not text.** The parser keeps the event id, the capture id, the order id from `supplementary_data.related_ids`, the
+   amount through `fromPayPalValue`, and a known currency, each against a narrow pattern. The summary, `custom_id` and notes are
+   never read, so PayPal's text can't reach the ledger, a page or a prompt (invariant 7).
+3. **Find the order on the ledger.** By order id, on the `created` or `mismatch` rows for that rail, and by the invoice id if
+   PayPal echoes one, since Praman sets it to the order's receipt. No match is logged and writes nothing.
+4. **Write under the mandate lock.** One `settlement` row per piece of news, deduplicated on the event id and on the payment id
+   with its status. The settlement row moves no money (D-31). When it tells the ledger something new, an `outcome` follows:
+
+| Webhook | Ledger before | Appended | Capture record |
+|---|---|---|---|
+| completed | capture already recorded | settlement only | none left pending |
+| completed | capture call still out, or its answer lost | settlement, then `captured` | resolved as succeeded |
+| completed | order released, no capture recorded | settlement, then `captured` | none |
+| completed, other money | no capture recorded | settlement, then `mismatch` (D-33) | resolved as succeeded |
+| declined | capture call pending | settlement, then `failed`, `PAYPAL_CAPTURE_DECLINED` | resolved as failed, hold kept |
+| declined | no pending capture | settlement only | none |
+
+**A late capture T2 now checks its record.** If a webhook resolved the capture record while Praman's own call was out,
+`captureOrder`'s T2 finds it no longer pending, writes nothing, and returns what was recorded. Before this it appended regardless,
+which D-44 called acceptable for an order. For a capture it would have been a second `captured` row about one payment. The
+reconciler already checked (D-42). `runIntent`'s T2, for creates, is unchanged, since no webhook resolves an order record.
+
+**Answers to PayPal.** Forged or unverifiable gets 400 and nothing is written. PayPal unreachable, or this app unable to
+authenticate, gets 503, and recording failing gets 500, so PayPal delivers again. A verified event, applied or not, gets 200. No
+reply carries an error message.
+
+**Why the sweep stays.** A webhook can be late, lost, or never sent, and PayPal's retries end after a few days. So
+`reconcilePending` and `releaseStaleOrders` still decide every record a webhook doesn't. A webhook only ever moves a record from
+pending to resolved, and only with PayPal's signed word on what happened.
+
+**What it closes.** P7 left open a capture PayPal made that the ledger never recorded, such as one on an order Praman had released.
+A completed webhook now records it, and its budget counts again, because a capture beats a release (D-30). D-44's Razorpay gap is
+**not** closed: Razorpay webhooks are out of scope (design, "Webhooks"), so a create Razorpay finished after the client gave up
+still has nothing reading it back.
+
+**Rejected: verifying locally with the certificate.** PayPal documents a local check (CRC32 of the body, then SHA256withRSA against
+the certificate at `paypal-cert-url`). Done properly it means fetching and caching that certificate and validating its chain to a
+trusted root. The postback asks PayPal to do all of that, at the cost of one call per delivery and a dependency on PayPal being up,
+which the 503 retry covers.
+
+**Rejected: letting the settlement row itself count.** `deriveState` would have to read a second event type for money, and a test
+already pins that a settlement moves nothing on its own. An `outcome` row, written by actor `webhook`, keeps one place where money
+is counted.
+
+**Limits.** Synthetic events only, as above. Dedupe by payment and status assumes PayPal never sends two different captures with the
+same id. The handler holds a 64 KiB body limit, which PayPal's documented events are far under.
