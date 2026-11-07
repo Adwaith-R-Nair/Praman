@@ -4,6 +4,7 @@ import { isCurrency, minor, type Currency, type LedgerDerivedState } from "@pram
 interface Row {
   seq: bigint;
   ts: Date;
+  trace_id: string;
   event_type: string;
   payload: Record<string, unknown>;
 }
@@ -126,17 +127,30 @@ function foldOrders(rows: readonly OrderRow[]): OrderFold[] {
   return [...folds.values()];
 }
 
+/** A call T1 recorded before going to the rail. Held until an outcome answers it. */
+interface Attempt {
+  readonly seq: bigint;
+  readonly ts: Date;
+  readonly traceId: string;
+  readonly key: string | null;
+  readonly payload: Record<string, unknown>;
+}
+
 /**
  * Replays the ledger to derive a mandate's current state. D-03: spend is never
  * stored, because a stored counter is a number an attacker can edit. Deriving
  * it means inflating a budget requires forging every subsequent entry hash.
+ *
+ * An order create that T1 recorded and no outcome has answered yet is reserved:
+ * it counts toward spend and velocity, because the rail may have made the order
+ * (D-42). It earns the merchant no trust, since it may not exist.
  *
  * Raw SQL so the (payload->>'mandate_id') expression index is actually used —
  * Prisma's JSON path filter emits jsonb equality, which would not hit it.
  */
 export async function deriveState(tx: PrismaTx, mandateId: string): Promise<LedgerDerivedState> {
   const rows = await tx.$queryRaw<Row[]>`
-    SELECT seq, ts, event_type, payload
+    SELECT seq, ts, trace_id, event_type, payload
     FROM ledger_entry
     WHERE payload->>'mandate_id' = ${mandateId}
     ORDER BY seq ASC
@@ -146,6 +160,11 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
   const deniedAttempts: Date[] = [];
   const keys = new Set<string>();
   const releasedKeys = new Set<string>();
+  const attempts: Attempt[] = [];
+  // Every outcome answers its attempt, failed ones included. Old api_call rows have
+  // no key, so they are answered by any outcome on their trace (D-42).
+  const answeredKeys = new Set<string>();
+  const answeredTraces = new Set<string>();
 
   // One order can have several outcomes: created, then captured later, or a
   // release. They are one purchase, so rows are grouped by key, and split into
@@ -169,6 +188,16 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
         revoked = true;
         break;
 
+      case "api_call": {
+        // A capture is a call about an order that already holds its budget, so it
+        // reserves nothing more. Anything else that was attempted might have made an
+        // order, including an operation this code doesn't know, which fails closed.
+        if (row.payload["status"] !== "attempted" || row.payload["operation"] === "orders.capture") break;
+        const key = row.payload["idempotency_key"];
+        attempts.push({ seq: row.seq, ts: row.ts, traceId: row.trace_id, key: typeof key === "string" ? key : null, payload: row.payload });
+        break;
+      }
+
       case "outcome": {
         // A CREATED order moves spend, not only a captured one. An order
         // that exists is a payable obligation the mandate authorised —
@@ -185,6 +214,8 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
         // no key can't name an order, so it frees nothing.
         const status = row.payload["status"];
         const key = row.payload["idempotency_key"];
+        answeredTraces.add(row.trace_id);
+        if (typeof key === "string") answeredKeys.add(key);
         const rawOrderId = row.payload["order_id"];
         const orderId = typeof rawOrderId === "string" ? rawOrderId : null;
 
@@ -252,6 +283,14 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
     // An order that came back wrong is no reason to trust the merchant next time.
     if (order.mismatch) continue;
     for (const merchant of order.merchants) merchants.add(merchant);
+  }
+
+  // An attempt with a key pairs only by key, because two attempts can share a trace.
+  for (const attempt of attempts) {
+    const answered = attempt.key !== null ? answeredKeys.has(attempt.key) : answeredTraces.has(attempt.traceId);
+    if (answered) continue;
+    spent += BigInt(readAmount(attempt.payload, attempt.seq));
+    txnTimestamps.push(attempt.ts);
   }
 
   return {

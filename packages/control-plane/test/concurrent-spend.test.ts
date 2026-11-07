@@ -31,7 +31,7 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-function buildSignedMandate(mandateId: string) {
+function buildSignedMandate(mandateId: string, maxTotal: bigint = MAX_TOTAL) {
   const { privateKeyPem, publicKeyPem } = generateKeypair();
   const doc: MandateDocument = {
     mandate_id: mandateId,
@@ -41,7 +41,7 @@ function buildSignedMandate(mandateId: string) {
     scope: { merchant_ids: [MERCHANT], categories: ["food"], currency: "INR" },
     limits: {
       max_per_txn_minor: "200000",
-      max_total_minor: String(MAX_TOTAL),
+      max_total_minor: String(maxTotal),
       max_txns_per_window: MAX_TXNS,
       window_seconds: 3600,
       max_denials_per_window: 20,
@@ -74,39 +74,61 @@ async function waitUntil(done: () => boolean): Promise<void> {
   }
 }
 
+/** Starts twenty intents at once, holds every rail call until all have been decided, then lets them through. */
+async function runTwentyAtOnce(mandateId: string, signed: ReturnType<typeof buildSignedMandate>["signed"], publicKeyPem: string): Promise<RunResult[]> {
+  const executor = new LatchedExecutor();
+
+  // Twenty distinct carts, so twenty distinct idempotency keys. Every call is held at
+  // the latch, so each intent sits between T1 and T2 while the next one is evaluated.
+  let settled = 0;
+  const runs: Promise<RunResult>[] = Array.from({ length: 20 }, (_, i) => {
+    const intent: PurchaseIntent = {
+      intent_id: `int_concurrent_${String(i)}`,
+      mandate_id: mandateId,
+      merchant_id: MERCHANT,
+      line_items: [{ sku: SKU, qty: 1 }],
+      requested_at: "2026-11-08T09:59:00.000Z",
+      agent_rationale: "test",
+    };
+    return runIntent(intent, signed, publicKeyPem, routeAllTo(executor), NOW, "test-model").finally(() => {
+      settled += 1;
+    });
+  });
+
+  // Every intent has either been refused or is waiting on the rail.
+  await waitUntil(() => settled + executor.waiting === 20);
+  executor.release();
+  return Promise.all(runs);
+}
+
 describe("concurrent intents under one mandate", () => {
   it("20 concurrent intents never create more than the mandate's budget", async () => {
     const mandateId = "mnd_concurrent_1";
     await seedMerchantHistory(mandateId);
     const { signed, publicKeyPem } = buildSignedMandate(mandateId);
-    const executor = new LatchedExecutor();
-
-    // Twenty distinct carts, so twenty distinct idempotency keys. Every call is held at
-    // the latch, so each intent sits between T1 and T2 while the next one is evaluated.
-    let settled = 0;
-    const runs: Promise<RunResult>[] = Array.from({ length: 20 }, (_, i) => {
-      const intent: PurchaseIntent = {
-        intent_id: `int_concurrent_${String(i)}`,
-        mandate_id: mandateId,
-        merchant_id: MERCHANT,
-        line_items: [{ sku: SKU, qty: 1 }],
-        requested_at: "2026-11-08T09:59:00.000Z",
-        agent_rationale: "test",
-      };
-      return runIntent(intent, signed, publicKeyPem, routeAllTo(executor), NOW, "test-model").finally(() => {
-        settled += 1;
-      });
-    });
-
-    // Every intent has either been refused or is waiting on the rail.
-    await waitUntil(() => settled + executor.waiting === 20);
-    executor.release();
-    const results = await Promise.all(runs);
+    const results = await runTwentyAtOnce(mandateId, signed, publicKeyPem);
 
     const created = results.filter((r) => r.kind === "DECIDED" && r.order_id !== null && r.order_status !== "failed");
     const createdTotal = BigInt(created.length) * PRICE;
     expect(results.every((r) => r.kind === "DECIDED")).toBe(true);
     expect(createdTotal).toBeLessThanOrEqual(MAX_TOTAL);
     expect(created.length).toBeLessThanOrEqual(MAX_TXNS);
+    // Not vacuous: the budget is used in full, and every other intent is told why.
+    expect(created.length).toBe(5);
+    const refused = results.flatMap((r) => (r.kind === "DECIDED" && r.order_id === null ? [r.internal_reason_code] : []));
+    expect(refused).toEqual(Array.from({ length: 15 }, () => "MANDATE_BUDGET_EXHAUSTED"));
+  }, 30_000);
+
+  it("20 concurrent intents never exceed the mandate's velocity", async () => {
+    const mandateId = "mnd_concurrent_2";
+    await seedMerchantHistory(mandateId);
+    // Budget for all twenty, so only the rate limit can stop them.
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId, 20n * PRICE);
+    const results = await runTwentyAtOnce(mandateId, signed, publicKeyPem);
+
+    const created = results.filter((r) => r.kind === "DECIDED" && r.order_id !== null && r.order_status !== "failed");
+    expect(created).toHaveLength(MAX_TXNS);
+    const refused = results.flatMap((r) => (r.kind === "DECIDED" && r.order_id === null ? [r.internal_reason_code] : []));
+    expect(refused).toEqual(Array.from({ length: 20 - MAX_TXNS }, () => "VELOCITY_EXCEEDED"));
   }, 30_000);
 });

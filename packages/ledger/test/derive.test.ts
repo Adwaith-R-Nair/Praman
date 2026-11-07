@@ -598,6 +598,139 @@ describe("deriveState folding outcomes by order", () => {
   });
 });
 
+describe("deriveState reserving attempted calls (Task 8)", () => {
+  const TS = new Date("2026-09-04T10:00:00.000Z");
+  const LATER = new Date("2026-09-04T10:00:05.000Z");
+
+  async function row(eventType: string, traceId: string, payload: Record<string, unknown>, ts: Date = TS): Promise<void> {
+    // A field passed as undefined is left out, the way an old row simply doesn't have it.
+    const kept = Object.fromEntries(Object.entries({ mandate_id: MANDATE, ...payload }).filter(([, value]) => value !== undefined));
+    await prisma.$transaction((tx) => append(tx, { traceId, ts, actor: "praman", eventType, payload: kept }));
+  }
+
+  /** An order create T1 recorded, in today's shape. */
+  const attempt = (key: string, traceId = "t1", amount = "5000", ts: Date = TS) =>
+    row("api_call", traceId, {
+      merchant_id: "MERCH_001",
+      rail: "simulated",
+      operation: "orders.create",
+      idempotency_key: key,
+      receipt: `rcpt_${key}`,
+      amount_minor: amount,
+      currency: "INR",
+      status: "attempted",
+    }, ts);
+
+  const outcome = (status: string, key: string | null, traceId = "t1", fields: Record<string, unknown> = {}, ts: Date = LATER) =>
+    row("outcome", traceId, {
+      status,
+      amount_minor: "5000",
+      merchant_id: "MERCH_001",
+      ...(key === null ? {} : { idempotency_key: key }),
+      ...fields,
+    }, ts);
+
+  const state = () => prisma.$transaction((tx) => deriveState(tx, MANDATE));
+
+  it("an attempted call with no outcome reserves budget and velocity", async () => {
+    await attempt("k1");
+
+    const s = await state();
+    expect(s.spent_minor).toBe(5000n);
+    expect(s.txn_timestamps).toEqual([TS]);
+  });
+
+  it("an attempted call does not count as a merchant transacted", async () => {
+    await attempt("k1");
+
+    expect((await state()).merchants_transacted.size).toBe(0);
+  });
+
+  it("a failed outcome releases the reservation", async () => {
+    await attempt("k1");
+    await outcome("failed", "k1");
+
+    const s = await state();
+    expect(s.spent_minor).toBe(0n);
+    expect(s.txn_timestamps).toEqual([]);
+  });
+
+  it("a reconciled not-found releases the reservation too", async () => {
+    await attempt("k1");
+    await outcome("failed", "k1", "t1", { order_id: null, reconciled: true });
+
+    expect((await state()).spent_minor).toBe(0n);
+  });
+
+  it("an outcome takes over from its reservation, so the order counts once", async () => {
+    await attempt("k1");
+    await outcome("created", "k1");
+
+    const s = await state();
+    expect(s.spent_minor).toBe(5000n);
+    // The order's own time from here on, as before reservations existed.
+    expect(s.txn_timestamps).toEqual([LATER]);
+    expect([...s.merchants_transacted]).toEqual(["MERCH_001"]);
+  });
+
+  it("old api_call events with no key pair by trace_id", async () => {
+    // The shape T1 wrote before rails: provider, receipt and amount_paise, no key.
+    const old = (traceId: string) =>
+      row("api_call", traceId, { provider: "razorpay", operation: "orders.create", receipt: `rcpt_${traceId}`, amount_paise: "700", status: "attempted" });
+    await old("t_settled");
+    await outcome("created", "k_settled", "t_settled", { amount_minor: undefined, amount_paise: "700" });
+    await old("t_open");
+
+    const s = await state();
+    // 700 for the settled order, and 700 held for the attempt that never got an outcome.
+    expect(s.spent_minor).toBe(1400n);
+    expect(s.txn_timestamps).toHaveLength(2);
+  });
+
+  it("a keyed attempt pairs by key, not by a trace another attempt shares", async () => {
+    // A trace comes from the intent id, so two carts under one intent id share it.
+    await attempt("k1", "t_shared");
+    await attempt("k2", "t_shared", "700");
+    await outcome("failed", "k1", "t_shared");
+
+    expect((await state()).spent_minor).toBe(700n);
+  });
+
+  it("a capture's attempted call reserves nothing, because its order already holds the budget", async () => {
+    await attempt("k1");
+    await outcome("created", "k1", "t1", { order_id: "order_A" });
+    await row("api_call", "t1", {
+      merchant_id: "MERCH_001",
+      rail: "paypal",
+      operation: "orders.capture",
+      idempotency_key: "k1",
+      order_id: "order_A",
+      capture_key: "cap_k1",
+      amount_minor: "5000",
+      currency: "USD",
+      status: "attempted",
+    });
+
+    const s = await state();
+    expect(s.spent_minor).toBe(5000n);
+    expect(s.txn_timestamps).toHaveLength(1);
+  });
+
+  it("refuses an open attempt with a malformed amount, as it does an outcome", async () => {
+    await attempt("k1", "t1", "12.50");
+
+    await expect(state()).rejects.toThrow(/malformed/);
+  });
+
+  it("an attempt for another mandate reserves nothing here", async () => {
+    await prisma.$transaction((tx) =>
+      append(tx, { traceId: "t9", ts: TS, actor: "praman", eventType: "api_call", payload: { mandate_id: OTHER_MANDATE, operation: "orders.create", idempotency_key: "k9", amount_minor: "5000", status: "attempted" } }),
+    );
+
+    expect((await state()).spent_minor).toBe(0n);
+  });
+});
+
 describe("readAmount", () => {
   it("reads either shape", () => {
     expect(readAmount({ amount_paise: "5000" }, 1n)).toBe("5000");
