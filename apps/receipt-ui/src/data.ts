@@ -1,6 +1,6 @@
 import { prisma } from "@praman/db";
 import { amountIfPresent, read, readCurrency, type LedgerEntryRecord } from "@praman/ledger";
-import { isCurrency, type Currency } from "@praman/shared";
+import { formatMoney, isCurrency, minorFromJSON, type Currency } from "@praman/shared";
 import type { ConversationItem } from "@praman/agent-core";
 import { DEMO_MERCHANTS } from "./demo/config.js";
 
@@ -41,6 +41,13 @@ export interface TraceView {
   /** The rail's own code when the latest outcome is a failure. Executor vocabulary, not a reason code (D-32). */
   readonly railFailureCode: string | null;
   readonly approvalVerdict: string | null;
+  /**
+   * How the money moved, when the ledger shows it. "saved_method": the order's first
+   * outcome is a PayPal capture, which only a charge to a saved payment method gives,
+   * since a checkout order is created first and captured later (D-49, D-50). There was
+   * no buyer at PayPal. "checkout": created, then captured after the buyer approved.
+   */
+  readonly payment: "saved_method" | "checkout" | null;
   readonly settlement: SettlementLine | null;
   /** Non-evidentiary pointer to this run's Langfuse trace, if tracing was configured when it ran. See D-47. */
   readonly langfuseTraceId: string | null;
@@ -125,6 +132,24 @@ function standingCaptureRefusal(entries: readonly LedgerEntryRecord[], lastOutco
   return payload["kind"] === "DENY" ? payload : null;
 }
 
+/** What a rail said in a mismatch, in words: its amount and status, when they are on the row. */
+function railReported(outcome: Record<string, unknown>): string {
+  const status = asString(outcome["rail_status"]);
+  const amount = asString(outcome["rail_amount_minor"]);
+  const currency = asString(outcome["rail_currency"]);
+  const money = amount !== null && /^\d+$/.test(amount) && currency !== null && isCurrency(currency) ? formatMoney(minorFromJSON(amount), currency) : null;
+  if (money === null && status === null) return "";
+  return `: it reported ${[money, status === null ? null : `status ${status}`].filter((x) => x !== null).join(", ")}`;
+}
+
+function paymentOf(first: Record<string, unknown> | null, last: Record<string, unknown> | null): TraceView["payment"] {
+  if (first === null || last === null || asString(first["rail"]) !== "paypal") return null;
+  const firstStatus = asString(first["status"]);
+  if (firstStatus === "captured" && !("capture_key" in first)) return "saved_method";
+  if (firstStatus === "created" && asString(last["status"]) === "captured") return "checkout";
+  return null;
+}
+
 export async function loadTrace(traceId: string): Promise<TraceView | null> {
   const entries = await prisma.$transaction((tx) => read(tx, traceId));
   if (entries.length === 0) return null;
@@ -164,6 +189,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
   let refusalReason: string | null = null;
 
   const railFailed = latestOutcome !== null && asString(latestOutcome["status"]) === "failed";
+  const railMismatch = latestOutcome !== null && asString(latestOutcome["status"]) === "mismatch";
   if (outcome && captureRefusal) {
     // A capture Praman refused after the order existed: its own reason stands (D-31).
     decisionKind = "DENY";
@@ -178,6 +204,12 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     refusalReason = atCapture
       ? "Praman allowed the capture, and the payment provider refused it. No money moved. The order still holds its budget, and it can be captured again until it is released."
       : "Praman allowed this purchase, and the payment provider refused to create the order. No money moved, and nothing is held.";
+  } else if (outcome && railMismatch) {
+    // The rail answered about other money than Praman asked for (D-33). That is a
+    // failure for a person to look at, not "Allowed". The order holds its budget.
+    decisionKind = "RAIL_MISMATCH";
+    reasonCode = null;
+    refusalReason = `Praman allowed this purchase, and the payment provider answered about different money than Praman asked for${railReported(latestOutcome)}. The order still holds its budget and needs a person to look. Praman did not retry.`;
   } else if (outcome) {
     // Money was actually attempted — this supersedes any earlier STEP_UP.
     decisionKind = "ALLOW";
@@ -214,6 +246,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     orderStatus: asString(latestOutcome?.["status"]),
     railFailureCode: railFailed ? asString(latestOutcome["failure_code"]) : null,
     approvalVerdict: asString(stepUpResolved?.["verdict"]),
+    payment: paymentOf(outcome, latestOutcome),
     settlement:
       settlementRow && settlementPayload
         ? {

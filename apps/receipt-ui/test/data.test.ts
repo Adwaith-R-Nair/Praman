@@ -260,3 +260,67 @@ describe("loadTrace with a settlement from a verified webhook", () => {
     expect((await renderTracePage("trace_unsettled")).html).not.toContain("reported the capture");
   });
 });
+
+/** A trace written row by row, as runIntent and resolveApproval would leave it. */
+async function writeRows(traceId: string, rows: readonly [EventType, Record<string, unknown>][]): Promise<void> {
+  for (const [eventType, payload] of rows) {
+    await prisma.$transaction((tx) => append(tx, { traceId, ts: new Date("2026-11-08T10:00:00.000Z"), actor: "praman", eventType, payload }));
+  }
+}
+
+describe("loadTrace on a purchase paid with no buyer present", () => {
+  const order = { mandate_id: "mnd_test", idempotency_key: "k_order", order_id: "VLT1", rail: "paypal", amount_minor: "450", currency: "USD" };
+  const intent = { mandate_id: "mnd_test", merchant_id: "DEMO_CAFE", model_id: "gemini-3.1-flash-lite", agent_rationale: "coffee" };
+
+  it("says it was paid from the saved PayPal account, with no buyer present and no person approving", async () => {
+    await writeRows("trace_nobuyer", [
+      ["intent", intent],
+      ["decision", { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "450", currency: "USD" }],
+      ["outcome", { ...order, status: "captured", payment_id: "CAP9" }],
+    ]);
+    expect(await loadTrace("trace_nobuyer")).toMatchObject({ decisionKind: "ALLOW", payment: "saved_method", approvalVerdict: null });
+    const { html } = await renderTracePage("trace_nobuyer");
+    expect(html).toContain("Paid from the saved PayPal account, with no buyer present.");
+    expect(html).toContain("No person approved it.");
+  });
+
+  it("says a person approved it when one did", async () => {
+    await writeRows("trace_nobuyer_approved", [
+      ["intent", intent],
+      ["decision", { mandate_id: "mnd_test", kind: "STEP_UP", reason_code: "STEP_UP_FIRST_MERCHANT", amount_minor: "450", currency: "USD" }],
+      ["step_up_resolved", { mandate_id: "mnd_test", approval_id: "apr_1", verdict: "approve", revalidated_kind: "ALLOW", revalidated_reason: "OK" }],
+      ["outcome", { ...order, status: "captured", payment_id: "CAP9" }],
+    ]);
+    const { html } = await renderTracePage("trace_nobuyer_approved");
+    expect(html).toContain("Paid from the saved PayPal account, with no buyer present.");
+    expect(html).toContain("A person approved it in Praman before the charge.");
+    expect(html).not.toContain("No person approved it.");
+  });
+
+  it("does not call a checkout the buyer paid a no-buyer payment", async () => {
+    await writeCheckoutTrace("trace_checkout_paid", [
+      ["outcome", { mandate_id: "mnd_test", idempotency_key: "k_order", order_id: "PP1", rail: "paypal", status: "captured", payment_id: "CAP1", amount_minor: "1250", currency: "USD", capture_key: "k_cap" }],
+    ]);
+    expect((await loadTrace("trace_checkout_paid"))?.payment).not.toBe("saved_method");
+    expect((await renderTracePage("trace_checkout_paid")).html).not.toContain("no buyer present");
+  });
+});
+
+describe("loadTrace on an answer about different money", () => {
+  it("shows a rail mismatch as a failure, not as Allowed", async () => {
+    await writeRows("trace_mismatch", [
+      ["decision", { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "900", currency: "USD" }],
+      [
+        "outcome",
+        { mandate_id: "mnd_test", idempotency_key: "k_order", order_id: "VLT2", rail: "paypal", status: "mismatch", amount_minor: "900", currency: "USD", rail_status: "captured", rail_amount_minor: "400", rail_currency: "USD" },
+      ],
+    ]);
+    const view = await loadTrace("trace_mismatch");
+    expect(view).toMatchObject({ decisionKind: "RAIL_MISMATCH", orderStatus: "mismatch", amountMinor: "900" });
+    expect(view?.reasonCode).not.toBe("OK");
+    const { html } = await renderTracePage("trace_mismatch");
+    expect(html).toContain("Payment mismatch");
+    expect(html).toContain("$4.00");
+    expect(html).not.toContain("Allowed (mismatch)");
+  });
+});

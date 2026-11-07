@@ -46,6 +46,31 @@ function settlementHtml(settlement: SettlementLine | null): string {
   </section>`;
 }
 
+/**
+ * How the money moved, in words, when the ledger shows it. A charge to a saved PayPal
+ * account had nobody at PayPal, so the page says plainly whether anyone approved it.
+ */
+function paymentHtml(trace: { readonly payment: "saved_method" | "checkout" | null; readonly approvalVerdict: string | null; readonly orderStatus: string | null }): string {
+  if (trace.payment === "saved_method") {
+    const approval =
+      trace.approvalVerdict === "approve"
+        ? "A person approved it in Praman before the charge."
+        : "No person approved it. Praman's decision was the only check before the money moved.";
+    return `<section class="payment">
+    <h2>How it was paid</h2>
+    <p>Paid from the saved PayPal account, with no buyer present. PayPal took the money as it created the order, so there was no checkout page and no separate capture.</p>
+    <p>${escapeHtml(approval)}</p>
+  </section>`;
+  }
+  if (trace.payment === "checkout" && trace.orderStatus === "captured") {
+    return `<section class="payment">
+    <h2>How it was paid</h2>
+    <p>Paid at PayPal's checkout. The buyer approved it at PayPal, then Praman checked the mandate again and captured it.</p>
+  </section>`;
+  }
+  return "";
+}
+
 export async function renderTracePage(traceId: string): Promise<{ status: number; html: string }> {
   const trace = await loadTrace(traceId);
 
@@ -139,6 +164,8 @@ ${
        </section>`
     : ""
 }
+
+${paymentHtml(trace)}
 
 ${settlementHtml(trace.settlement)}
 
