@@ -139,6 +139,10 @@ pnpm receipt-ui                             # trace viewer on :4100
 
 In the injection cases this is where a reviewer can *see* the attack sitting inside a product description, next to the model's own reasoning about it.
 
+## Observability vs evidence
+
+With Langfuse keys set, the demo and the eval send each agent run to Langfuse, so a developer can see every model call, its tokens and latency, and the merchant text the model read. That trace is for debugging and is not evidence: it can be edited, expired or lost, and nothing in Praman reads it back into a decision, a prompt or a reported number. The ledger is the record, and it holds anything an audit could need, such as the hash of the system prompt that was active, plus a link to the Langfuse trace marked as non-evidentiary. Tests check that a run with no keys, or with a Langfuse host that is down, writes the same ledger rows in the same order ([D-47](docs/DECISIONS.md)).
+
 ## Merchant MCP server
 
 `apps/merchant-mcp` exposes one merchant's catalog (`list_catalog`, `get_sku`, `check_stock`, `get_refund_policy`) as an [MCP](https://modelcontextprotocol.io) server over stdio. Any MCP client can browse it — this is a protocol, not a private integration.
