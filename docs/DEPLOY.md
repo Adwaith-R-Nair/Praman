@@ -140,7 +140,7 @@ for i in 1 2 3 4 5 6 7 8; do curl -s -o /dev/null -w "%{http_code} " -X POST -H 
 
 The first five answer `303` and the rest `429`, even though each request claims a different address. Then, within ten minutes, open the demo on your phone over mobile data (not your Wi-Fi) and press **Start a session**. It must start.
 
-- If all eight answer `303`, Render passed the made-up header on without adding the address it saw, and no `TRUST_PROXY` value can fix that. Leave it at `1`. The per-address limit then only slows casual use, and the daily caps still hold (D-57).
+- If all eight answer `303`, Render passed the made-up header on without adding the address it saw, and no `TRUST_PROXY` value can fix that. Leave it at `1`. The per-address limit then only slows casual use, and the daily caps still hold (D-57, D-60).
 - If the phone also gets "Too many new demo sessions", the entry being read belongs to a Render proxy, shared by everyone. Set `TRUST_PROXY` to `2` in Render's Environment, let it redeploy, and run both checks again.
 
 ## When something goes wrong

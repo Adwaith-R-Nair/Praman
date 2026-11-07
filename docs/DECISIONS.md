@@ -2267,6 +2267,8 @@ judge and the demo.
 **Rejected: stopping the demo at the model cap.** A judge arriving that evening would see nothing work. A labelled recording
 shows the same thing Praman does, with the model's part marked as replayed.
 
+Status: the `X-Forwarded-For` bullet is replaced by D-60, which reads the address the proxy added, not the client's.
+
 ### D-58 · The server refuses to start rather than run with the wrong keys · Accepted
 
 An implementer's decision for the builder to check, made in plan Task 13 on 2026-11-08 (`ed17165`).
@@ -2335,3 +2337,27 @@ scripts that work as well as files.
 
 **Rejected: loading the fonts from this origin.** It would let `style-src` and `font-src` be `'self'` alone, at the cost of
 committing font files. Google's two hosts serve only CSS and fonts, which can't run script under this policy.
+
+### D-60 · Per-address limits read the address the proxy added · Accepted
+
+An implementer's decision, made on 2026-11-08 after a review of the Task 13 work found the per-address limits could be skipped
+with one header. It replaces D-57's `X-Forwarded-For` bullet.
+
+D-57 read the first, leftmost `X-Forwarded-For` entry. A client writes that entry itself, and a proxy that appends keeps it, so
+a script sending `X-Forwarded-For: 10.0.0.<i>` got a fresh limit on every request. A reviewer showed fifty new sessions from
+one client. Enough of those would use up the day's 200 sessions for everyone.
+
+**Decision: `TRUST_PROXY` is the number of proxies in front of the server that append the address they saw, and the limits
+read the entry that many places from the right.** Each proxy appends on the right, so that entry was written by the outermost
+proxy this server trusts, and no client can choose it. Render is `1`. With fewer entries than that, the leftmost is used. `0`
+or unset reads the socket's address, as local runs do. Anything but one digit stops the server at start (D-58).
+
+Nobody here has seen the header Render actually sends. If Render's own proxy appends a second, internal address, the rightmost
+entry would be the same for every visitor, and the limit would shut out everyone together. `docs/DEPLOY.md`'s smoke test
+checks both ways it could go wrong: eight requests with made-up addresses must hit the limit, and a phone on another network
+must still get in. If the phone is refused, `TRUST_PROXY=2` is the fix.
+
+**Rejected: `CF-Connecting-IP` or `True-Client-IP`.** Cloudflare sets them where it is in front, but nothing in Render's
+documentation that this repo relies on promises them, and where Cloudflare isn't in front a client can send them itself.
+
+**Rejected: a list of Render's proxy address ranges.** Not published in a form this repo could check, and it would go stale.
