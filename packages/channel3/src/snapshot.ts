@@ -56,8 +56,14 @@ export function skuFor(productId: string): string | null {
  * The second level of Channel3's taxonomy ("kitchen-dining", "office-supplies",
  * "audio"), which is specific enough for a mandate to name and broad enough to
  * group things. A product with only a top level uses that.
+ *
+ * The category is printed outside the untrusted wrapper (it is the value a
+ * mandate's categories are compared with), so it must be a plain slug and
+ * never free text. One slug in the path that isn't makes the whole path
+ * suspect, and the product gets no category.
  */
 export function categoryFor(path: readonly string[]): string | null {
+  if (!path.every((slug) => /^[a-z0-9-]{1,64}$/.test(slug))) return null;
   return path[1] ?? path[0] ?? null;
 }
 
@@ -100,7 +106,7 @@ export function toSnapshotRows(
     if (seen.has(sku)) continue;
     const category = categoryFor(p.category_path);
     if (category === null) {
-      skipped.push({ id: p.id, reason: "no category" });
+      skipped.push({ id: p.id, reason: "no category, or a category slug that isn't a plain lowercase slug" });
       continue;
     }
     const best = bestOffer(p.offers, currency);
