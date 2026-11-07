@@ -135,7 +135,7 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       }
 
       if (method === "GET" && path === "/demo") {
-        const html = renderDemoPage(session, recording);
+        const html = renderDemoPage(session, recording, configured);
         session.notice = null;
         send(res, 200, html);
         return;

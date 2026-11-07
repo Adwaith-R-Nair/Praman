@@ -605,6 +605,25 @@ describe("the demo's boundaries", () => {
     }
   });
 
+  it("every disabled button says why it is disabled", async () => {
+    const check = (page: string) => {
+      const disabled = [...page.matchAll(/<button[^>]*\sdisabled[^>]*aria-describedby="([^"]+)"/g)].map((m) => m[1] ?? "");
+      expect(page.match(/<button[^>]*\sdisabled/g)?.length ?? 0).toBe(disabled.length);
+      for (const id of disabled) expect(page).toMatch(new RegExp(`<p class="why" id="${id}">[^<]+</p>`));
+      return disabled.length;
+    };
+    const v = visitor();
+    await v.post("/demo/start");
+    const before = await v.page();
+    expect(check(before)).toBe(3);
+    expect(before).toContain("Connect PayPal in step 2 first.");
+    expect(before).toContain("Finish the first purchase first.");
+
+    await v.post("/demo/connect");
+    await v.get(`/demo/connect/return?approval_token_id=${SETUP_TOKEN}`);
+    expect(check(await v.page())).toBe(2);
+  });
+
   it("the start page sends the checkout to a different browser, not a new private window", async () => {
     const page = await visitor().page();
     expect(page).toContain("different browser");

@@ -251,6 +251,16 @@ code {
   cursor: not-allowed;
 }
 
+/* Says why the button beside it is off. Never a disabled button without one. */
+.why {
+  display: inline-block;
+  margin: 0 0 0 var(--s1);
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  font-style: italic;
+  vertical-align: middle;
+}
+
 .btn[aria-busy="true"] {
   opacity: 0.7;
   cursor: progress;

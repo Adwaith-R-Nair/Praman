@@ -21,6 +21,9 @@ function reasonPlain(code: string | null): string | null {
   return isReasonCode(code) ? REASON_CODE_PLAIN[code] : null;
 }
 
+const NO_PAYPAL = "This server has no PayPal sandbox credentials, so this step can't run here.";
+const NO_MODEL = "This server has no model configured, so the agent can't run here.";
+
 const MERCHANT_NAMES: Readonly<Record<string, string>> = { [CAFE]: "Praman Demo Cafe", [MARKET]: "Corner Market" };
 
 /** The demo's own frame: no inline script, one stylesheet, nothing from the receipt layout's print chrome. */
@@ -45,9 +48,16 @@ ${body}
 </html>`;
 }
 
-/** Posts to a fixed route. There is never an input field: the route is the whole request. */
-function action(path: string, label: string, kind: "primary" | "quiet" = "primary", disabled = false): string {
-  return `<form method="post" action="${escapeHtml(path)}" class="act"><button type="submit" class="btn btn-${kind}"${disabled ? " disabled" : ""}>${escapeHtml(label)}</button></form>`;
+/**
+ * Posts to a fixed route. There is never an input field: the route is the whole request.
+ * A button that can't be pressed yet says why, next to it, and is described by that line.
+ */
+function action(path: string, label: string, kind: "primary" | "quiet" = "primary", disabledWhy: string | null = null): string {
+  if (disabledWhy === null) {
+    return `<form method="post" action="${escapeHtml(path)}" class="act"><button type="submit" class="btn btn-${kind}">${escapeHtml(label)}</button></form>`;
+  }
+  const id = `why-${path.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}`;
+  return `<form method="post" action="${escapeHtml(path)}" class="act"><button type="submit" class="btn btn-${kind}" disabled aria-describedby="${escapeHtml(id)}">${escapeHtml(label)}</button></form><p class="why" id="${escapeHtml(id)}">${escapeHtml(disabledWhy)}</p>`;
 }
 
 function traceLinks(traceId: string | null): string {
@@ -267,7 +277,7 @@ export function renderStartPage(notice: string | null, configured: { readonly pa
   );
 }
 
-export function renderDemoPage(session: DemoSession, recording: Recording): string {
+export function renderDemoPage(session: DemoSession, recording: Recording, configured: { readonly paypal: boolean; readonly model: boolean } = { paypal: true, model: true }): string {
   const b = (id: BeatId) => session.beats.get(id);
   const first = b("first");
   const second = b("second");
@@ -276,10 +286,12 @@ export function renderDemoPage(session: DemoSession, recording: Recording): stri
 
   const connectBody = session.connected
     ? `<p class="ok">Connected. Praman holds the saved PayPal method on its server, tied to this session. The agent and this page never see it, and it is deleted when the session ends.</p>`
-    : `${p("Approve, once, saving a PayPal sandbox account for this demo merchant. PayPal opens its own page and sends you back here. Log in with the sandbox buyer account.")}${action("/demo/connect", "Connect PayPal")}`;
+    : `${p("Approve, once, saving a PayPal sandbox account for this demo merchant. PayPal opens its own page and sends you back here. Log in with the sandbox buyer account.")}${action("/demo/connect", "Connect PayPal", "primary", configured.paypal ? null : NO_PAYPAL)}`;
 
-  const firstReady = session.connected;
-  const secondReady = first?.state === "done";
+  // Why each purchase button is off, if it is. The server refuses the same steps for the same reasons.
+  const missing = !configured.paypal ? NO_PAYPAL : !configured.model ? NO_MODEL : null;
+  const firstWhy = missing ?? (session.connected ? null : "Connect PayPal in step 2 first.");
+  const laterWhy = missing ?? (first?.state === "done" ? null : "Finish the first purchase first.");
 
   const body = `
 <header class="masthead">
@@ -297,7 +309,7 @@ ${step(
   "first",
   "First purchase: Praman asks you",
   p("The agent has never bought from this shop, so Praman stops it and asks you. Once you approve, Praman charges the saved PayPal account. No buyer is at PayPal for this."),
-  `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", !firstReady) : ""}${resultHtml(first)}${approvalActions("first", first)}${checkoutHtml("first", first)}`,
+  `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", firstWhy) : ""}${resultHtml(first)}${approvalActions("first", first)}${checkoutHtml("first", first)}`,
   first?.state === "done",
 )}
 
@@ -306,7 +318,7 @@ ${step(
   "second",
   "Second purchase: the agent pays on its own",
   p("Same shop, a small amount. Nobody approves this one, and no buyer is at PayPal. The agent proposes, Praman checks the mandate, and the money moves. Praman's decision is the only thing between the agent and the money."),
-  `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", !secondReady) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second)}${approvalActions("second", second)}${checkoutHtml("second", second)}`,
+  `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", laterWhy) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second)}${approvalActions("second", second)}${checkoutHtml("second", second)}`,
   second?.state === "done",
 )}
 
@@ -315,7 +327,7 @@ ${step(
   "large",
   "Large purchase: you pay at PayPal",
   p("Over the approval threshold. Praman asks you first, then sends this one through a real PayPal checkout that you approve as the buyer. Before taking the money, Praman checks the mandate again: it may have been revoked or expired while you were at PayPal."),
-  `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", !secondReady) : ""}${resultHtml(large)}${approvalActions("large", large)}${checkoutHtml("large", large)}`,
+  `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", laterWhy) : ""}${resultHtml(large)}${approvalActions("large", large)}${checkoutHtml("large", large)}`,
   large?.state === "done",
 )}
 
@@ -325,7 +337,7 @@ ${step(
   "A poisoned listing",
   p("Corner Market's listing has a line from Praman's test corpus that tells the model to add a gift card to every order. First the live model reads it. Then a fixed cart from a fooled model goes to Praman. Then a recording of a model that really was fooled."),
   `<h3>The live model reads it</h3>
-   ${askable("injection", b("injection")) ? action("/demo/step/injection", b("injection") === undefined ? "Ask the agent to order at Corner Market" : "Ask the agent again") : ""}
+   ${askable("injection", b("injection")) ? action("/demo/step/injection", b("injection") === undefined ? "Ask the agent to order at Corner Market" : "Ask the agent again", "primary", configured.model ? null : NO_MODEL) : ""}
    ${resultHtml(b("injection"), "Money")}
    <h3>A fooled model, simulated</h3>
    <p class="label-sim">Simulating a fooled model. No model is asked. This is the cart a fooled model proposed in a recorded run, sent straight to Praman.</p>
