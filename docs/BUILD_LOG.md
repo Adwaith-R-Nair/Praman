@@ -2515,3 +2515,71 @@ points to D-41.
 
 **Still open, worth your look:** what PayPal shows while a capture is completing, and for how long, is still from its documentation,
 not seen live.
+
+### Phase P8 · 2026-11-08 · counting money that might have moved
+
+Until now, a purchase only counted against a mandate once its outcome was written in T2. While the call to the rail was in flight,
+the budget didn't know about it. This phase closes that window. Nothing in `packages/policy` changed, and `pnpm lint:policy-freeze`
+passes, though D-43 explains why that proves less than D-31 said.
+
+**Seeing the gap first.** The first commit, `5bd6d7b`, adds a `LatchedExecutor` that holds every rail call until the test lets go,
+and a test that starts 20 intents of ₹1,000 at once under a ₹5,000 mandate. It was committed failing on purpose, as the evidence,
+so it is the one commit in this phase made with `pnpm test` red. The result: all 20 got `ALLOW` and created ₹20,000 of orders, four
+times the budget. D-22 had called this "a slightly understated budget" and "one API call wide". Both undersold it. The window was as
+long as the call when the rail answered (PayPal sandbox creates took 732 to 2036 ms, median 771 ms, over 8 calls I timed today), and
+had no end at all when the call failed, until someone ran `pnpm reconcile`.
+
+**The fix.** `deriveState` now treats an `api_call` marked `attempted`, with no outcome yet, as reserved: it counts toward the
+budget and the rate limit, but doesn't make the merchant trusted, since the order may not exist. Any outcome, even `failed`, answers
+the attempt. A capture's `api_call` doesn't reserve anything, because its order is already counted. Old `api_call` rows don't carry
+a key, so they're paired with outcomes by trace id instead. After the fix the same test creates 5 orders and refuses 15 with
+`MANDATE_BUDGET_EXHAUSTED`.
+
+**Walking one purchase through.** A ₹50 order on a mandate that has already spent ₹10. Each row is what `deriveState` returns at
+that point.
+
+| Point | Ledger rows for this order | `spent_minor` | Velocity | Merchant trusted by it |
+|---|---|---|---|---|
+| T1 committed | `api_call` attempted | ₹60, ₹50 of it reserved | +1, at T1's time | no |
+| Rail returned, T2 not yet run | same | ₹60 | same | no |
+| Crash before T2 | same, record pending | ₹60, held until a sweep | same | no |
+| Reconciler found no order | + `failed` outcome | ₹10 | slot freed | no |
+| Reconciler found a created order | + `created` outcome | ₹60, now an order | +1, at the sweep's time | yes |
+
+The fourth row is checked end to end in `reconcile.test.ts`: ₹60 while pending, ₹10 after the sweep finds nothing.
+
+**The reconciler now takes the mandate lock.** For order records it wrote its outcome without the lock that T1 and T2 use, and
+without checking the record was still pending. A late T2 and a sweep could both write an outcome for the same call. It now takes the
+lock, re-reads the record, and writes only if it is still pending. A test holds the lock as a late T2 would, and failed before the
+fix with the sweep writing a second outcome. This closes D-22 residual 4.
+
+**One thing that changes on your dev database.** It has one Razorpay record pending since 2026-09-19, for ₹50. That attempt now holds
+₹50 of its mandate's budget until it is reconciled. I haven't run the sweep against it, for the same reason as in P7: it would ask
+Razorpay test mode, and that's your call.
+
+**I broke the done-check rule once, and fixed it.** `4b34300`, the reservation fix, landed with `pnpm typecheck` failing: a test
+helper typed an event type as a plain string. Tests were green. My command piped `pnpm typecheck` into `tail`, and a pipe reports
+`tail`'s exit code, so the chain carried on to the commit. It's the same mistake that let `19a5ee2` land broken. I fixed it in
+`d401160` and ran every later check from a script with `set -o pipefail`, which stops on the first failure.
+
+**Decisions.** D-42, attempted calls reserve budget, with the measurements above. D-43, what the policy freeze proves: that no
+file in `packages/policy` changed, not that `evaluate()` decides the same things, since what it decides from (`deriveState`'s
+numbers, the catalog, the mandate) is built outside the package. This phase is an example. Purchases `evaluate()` used to allow
+are now refused, and its code didn't change. D-22 and D-31 have `Status:` pointers. The README's known gap is corrected, and
+`MANDATE_SPEC.md` describes reserved attempts.
+
+**Tests.** 531, up from 517. Ten new `deriveState` tests, two concurrency tests and two reconciler tests. No test was weakened or
+removed. The reconciler lock test failed before its fix. Of the `deriveState` tests, four failed before the fix; the other six guard
+cases that were already right, like a failed outcome freeing nothing, and passed from the start.
+
+**Where I went beyond or away from the plan, worth checking:**
+
+- The concurrent test gained stronger checks in the fix commit: exactly 5 orders and 15 named refusals, so it can't pass by refusing
+  everything. The red commit only had the plan's "at most" checks. A second case, where velocity is the limit, creates exactly 8.
+- An `api_call` with an `operation` the code doesn't recognise reserves. That fails closed. Only `orders.capture` is skipped.
+- The plan's "carry idempotency key and merchant on api_call events" was already done in Task 5 (`8c56808`), and `pnpm reconcile`
+  in Task 7, so neither needed a commit here.
+- `LatchedExecutor` holds `findOrder` and `capture` as well as `createOrder`, so it can be reused for the reconciler and capture.
+
+**Still open, worth your look:** nothing schedules `pnpm reconcile`, so a stuck attempt holds budget until someone runs it. T2 still
+doesn't check that its record is pending before writing. D-42 explains why that can't overspend.
