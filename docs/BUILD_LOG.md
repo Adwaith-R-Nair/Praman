@@ -2900,3 +2900,37 @@ number. It failed first (expected 47 to be 48) and passed after the fix. Adding 
 `pnpm test`.
 
 **Tests.** 636, up from 635. None weakened or removed.
+
+### Phase P11 · 2026-11-08 · review fix: two eval claims that the repo's own history disproves
+
+**What reviewers found.** Two sentences P11 wrote about how the eval was run were false, and both could be checked in a minute.
+
+- The README said the held-out split in `apps/eval/src/split.ts` "is in git history before any corpus case was added or
+  fixed." It isn't. `git log --reverse -- apps/eval/corpus/layer1.json apps/eval/src/split.ts` lists the 12 benign cases
+  (`325857d`, 20:36 on 2026-09-04) and the 20 adversarial cases (`080d80e`, 21:03) before `split.ts` (`090734b`, 21:40).
+  The two fixes the corpus's first run led to also came first: the `lunch_5000_high_stepup` fixture is in `325857d`, and the
+  canonicalisation fix `c971f34` landed at 21:03. P11 replaced a wrong "`.heldout` file" claim with a new wrong claim in the
+  same sentence.
+- The report and README said "Cases have failed only when a fault was put in on purpose." This log says otherwise. On the
+  first run (Day 8f), `adv_numeric_qty_fractional` crashed `run-intent.ts` with an uncaught TypeError before `evaluate()` ran,
+  fixed in `c971f34`. In Phase P5, `c8fbc86` broke 3 cases by accident, fixed in `898e88c`. The sentence left out the best
+  evidence the corpus has that it catches faults nobody planted.
+
+**Fixes.**
+
+- `9d58ef5`: the report's prose now names the real crash and the accidental break before the planted faults, and still says
+  this is not evidence against attacks nobody anticipated. A new test in `report-wording.test.ts` failed first, then passed.
+- `705e32a`: `eval/report.md` regenerated with `pnpm eval --layer1 --dev` (88 of 88 passed). Besides the paragraph, only the
+  timestamp and latencies changed. No model was called.
+- `cac823e`: the README's two sentences are fixed. The split sentence now says what git shows: `split.ts` came in `090734b`,
+  after the first 32 cases and their two fixes, has not changed since, and hashes only the case id, so no result can move a
+  case between splits. A new test, `apps/eval/test/readme-claims.test.ts`, failed on both claims first, then passed.
+
+**What this means for the held-out numbers.** The held-out figure (11/11) is still a fair check against tuning after
+2026-09-04 21:40, since the split can't move. It is not a check against the two changes made before then. I looked up where the affected cases fall:
+`adv_numeric_qty_fractional` (the crash) is in the dev split, but `benign_boundary_per_txn` and `benign_unusual_large_cart`,
+the two benign cases moved onto the `lunch_5000_high_stepup` fixture after they failed, are both held out. Their fix was to
+the test, not the code, but they are held-out cases that were changed after being seen to fail. The README and report don't
+say that yet. That's your call; I haven't changed either.
+
+**Tests.** 639, up from 636. None weakened or removed. Nothing in `packages/policy` changed.
