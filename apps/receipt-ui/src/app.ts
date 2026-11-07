@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { buildBundleStandalone } from "@praman/dispute";
 import { ASSETS } from "./assets.js";
+import { countTraces } from "./data.js";
 import { clientIp, LIMITS, RateLimiter } from "./demo/limits.js";
 import { renderIndexPage } from "./pages/index.js";
 import { renderTracePage } from "./pages/trace.js";
@@ -162,6 +163,13 @@ export function createApp(deps: AppDeps): Handler {
       }
 
       if (url.pathname === "/") {
+        // The index never lists demo visitors' traces, so on a fresh hosted database it
+        // would always be empty. A visitor there is sent to the demo instead.
+        if ((await countTraces()) === 0) {
+          res.writeHead(302, { Location: "/demo" });
+          res.end();
+          return;
+        }
         // Rendered before the status goes out, so a failure here is still a 500 page.
         const html = await renderIndexPage();
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });

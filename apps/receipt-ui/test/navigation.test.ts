@@ -1,6 +1,10 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@praman/db";
 import { append, type EventType } from "@praman/ledger";
+import { createApp } from "../src/app.js";
 import { countTraces, listRecentTraceIds } from "../src/data.js";
 import { renderIndexPage } from "../src/pages/index.js";
 import { renderTracePage } from "../src/pages/trace.js";
@@ -62,6 +66,51 @@ describe("the index of recent traces", () => {
   it("links to the demo even when it has no traces to list", async () => {
     await writeTrace("trc_cafe", "DEMO_CAFE");
     expect(await renderIndexPage()).toContain('href="/demo"');
+  });
+  it("with nothing to list, speaks to a visitor and gives no developer command", async () => {
+    await writeTrace("trc_cafe", "DEMO_CAFE");
+    const html = await renderIndexPage();
+    expect(html).not.toContain("pnpm");
+    expect(html).not.toContain("No traces yet");
+    expect(html).toMatch(/<h1[^>]*>[^<]*<a href="\/demo">/);
+  });
+});
+
+describe("the site root", () => {
+  async function getRoot(): Promise<Response> {
+    const app = createApp({
+      demo: null,
+      webhooks: { webhookId: null, verify: async () => false, apply: async () => ({ kind: "ignored", reason: "test" }) as never, now: () => new Date() },
+      hsts: false,
+      trustProxy: false,
+      onDemoRequest: () => {},
+      log: () => {},
+    });
+    const server = createServer((req, res) => {
+      void app(req, res);
+    });
+    server.listen(0);
+    await once(server, "listening");
+    try {
+      return await fetch(`http://127.0.0.1:${String((server.address() as AddressInfo).port)}/`, { redirect: "manual" });
+    } finally {
+      server.close();
+    }
+  }
+
+  it("sends a visitor to the demo when there are no traces to list, as on a fresh hosted database", async () => {
+    await writeTrace("trc_cafe", "DEMO_CAFE");
+    const res = await getRoot();
+    await res.text();
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/demo");
+  });
+
+  it("shows the index when there are traces to list", async () => {
+    await writeTrace("trc_real", "MERCHANT_FOOD_01");
+    const res = await getRoot();
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("trc_real");
   });
 });
 

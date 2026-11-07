@@ -24,7 +24,12 @@ export async function renderIndexPage(): Promise<string> {
   const traceIds = await listRecentTraceIds(RECENT_LIMIT);
 
   if (traceIds.length === 0) {
-    return layout("Recent traces", `<h1 class="decision">No traces yet</h1><p>Run <code>pnpm demo</code> to create one.</p>${DEMO_LINK}`);
+    // The server sends a visitor to /demo before this page is reached; this copy is for
+    // anything that renders it directly.
+    return layout(
+      "Recent traces",
+      `<h1 class="decision"><a href="/demo">Start the demo</a></h1><p>There are no purchases outside the demo to list yet. In the demo an agent buys from sandbox merchants through PayPal, and each step links to its own trace.</p>`,
+    );
   }
 
   // One global walk, reused for every row — verifyChain() checks the whole
