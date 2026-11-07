@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { connect, type AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // Every database call fails, the way it would with the database asleep or gone, and the
@@ -87,6 +87,32 @@ describe("the public server", () => {
       expect(res.status, path).not.toBe(200);
       expect(await res.text(), path).not.toContain("import");
     }
+  });
+
+  it("answers a request target URL can't parse with a 400, and keeps serving", async () => {
+    const { port } = server.address() as AddressInfo;
+    // Raw requests, because fetch would refuse to send these targets at all.
+    const raw = (target: string) =>
+      new Promise<string>((resolve) => {
+        const socket = connect(port, "127.0.0.1");
+        let reply = "";
+        const timer = setTimeout(() => socket.destroy(), 2000);
+        socket.on("data", (chunk: Buffer) => {
+          reply += chunk.toString("utf8");
+        });
+        socket.on("close", () => {
+          clearTimeout(timer);
+          resolve(reply);
+        });
+        socket.write(`GET ${target} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`);
+      });
+    for (const target of ["//[", "//a:b@[x]", "http://[/"]) {
+      const reply = await raw(target);
+      expect(reply, target).toMatch(/^HTTP\/1\.1 400 /);
+      expect(reply, target).toContain(CONTENT_SECURITY_POLICY);
+      expect(reply, target).not.toContain("Invalid URL");
+    }
+    expect((await fetch(`${base}/healthz`)).status).toBe(200);
   });
 
   it("refuses a method a read-only route doesn't take", async () => {

@@ -83,7 +83,14 @@ export function createApp(deps: AppDeps): Handler {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     if (deps.hsts) res.setHeader("Strict-Transport-Security", "max-age=31536000");
 
-    const url = new URL(req.url ?? "/", "http://localhost");
+    // A request target URL can't parse is the client's mistake. Thrown here, outside the
+    // try below, it would reject the handler's promise and stop the whole process.
+    const parsed = URL.canParse(req.url ?? "/", "http://localhost") ? new URL(req.url ?? "/", "http://localhost") : null;
+    if (parsed === null) {
+      text(res, 400, "Bad request");
+      return;
+    }
+    const url = parsed;
     const method = req.method ?? "GET";
     const traceMatch = /^\/r\/([^/]+)\/?$/.exec(url.pathname);
     const verifyMatch = /^\/verify\/([^/]+)\/?$/.exec(url.pathname);

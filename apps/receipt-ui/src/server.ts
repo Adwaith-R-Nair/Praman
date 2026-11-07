@@ -66,8 +66,14 @@ const app = createApp({
   log: (line) => console.error(line),
 });
 
+// The app answers its own errors. Anything that still escapes it is logged and the one
+// request is ended, so a single bad request can never stop the process for everyone.
 const server = createServer((req, res) => {
-  void app(req, res);
+  app(req, res).catch((err: unknown) => {
+    console.error(`receipt-ui: request failed outside the app: ${err instanceof Error ? err.name : "unknown error"}`);
+    if (!res.headersSent) res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end();
+  });
 });
 
 server.listen(PORT, () => {
