@@ -1775,3 +1775,68 @@ close to its record's creation.
 
 **Still unverified live.** The sweep's resend relies on PayPal answering a repeated `PayPal-Request-Id` with the first answer, as D-41
 already does. No capture has been made on the sandbox yet.
+
+### D-47 · Langfuse is a lens, the ledger is the record · Accepted
+
+Drafted as Appendix A of `docs/ROADMAP_PHASE2.md` and revised on 2026-11-08 to match what was built. The hosting default, the
+3-second flush limit and the score ids are an implementer's choices for the builder to check.
+
+**Decision.** Langfuse traces the buyer agent's model calls, tool calls and eval runs so a developer can look at them. It is not
+evidence, it has no part in authorisation, and nothing in Praman reads data back out of it.
+
+**Why two systems, not one.** They answer different questions for different people.
+
+| | Ledger | Langfuse |
+|---|---|---|
+| Question it answers | Was this money action authorised, and can that be shown later? | Why did the model propose this, and where did the time and tokens go? |
+| Who reads it | Dispute officer, auditor, risk team | Developer debugging or tuning the agent |
+| Can it change | No. Append-only triggers on `ledger_entry` | Yes. Traces can be edited, deleted and expired |
+| Is it complete | Every intent has its decision, and every call attempt is written before the call (D-22, D-42) | No. Export is best effort and in batches, and drops data when the host is down |
+| Can a reader check it | Hash chain and Merkle checkpoints, checked by `pnpm verify-ledger`. Roots are not anchored outside yet | No |
+| Who runs it | Us, inside the trust boundary | A separate service, by default a third party |
+
+A system with Langfuse's properties can't carry the ledger's guarantees, and filling a tamper-evident record with debugging
+telemetry would make it bigger without making it more trustworthy.
+
+**Rules, and what holds each one.**
+
+1. Authority flows one way. The control plane writes the ledger. Instrumentation copies agent-side activity to Langfuse. No
+   decision, prompt, reported metric or verification reads from Langfuse.
+2. Langfuse starts only in entrypoints: `apps/buyer-agent/src/demo.ts`, `apps/eval/src/cli.ts` and `apps/eval/src/ablation-cli.ts`,
+   through `startTracing()` in `apps/buyer-agent/src/tracing.ts`. `pnpm lint:boundary` fails if `packages/policy`, `ledger`,
+   `exec-core`, `razorpay-exec` or `paypal-exec` imports `@langfuse/` or `@opentelemetry/`.
+3. If an audit could need a fact, it goes in the ledger even when Langfuse also has it. The system prompt's sha256 and the ablation
+   flags are on the `agent_transcript` row for that reason (`864105a`).
+4. The ledger may hold a pointer to a Langfuse trace, `observability.langfuse_trace_id` on `agent_transcript`, and it is marked
+   non-evidentiary. It asserts nothing. A broken pointer changes nothing in verification.
+5. Losing Langfuse is harmless. With no keys nothing starts. With a host that refuses connections or never answers, the run writes
+   the same ledger rows in the same order, and stopping waits 3 seconds at most before the process exits. Tests in
+   `apps/eval/test/tracing-inert.test.ts` (`7b77b16`) check all three cases against the demo's own path.
+6. Mandate limits don't go to Langfuse. The `run-intent` span's output is the agent-visible decision plus the reason code, never
+   `Decision.detail`, which quotes limits.
+7. Langfuse data never goes back into a prompt. It holds injected merchant text, the same reason `agent_transcript` is evidence and
+   never context.
+8. Numbers in the report are computed here. Token spend is summed from each provider response's own `usage` (`d2b563d`). The
+   `influenced` and `money_moved` scores sent to Langfuse are copies of the runner's result (`0f420bc`), sent under a fixed id per
+   trace so a resend updates rather than duplicates.
+
+**Hosting.** The code defaults to Langfuse Cloud (`LANGFUSE_BASE_URL` in `.env.example`). Self-hosting needs only that variable
+changed. No compose file for it was added. With keys set, these leave the machine: the system prompt, every model input and output
+(merchant text included, inside its delimiters), tool results, the proposed cart and its rationale, the intent, the agent-visible
+decision and reason code, token counts, `praman_trace_id`, eval tags (case id, arm, repeat, git SHA) and the two scores. Mandate
+limits, `Decision.detail` and keys do not. Test mode makes this acceptable. Traces are not linked from anything public.
+
+**Rejected.**
+
+- *Langfuse as the audit trail.* It can't be checked or shown complete, and it can change. It fails every row in the ledger column.
+- *Prompt Management at runtime.* The defence prompt is a security control. Served from a store that can change without a commit or
+  review, a trace's provenance would depend on that store's history. Prompts stay in git.
+- *LLM-as-judge scores on reported numbers.* D-02's objection holds: a scorer that isn't deterministic can't be regression-tested,
+  and it would send injected merchant text to one more model. `influenced` stays a set comparison.
+- *Spans inside the money-path packages.* The boundary check forbids it.
+
+**Not built.** The Langfuse `mask` hook as a second guard on rule 6. Spans inside `packages/control-plane`, the roadmap's stretch
+item. The eval entrypoints don't wrap their provider in `TracedProvider`, so eval traces show tool calls and tags but no model calls.
+
+**Consequence.** Two systems record overlapping activity, and a reader has to know which one to trust for what. The README's
+"Observability vs evidence" section says which.
