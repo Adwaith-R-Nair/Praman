@@ -2614,3 +2614,95 @@ create with the same request id and gets back the existing order. The README now
 **Worth your look:** I chose to fix the code and the wording, not only the wording. The reviewer's own reproduction uses a test
 double with no timeout, so it still overspends if the latch is held past 60 s. That's expected: the bound lives in each live
 executor, and D-44 says so.
+
+### Phase P9 · 2026-11-08 · PayPal webhooks
+
+PayPal can now tell Praman what happened to a capture, through `POST /webhooks/paypal` on the receipt UI. **No real PayPal webhook
+has reached this code.** Nothing is hosted, so PayPal has no URL to send to, and the Task 0 spike never received one either. Every
+test here uses synthetic events I wrote from PayPal's published schemas. They live in `packages/paypal-exec/test/fixtures/`, every
+file name starts with `synthetic-`, every id says `SYNTHETIC` or `SYNTH`, and the folder's README names the two schema files they
+came from. Nothing in `packages/policy` changed, and `pnpm lint:policy-freeze` passes.
+
+**Owed after hosting:** register a sandbox webhook pointing at the hosted URL, put its id in `PAYPAL_WEBHOOK_ID`, complete a real
+sandbox capture, and check that the delivery verifies with PayPal and lands as one settlement on the right trace. Then add the real
+delivery as a fixture, named as real. `.env` has no `PAYPAL_WEBHOOK_ID` today, so the endpoint answers 503 until then. I checked
+that on a local server: GET gets 405, a POST gets 503, a 70 KB body gets 413.
+
+**How a delivery is handled, in order.**
+
+1. **Check it came from PayPal.** The raw request bytes go to PayPal's `verify-webhook-signature` API, together with the five
+   `paypal-*` headers and our webhook id. The bytes are spliced into that request as they arrived, not parsed and written out again,
+   because PayPal signs the exact bytes and a re-written copy can differ. The only thing checked first is that the body is one JSON
+   object. Without that, a body like `{"id":"x"}, "webhook_id":"SOMEONE_ELSES"` could add its own keys to our request.
+2. **Keep ids, drop text.** Only the event id, capture id, order id, amount and currency come out, each checked against a narrow
+   pattern. PayPal's summary, custom id and notes are never read, so none of that text can reach the ledger, a page or a prompt.
+3. **Find the order.** By order id on the ledger's `created` rows for PayPal, and by invoice id when PayPal echoes one, since Praman
+   sets it to the order's receipt. No match: logged, nothing written, 200.
+4. **Write it down once.** Under the mandate lock, one `settlement` row per event, deduplicated on the event id and on the payment
+   id with its status. If the webhook tells the ledger something new, an `outcome` row follows. D-45 has the table of cases.
+
+**Walking one capture through.** A $12.50 order. Rows are on the order's key, oldest first.
+
+| What happens | Ledger rows added | Capture record | Budget |
+|---|---|---|---|
+| Praman captures, T2 records it, then the webhook arrives | `settlement` | succeeded, by T2 | $12.50, counted once |
+| The same webhook arrives again | nothing, answered `duplicate` | unchanged | unchanged |
+| Capture call times out, then the webhook arrives | `settlement`, `captured` by `webhook` | succeeded, by the webhook | $12.50 |
+| Webhook arrives while Praman's own call is still out, then T2 | `settlement`, `captured`; T2 writes nothing | succeeded, by the webhook | $12.50 |
+| Order released after 10 minutes, then PayPal reports a capture | `settlement`, `captured` | none | back up to $12.50 |
+| PayPal declines the capture Praman sent | `settlement`, `failed` `PAYPAL_CAPTURE_DECLINED` | failed | $12.50 still held |
+| Signature doesn't verify | nothing, answered 400 | unchanged | unchanged |
+| PayPal can't be reached to verify | nothing, answered 503 so PayPal sends it again | unchanged | unchanged |
+
+**A bug fixed on the way.** `captureOrder`'s T2 wrote its outcome without checking the capture record was still pending. A
+reconcile sweep could already resolve a capture while its call was out, and T2 would then add a second `captured` row for one
+payment. Webhooks make that ordering more likely, since nothing stops a webhook arriving before the API answer does. The test
+(`c0bb114`) holds the capture call, lets the sweep resolve the record, then lets the call finish. It failed before the fix with
+`created, captured, captured`. T2 now writes nothing in that case and returns what was already recorded.
+
+**The sweep stays.** A webhook can be late, lost or never sent. `pnpm reconcile` still settles every record a webhook doesn't. A
+webhook can only move a record from pending to resolved, and only with PayPal's verified word.
+
+**What this closes, and what it doesn't.** P7 left open a capture that happened at PayPal but never reached the ledger, such as one
+on an order Praman had released. A completed webhook now records it, and its budget counts again. D-44's Razorpay gap stays open:
+Razorpay webhooks are out of scope in the design, so nothing reads back a create Razorpay finished after we stopped waiting.
+
+**Commits.**
+
+- `c0bb114` fix: a late capture T2 writes nothing if its record was already resolved.
+- `9d5890b` feat: verification and parsing in `paypal-exec`, the `SettlementEvent` type in `exec-core`, and the synthetic fixtures.
+- `edd3e6f` feat: `applySettlement` in the control plane.
+- `8bf61af` feat: the HTTP endpoint, `PAYPAL_WEBHOOK_ID` in `.env.example`.
+- `bb05083` feat: a settlement line on the trace page, every value escaped.
+- `282fa7a` docs: D-45, with a `Status:` pointer on D-44.
+- `990969b` docs: the `settlement` row in `MANDATE_SPEC.md`, and a README known gap.
+
+**Tests.** 594, up from 535. New: 31 for verification and parsing, 11 for settlements, 12 for the endpoint, 4 for the trace page
+line, and 1 for the late T2. Each file was written before its code and seen failing. No test was weakened or removed. To check the
+settlement tests aren't hollow I broke the code four ways: dropping the dedupe, dropping the record resolution, recording a capture
+only when a record is pending, and dropping the mandate lock. The first three turned the right tests red. Dropping the lock did
+not, even with 8 deliveries at once, because the deliveries didn't happen to interleave. So I added a test that holds the mandate
+lock the way a second delivery would, as P8's reconciler test does. It fails without the lock and passes with it.
+
+**Where I went beyond or away from the plan, worth checking:**
+
+- The plan expected fixtures recorded from real sandbox deliveries in Task 0. None exist, so they are synthetic, as above.
+- `verifyPayPalWebhook` takes `{ client }` as its deps, a PayPal client the server makes once, so the OAuth token is reused across
+  deliveries. `applySettlement` matches the plan's shape.
+- Verification and parsing got their own test file, `packages/paypal-exec/test/webhook.test.ts`, beside the two the plan named.
+- Dedupe is on the payment id and status as well as the event id, so a resend under a new event id can't add a second row.
+- A declined capture writes a `failed` outcome only when it resolves a pending record. Otherwise it is a settlement row alone.
+- The test helper that holds a capture call moved to `packages/control-plane/test/support/held-capture.ts`, so two files share it.
+- Three commits touch more than three files. `9d5890b` has 10: the new source, its test, three fixtures and their README, the event
+  type in `exec-core`, the client's raw-body option, the exported sandbox check, and the index. `edd3e6f` has 5 and `8bf61af` has 6,
+  each the source, its test, an export or the wiring, and for the endpoint the lockfile and package.json for its new dependencies.
+- The plan's single commit, `feat: settle paypal payments from verified webhooks`, is the endpoint commit. The rest are split by layer.
+
+**Still open, worth your look:**
+
+- A real delivery, as above.
+- The dispute bundle doesn't include settlement rows in its summary yet. They are in its raw entries.
+- The server's catch-all still answers 500 with the error's text. The webhook handler returns fixed text, so the webhook route
+  only reaches the catch-all if reading the request itself fails. The trace and dispute routes reach it on any error.
+- Verification needs PayPal up. If it's down the delivery gets 503 and PayPal retries, but PayPal stops retrying after a few days,
+  and the sweep then has to settle it.
