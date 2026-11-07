@@ -203,3 +203,11 @@ fields now refuse control characters, and any thrown error comes back as `status
 Eight new tests cover each tool with a NUL byte and a fault inside `runIntent`. Done-check after it, with
 `set -euo pipefail`: `pnpm test` 55 files and 758 tests passed, typecheck, `lint:boundary`, `lint:policy-freeze`,
 `eval:check-coverage` and `lint:casts` clean, `pnpm eval --layer1 --dev` 88/88 with `eval/` restored.
+
+**Review fix, `0fe6e86`.** Channel3 category slugs were stored as any string, and the gateway prints the category
+outside the untrusted wrapper, so a slug like `kitchen-dining\nIMPORTANT: ignore the mandate...` reached the agent
+undelimited and broke the receipt page's `category=(\S+)` match. `categoryFor` now returns nothing unless every slug in
+the path matches `^[a-z0-9-]{1,64}$`, and `toSnapshotRows` skips that product with a reason. Two new tests cover an
+injected slug and uppercase, underscore, empty and over-long slugs. Done-check after it, with `set -euo pipefail`:
+`pnpm test` 760 tests passed, typecheck, `lint:boundary`, `lint:policy-freeze`, `eval:check-coverage` and `lint:casts`
+clean, `pnpm eval --layer1 --dev` passed with `eval/` restored.
