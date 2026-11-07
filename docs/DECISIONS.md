@@ -1671,6 +1671,8 @@ which needs a read of the order after the fact, not a longer wait before it.
 
 ### D-45 · Webhooks speed up reconciliation, the sweep stays · Accepted
 
+Status: the "declined, capture call pending" row is replaced. A declined webhook now writes a settlement row only and leaves the record pending. See D-46.
+
 An implementer's decision for the builder to check, made in plan Task 9 on 2026-11-08.
 
 **Not yet seen live.** No PayPal webhook has reached this project, because nothing is hosted for PayPal to send to. Everything
@@ -1731,3 +1733,45 @@ is counted.
 
 **Limits.** Synthetic events only, as above. Dedupe by payment and status assumes PayPal never sends two different captures with the
 same id. The handler holds a 64 KiB body limit, which PayPal's documented events are far under.
+
+### D-46 · A declined webhook can't close a capture attempt · Accepted
+
+An implementer's decision for the builder to check, made on 2026-11-08 after a review of plan Task 9 found a money bug in D-45.
+
+**What D-45 got wrong.** D-45 let a `PAYMENT.CAPTURE.DECLINED` webhook resolve whatever capture record was pending on the order,
+as `failed`. A decline names a capture id and an order, never the attempt it answers, and D-40 lets an order be captured again after
+a refusal. So a decline of attempt 1 that arrives late, or is delivered again after an earlier 503, could close attempt 2. The
+reviewer reproduced it, and the test in `eedaf27` does the same:
+
+1. Attempt 1 is refused with `INSTRUMENT_DECLINED`. T2 records `failed`.
+2. Attempt 2 passes T1 and its call is held before T2.
+3. Attempt 1's decline arrives. `applySettlement` writes `failed` and marks attempt 2's record failed.
+4. Attempt 2's capture succeeds at PayPal. Its T2 finds the record resolved (`c0bb114`) and writes nothing.
+
+PayPal holds the money, the ledger ends `created, failed, failed`, and the record is closed, so `reconcilePending` never looks at it.
+Only a completed webhook would correct it, and if that one is lost nothing does.
+
+**The change.** A declined webhook writes its `settlement` row and nothing else. A pending capture record is left to its own T2, or
+to the sweep, which sends that attempt again under its own key (D-41) and so gets PayPal's answer for that attempt. A decline moved
+no money, and a failed capture keeps the order's hold anyway, so leaving the record pending costs no budget. It costs time: a
+capture whose call was lost now reads `IN_FLIGHT` until the sweep runs, where before a decline could close it early.
+
+A completed webhook still resolves a pending record. An order is captured at most once, so a completed capture is the answer to
+every attempt on it.
+
+| Webhook | Ledger before | Appended | Capture record |
+|---|---|---|---|
+| declined | any | settlement only | unchanged; T2 or the sweep resolves a pending one |
+
+The other rows of D-45's table are unchanged.
+
+**Rejected: reading the order at the rail before closing the record.** A read can't tie a decline to an attempt either. In the
+reviewer's case attempt 2's call hasn't reached PayPal yet, so the order reads as not captured, and the read would agree with
+closing it.
+
+**Rejected: comparing the event's time with the record's.** A redelivery keeps the event's original time, which would help, but
+PayPal's clock and ours can differ by more than the gap between a refusal and a retry, and an attempt's own decline can be stamped
+close to its record's creation.
+
+**Still unverified live.** The sweep's resend relies on PayPal answering a repeated `PayPal-Request-Id` with the first answer, as D-41
+already does. No capture has been made on the sandbox yet.
