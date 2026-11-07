@@ -74,6 +74,32 @@ function asString(v: unknown): string | null {
 }
 
 /**
+ * The same reading as apps/receipt-ui/src/data.ts, kept as a copy like the parser
+ * below. An order's first outcome is the order and its amount, its last is where it
+ * stands (D-40). A capture refused after the last outcome is the answer that stands,
+ * and only a proven holder's refusal counts (D-25).
+ */
+function finalState(entries: readonly LedgerEntryRecord[]): {
+  first: Record<string, unknown> | null;
+  last: Record<string, unknown> | null;
+  captureRefusal: LedgerEntryRecord | null;
+} {
+  const outcomes = entries.filter((e) => e.eventType === "outcome");
+  const lastOutcome = outcomes.at(-1);
+  const decisions = entries.filter((e) => e.eventType === "capture_decision" && typeof (e.payload as Record<string, unknown>)["mandate_id"] === "string");
+  const lastDecision = decisions.at(-1);
+  const stands =
+    lastDecision !== undefined &&
+    (lastOutcome === undefined || lastDecision.seq > lastOutcome.seq) &&
+    (lastDecision.payload as Record<string, unknown>)["kind"] === "DENY";
+  return {
+    first: outcomes[0] ? (outcomes[0].payload as Record<string, unknown>) : null,
+    last: lastOutcome ? (lastOutcome.payload as Record<string, unknown>) : null,
+    captureRefusal: stands ? lastDecision : null,
+  };
+}
+
+/**
  * Same tool-output format runTool() (apps/buyer-agent/src/agent.ts)
  * produces, parsed back into per-SKU records — duplicated from
  * apps/receipt-ui/src/data.ts's parseMerchantReads() rather than shared,
@@ -113,13 +139,16 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
 
   const intent = payloadOf(entries, "intent");
   const decision = payloadOf(entries, "decision");
-  const outcome = payloadOf(entries, "outcome");
+  const { first: outcome, last: latestOutcome, captureRefusal } = finalState(entries);
   const stepUpResolved = payloadOf(entries, "step_up_resolved");
   const transcriptPayload = payloadOf(entries, "agent_transcript");
 
   let decisionKind = asString(decision?.["kind"]);
   let reasonCode = asString(decision?.["reason_code"]);
-  if (outcome) {
+  if (outcome && captureRefusal) {
+    decisionKind = "DENY";
+    reasonCode = asString((captureRefusal.payload as Record<string, unknown>)["reason_code"]);
+  } else if (outcome) {
     decisionKind = "ALLOW";
     reasonCode = "OK";
   } else if (stepUpResolved) {
@@ -133,7 +162,8 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
     }
   }
 
-  const decisionEntry = entries.find((e) => e.eventType === "decision");
+  // When a refused capture is the answer that stands, it was decided then, not at the first decision.
+  const decisionEntry = (outcome ? captureRefusal : null) ?? entries.find((e) => e.eventType === "decision");
 
   let goal: string | null = null;
   const merchantReadsRaw: string[] = [];
@@ -203,11 +233,11 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
       tool_calls: toolCalls,
     },
     merchant_content_read: parseMerchantReads(merchantReadsRaw),
-    execution: outcome
+    execution: latestOutcome
       ? {
-          order_id: asString(outcome["order_id"]),
-          status: asString(outcome["status"]),
-          idempotency_key: asString(outcome["idempotency_key"]),
+          order_id: asString(latestOutcome["order_id"]) ?? asString(outcome?.["order_id"]),
+          status: asString(latestOutcome["status"]),
+          idempotency_key: asString(latestOutcome["idempotency_key"]),
         }
       : null,
     chain: {

@@ -82,13 +82,44 @@ function asString(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
 
+/**
+ * An order can have several outcome rows: created, then captured, failed at capture
+ * or released (D-30, D-40). The first is the order and its amount, the last is where
+ * it stands. A trace with one outcome, which is every trace before checkouts, reads
+ * the same either way.
+ */
+function outcomeEnds(entries: readonly LedgerEntryRecord[]): { first: Record<string, unknown> | null; last: Record<string, unknown> | null; lastSeq: bigint | null } {
+  const outcomes = entries.filter((e) => e.eventType === "outcome");
+  const first = outcomes[0];
+  const last = outcomes.at(-1);
+  return {
+    first: first ? (first.payload as Record<string, unknown>) : null,
+    last: last ? (last.payload as Record<string, unknown>) : null,
+    lastSeq: last ? last.seq : null,
+  };
+}
+
+/**
+ * The capture refusal that stands, if any: a DENY at capture with no outcome after it.
+ * Only a mandate's proven holder counts. A claim with a bad signature is on the trace
+ * as evidence, and changes nothing about the order (D-25).
+ */
+function standingCaptureRefusal(entries: readonly LedgerEntryRecord[], lastOutcomeSeq: bigint | null): Record<string, unknown> | null {
+  const decisions = entries.filter((e) => e.eventType === "capture_decision" && typeof (e.payload as Record<string, unknown>)["mandate_id"] === "string");
+  const last = decisions.at(-1);
+  if (!last || (lastOutcomeSeq !== null && last.seq < lastOutcomeSeq)) return null;
+  const payload = last.payload as Record<string, unknown>;
+  return payload["kind"] === "DENY" ? payload : null;
+}
+
 export async function loadTrace(traceId: string): Promise<TraceView | null> {
   const entries = await prisma.$transaction((tx) => read(tx, traceId));
   if (entries.length === 0) return null;
 
   const intent = firstPayload(entries, "intent");
   const decision = firstPayload(entries, "decision");
-  const outcome = firstPayload(entries, "outcome");
+  const { first: outcome, last: latestOutcome, lastSeq } = outcomeEnds(entries);
+  const captureRefusal = standingCaptureRefusal(entries, lastSeq);
   const stepUpResolved = firstPayload(entries, "step_up_resolved");
   const transcriptPayload = firstPayload(entries, "agent_transcript");
 
@@ -118,9 +149,10 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
   let refusalReason: string | null = null;
 
   if (outcome) {
-    // Money was actually attempted — this supersedes any earlier STEP_UP.
-    decisionKind = "ALLOW";
-    reasonCode = "OK";
+    // Money was actually attempted — this supersedes any earlier STEP_UP. A capture
+    // refused later supersedes that in turn, with its own reason (D-31).
+    decisionKind = captureRefusal ? "DENY" : "ALLOW";
+    reasonCode = captureRefusal ? asString(captureRefusal["reason_code"]) : "OK";
   } else if (stepUpResolved) {
     const verdict = asString(stepUpResolved["verdict"]);
     if (verdict === "reject") {
@@ -149,8 +181,8 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     merchantId: asString(intent?.["merchant_id"]),
     rationale: asString(intent?.["agent_rationale"]),
     merchantReads: parseMerchantReads(merchantReads),
-    orderId: asString(outcome?.["order_id"]),
-    orderStatus: asString(outcome?.["status"]),
+    orderId: asString(latestOutcome?.["order_id"]) ?? asString(outcome?.["order_id"]),
+    orderStatus: asString(latestOutcome?.["status"]),
     approvalVerdict: asString(stepUpResolved?.["verdict"]),
     langfuseTraceId: asString((transcriptPayload?.["observability"] as Record<string, unknown> | undefined)?.["langfuse_trace_id"]),
   };

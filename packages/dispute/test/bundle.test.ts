@@ -207,3 +207,35 @@ describe("buildBundle", () => {
     expect(bundle?.mandate.signature_verified).toBe(false);
   });
 });
+
+describe("buildBundle on a checkout that went on to capture", () => {
+  const base = { mandate_id: "mnd_test", idempotency_key: "k_order", order_id: "PP1" };
+  async function write(traceId: string, after: readonly [EventType, Record<string, unknown>][]): Promise<void> {
+    const rows: [EventType, Record<string, unknown>][] = [
+      ["intent", { mandate_id: "mnd_test", merchant_id: "M" }],
+      ["decision", { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "1250", currency: "USD" }],
+      ["outcome", { ...base, status: "created", amount_minor: "1250", currency: "USD" }],
+      ...after,
+    ];
+    for (const [eventType, payload] of rows) {
+      await prisma.$transaction((tx) => append(tx, { traceId, ts: new Date("2026-11-08T10:00:00.000Z"), actor: "praman", eventType, payload }));
+    }
+  }
+
+  it("reports a created then captured order as captured", async () => {
+    await write("trc_bundle_cap", [
+      ["capture_decision", { ...base, kind: "ALLOW_CAPTURE", reason_code: "OK", amount_minor: "1250", currency: "USD" }],
+      ["outcome", { ...base, status: "captured", payment_id: "CAP1", amount_minor: "1250", currency: "USD" }],
+    ]);
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_cap"));
+    expect(bundle?.authorisation).toMatchObject({ decision: "ALLOW", reason_code: "OK", amount_minor: "1250", currency: "USD" });
+    expect(bundle?.execution).toEqual({ order_id: "PP1", status: "captured", idempotency_key: "k_order" });
+  });
+
+  it("reports a refused capture with its real reason code, not OK", async () => {
+    await write("trc_bundle_refused", [["capture_decision", { ...base, kind: "DENY", reason_code: "ORDER_RELEASED", detail: "released" }]]);
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_refused"));
+    expect(bundle?.authorisation).toMatchObject({ decision: "DENY", reason_code: "ORDER_RELEASED" });
+    expect(bundle?.execution).toEqual({ order_id: "PP1", status: "created", idempotency_key: "k_order" });
+  });
+});

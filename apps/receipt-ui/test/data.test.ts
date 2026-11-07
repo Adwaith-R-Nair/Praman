@@ -127,3 +127,60 @@ describe("loadTrace", () => {
     expect((await loadTrace("trace_deny"))?.amountMinor).toBeNull();
   });
 });
+
+/** A PayPal checkout trace: allowed and created, then whatever happened at capture. */
+async function writeCheckoutTrace(traceId: string, after: readonly [EventType, Record<string, unknown>][]): Promise<void> {
+  const base = { mandate_id: "mnd_test", idempotency_key: "k_order", order_id: "PP1" };
+  const rows: [EventType, Record<string, unknown>][] = [
+    ["decision", { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "1250", currency: "USD" }],
+    ["outcome", { ...base, status: "created", amount_minor: "1250", currency: "USD" }],
+    ...after,
+  ];
+  for (const [eventType, payload] of rows) {
+    await prisma.$transaction((tx) => append(tx, { traceId, ts: new Date("2026-11-08T10:00:00.000Z"), actor: "praman", eventType, payload }));
+  }
+}
+
+describe("loadTrace on a checkout that went on to capture", () => {
+  const base = { mandate_id: "mnd_test", idempotency_key: "k_order", order_id: "PP1" };
+
+  it("shows a created then captured order as captured", async () => {
+    await writeCheckoutTrace("trace_cap", [
+      ["capture_decision", { ...base, kind: "ALLOW_CAPTURE", reason_code: "OK", amount_minor: "1250", currency: "USD" }],
+      ["outcome", { ...base, status: "captured", payment_id: "CAP1", amount_minor: "1250", currency: "USD", capture_key: "k_cap" }],
+    ]);
+    const view = await loadTrace("trace_cap");
+    expect(view).toMatchObject({ decisionKind: "ALLOW", reasonCode: "OK", orderStatus: "captured", orderId: "PP1", amountMinor: "1250", currency: "USD" });
+  });
+
+  it("shows a refused capture with its real reason code, not OK", async () => {
+    await writeCheckoutTrace("trace_cap_refused", [
+      ["capture_decision", { ...base, kind: "DENY", reason_code: "MANDATE_REVOKED", detail: "revoked" }],
+    ]);
+    const view = await loadTrace("trace_cap_refused");
+    expect(view).toMatchObject({ decisionKind: "DENY", reasonCode: "MANDATE_REVOKED", amountMinor: "1250" });
+    const { html } = await renderTracePage("trace_cap_refused");
+    expect(html).toContain("Refused");
+  });
+
+  it("shows a capture that went through after an earlier refusal as captured", async () => {
+    await writeCheckoutTrace("trace_cap_retry", [
+      ["capture_decision", { ...base, kind: "DENY", reason_code: "AMOUNT_CHANGED_SINCE_APPROVAL", detail: "requoted" }],
+      ["capture_decision", { ...base, kind: "ALLOW_CAPTURE", reason_code: "OK", amount_minor: "1250", currency: "USD" }],
+      ["outcome", { ...base, status: "captured", payment_id: "CAP1", amount_minor: "1250", currency: "USD" }],
+    ]);
+    expect(await loadTrace("trace_cap_retry")).toMatchObject({ decisionKind: "ALLOW", reasonCode: "OK", orderStatus: "captured" });
+  });
+
+  it("shows a released order as released, with the amount it held", async () => {
+    await writeCheckoutTrace("trace_released", [["outcome", { ...base, status: "released", currency: "USD" }]]);
+    expect(await loadTrace("trace_released")).toMatchObject({ decisionKind: "ALLOW", orderStatus: "released", amountMinor: "1250", currency: "USD" });
+  });
+
+  it("does not let a capture attempt by an unproven caller change what the trace shows", async () => {
+    await writeCheckoutTrace("trace_cap_claim", [
+      ["capture_decision", { claimed_mandate_id: "mnd_test", kind: "DENY", reason_code: "MANDATE_SIGNATURE_INVALID", detail: "bad sig" }],
+    ]);
+    expect(await loadTrace("trace_cap_claim")).toMatchObject({ decisionKind: "ALLOW", reasonCode: "OK", orderStatus: "created" });
+  });
+});
