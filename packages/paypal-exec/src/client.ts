@@ -167,7 +167,7 @@ export class PayPalClient {
    * run a call it refused to authenticate, and the repeat carries the same key.
    */
   async call(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "DELETE",
     path: string,
     options: { readonly requestId?: string; readonly body?: unknown; readonly jsonText?: string } = {},
   ): Promise<PayPalResponse> {
@@ -192,6 +192,8 @@ export class PayPalClient {
       }
     }
 
+    // A DELETE that worked answers 204 with no body at all.
+    if (method === "DELETE" && res.status === 204) return { kind: "ok", body: {} };
     const body = parseJson(res.text);
     const succeeded = res.status === 200 || (method === "POST" && res.status === 201);
     if (succeeded) {

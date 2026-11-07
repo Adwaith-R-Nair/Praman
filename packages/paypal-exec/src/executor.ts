@@ -65,13 +65,34 @@ function approveUrl(links: unknown): string | null {
   return null;
 }
 
-export class PayPalExecutor implements Executor {
+/**
+ * Where PayPal sends the buyer after its checkout page. Server configuration, never
+ * from a request: a buyer is redirected there.
+ */
+export interface CheckoutReturn {
+  readonly returnUrl: string;
+  readonly cancelUrl: string;
+}
+
+export interface PayPalExecutorConfig extends PayPalConfig {
+  /** Unset, PayPal shows its own page after approval and the buyer comes back by hand. */
+  readonly checkoutReturn?: CheckoutReturn;
+}
+
+/** A rail that can also charge a payment method the buyer saved earlier, with no buyer present. */
+export interface SavedMethodCharger extends Executor {
+  chargeSavedMethod(req: CreateOrderRequest, vaultId: string): Promise<ExecOutcome>;
+}
+
+export class PayPalExecutor implements SavedMethodCharger {
   readonly rail = "paypal";
   readonly #client: PayPalClient;
+  readonly #checkoutReturn: CheckoutReturn | null;
 
-  constructor(config: PayPalConfig) {
+  constructor(config: PayPalExecutorConfig) {
     requireSandbox(config.baseUrl);
     this.#client = new PayPalClient(config);
+    this.#checkoutReturn = config.checkoutReturn ?? null;
   }
 
   #failed(req: { amount_minor: Minor; currency: Currency }, orderId: string, code: string): ExecOutcome {
@@ -158,9 +179,42 @@ export class PayPalExecutor implements Executor {
           },
         ],
         // No shipping step at PayPal, and PAY_NOW because the server captures straight after approval.
-        payment_source: { paypal: { experience_context: { shipping_preference: "NO_SHIPPING", user_action: "PAY_NOW" } } },
+        payment_source: {
+          paypal: {
+            experience_context: {
+              shipping_preference: "NO_SHIPPING",
+              user_action: "PAY_NOW",
+              ...(this.#checkoutReturn === null ? {} : { return_url: this.#checkoutReturn.returnUrl, cancel_url: this.#checkoutReturn.cancelUrl }),
+            },
+          },
+        },
       },
     });
+  }
+
+  /**
+   * A charge with no buyer present: an order paid from a saved payment method, which
+   * PayPal captures as it creates it (D-49). Same key, receipt and amount handling as a
+   * checkout order, so a repeat with the same key is the same request, and the answer
+   * goes through the same reading. A reused key with another amount is answered with
+   * the first charge (D-49), which is why the caller compares what comes back (D-33).
+   *
+   * The vault id is a secret. It goes in this request body and nowhere else: it is not
+   * in the outcome, and PayPal's answer is read for its order, amount and capture only.
+   */
+  async chargeSavedMethod(req: CreateOrderRequest, vaultId: string): Promise<ExecOutcome> {
+    if (req.currency !== "USD") return this.#failed(req, "", "CURRENCY_NOT_SUPPORTED");
+    if (!fitsPayPal(req.idempotency_key)) return this.#failed(req, "", "IDEMPOTENCY_KEY_INVALID");
+    if (vaultId === "") return this.#failed(req, "", "SAVED_METHOD_MISSING");
+    const res = await this.#client.call("POST", "/v2/checkout/orders", {
+      requestId: req.idempotency_key,
+      body: {
+        intent: "CAPTURE",
+        purchase_units: [{ reference_id: req.receipt, invoice_id: req.receipt, amount: { currency_code: req.currency, value: toPayPalValue(req.amount_minor) } }],
+        payment_source: { paypal: { vault_id: vaultId } },
+      },
+    });
+    return res.kind === "ok" ? this.#readOrder(res.body) : this.#failed(req, "", res.code);
   }
 
   #getOrder(orderId: string): Promise<PayPalResponse> {
