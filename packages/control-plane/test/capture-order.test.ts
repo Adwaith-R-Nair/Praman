@@ -2,13 +2,14 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@praman/db";
 import { append, deriveState } from "@praman/ledger";
 import { generateKeypair } from "@praman/mandate";
-import { routeAllTo, routeByRail, SimulatedExecutor, type CaptureRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
+import { routeAllTo, routeByRail, SimulatedExecutor } from "@praman/exec-core";
 import { ORDER_NOT_APPROVED as PAYPAL_ORDER_NOT_APPROVED } from "@praman/paypal-exec";
 import { minor } from "@praman/shared";
 import { captureOrder, captureRecordKey, ORDER_NOT_APPROVED } from "../src/capture-order.js";
 import { reconcilePending } from "../src/reconcile.js";
 import { RECONCILE_MIN_AGE_MS } from "../src/run-intent.js";
 import { buildUsdMandate, CheckoutExecutor, outcomesFor, placeOrder, PRICE, resetCheckoutFixtures, seedPriorHistory, T0 } from "./support/checkout.js";
+import { HeldCapture } from "./support/held-capture.js";
 
 beforeEach(resetCheckoutFixtures);
 
@@ -297,43 +298,3 @@ describe("captureOrder", () => {
     expect(await prisma.idempotencyRecord.findUniqueOrThrow({ where: { key: captureRecordKey(order.key) } })).toMatchObject({ status: "succeeded" });
   });
 });
-
-/** Holds the first capture call until open(), so a test can act between T1 and T2. Reads pass straight through. */
-class HeldCapture implements Executor {
-  readonly #inner: Executor;
-  #open: () => void = () => {};
-  readonly #gate = new Promise<void>((resolve) => {
-    this.#open = resolve;
-  });
-  #held = false;
-
-  constructor(inner: Executor) {
-    this.#inner = inner;
-  }
-
-  get rail(): Executor["rail"] {
-    return this.#inner.rail;
-  }
-
-  async untilHeld(): Promise<void> {
-    while (!this.#held) await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-
-  open(): void {
-    this.#open();
-  }
-
-  createOrder(req: Parameters<Executor["createOrder"]>[0]): Promise<ExecOutcome> {
-    return this.#inner.createOrder(req);
-  }
-
-  findOrder(lookup: OrderLookup): Promise<ExecOutcome | null> {
-    return this.#inner.findOrder(lookup);
-  }
-
-  async capture(req: CaptureRequest): Promise<ExecOutcome> {
-    this.#held = true;
-    await this.#gate;
-    return this.#inner.capture(req);
-  }
-}
