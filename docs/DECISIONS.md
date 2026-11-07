@@ -1840,3 +1840,43 @@ item. The eval entrypoints don't wrap their provider in `TracedProvider`, so eva
 
 **Consequence.** Two systems record overlapping activity, and a reader has to know which one to trust for what. The README's
 "Observability vs evidence" section says which.
+
+### D-48 · How the eval counts runs on two rails, and how sure it is · Accepted
+
+An implementer's decision, made while doing Task 11, for the builder to check. The plan asked for intervals, the Fisher test, and
+the same Layer 1 cases on both rails. It didn't say how a case that runs twice should be counted.
+
+**Decision.** Each Layer 1 case runs once as written, at a merchant on the rail its currency belongs to: INR on Razorpay, USD on
+PayPal, the same pairing `pnpm seed-catalog` uses, because PayPal's sandbox refuses INR (D-26). A case with one currency throughout
+and a v2 mandate then runs again with every currency relabelled, at a merchant on the other rail. The integers stay the same, so a
+₹180.00 item becomes a $180.00 item and every limit moves with it. Both runs use the simulated executor.
+
+The headline rates, money at risk prevented and latency count each case once, as written. A mirrored run is reported in its own
+"Both rails" section, as a count of runs that got the same outcome and reason code as the original. A mirrored run that fails still
+fails the eval and appears under unresolved exceptions.
+
+**Why mirrored runs stay out of the headline.** A mirrored run is the same case again, not a new sample. Counting it would double n
+and make every interval look about 30% narrower than the evidence supports. Its amount is also not money anyone risked: adding the
+relabelled amounts would have added an invented $21,598.00 to the ₹21,610.50 and $30.00 actually prevented.
+
+**Why some cases aren't mirrored.** Relabelling every currency in a case that tests two currencies against each other would erase
+what it tests. A v1 mandate can only be in INR, so moving it to USD would mean rewriting it as v2, which is a different case. An
+unsupported currency (JPY) has no rail. Four cases run on one rail for these reasons, and the report names each one.
+
+**Intervals.** Every rate prints k/n and a 95% Wilson interval. Wilson rather than the normal approximation, which gives 0% to 0%
+for 0 of 21 and so claims certainty a sample of 21 can't give; Wilson gives 0% to 15.5%. The ablation compares its arms with a
+two-sided Fisher exact test, which is exact at these counts where a chi-squared test is not. On 2/21 against 0/21 it gives
+p = 0.49, and the report and README say plainly that the gap is within chance.
+
+**What the mirrored runs show, and what they don't.** That the merchant's rail changes nothing in what Praman decides, for these
+cases. Nothing in `evaluate()` reads the rail, and `gateOnRail` only checks the merchant's currency and that an executor exists, so
+this is the expected answer; the runs are a regression check that keeps it true. They don't show that either rail's API behaves,
+since no rail is called.
+
+**Rejected.**
+
+- *Pool both rails into the headline rates.* Narrower intervals from repeated cases, and a dollar total that was never at risk.
+- *A second, hand-written USD corpus.* Forty-two new fixtures would drift from the INR ones. Relabelling keeps the two runs of a
+  case identical except for currency and rail, which is the one thing being checked.
+- *Rerunning Layer 2 to refresh its figures.* It calls a paid model. The README and report instead label the Layer 2 figures as
+  recorded on 2026-09-05, before the catalog line the model reads changed on 2026-11-05.
