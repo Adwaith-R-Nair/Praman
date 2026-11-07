@@ -79,6 +79,12 @@ describe("the report's wording", () => {
     expect(text).toContain("p = 0.49");
   });
 
+  it("doesn't claim no corpus case has ever failed, since deliberate faults made some fail", () => {
+    const text = report([l1("a")]);
+    expect(text).not.toContain("no case has yet been observed to fail");
+    expect(text).toContain("currency check removed, the 2 mismatch cases failed");
+  });
+
   it("has no em dash in the prose it generates", () => {
     expect(report([l1("a")], ablation("2026-09-05"))).not.toContain("—");
   });
