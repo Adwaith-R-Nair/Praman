@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { formatMoney, minorFromJSON, REASON_CODES, type ReasonCode } from "@praman/shared";
 import type { AgentVisibleDecision } from "@praman/policy";
-import { CAFE, MARKET, type BeatId } from "../demo/config.js";
+import { CAFE, MARKET, type BeatId, type PurchaseBeat } from "../demo/config.js";
+import { canAskAgain } from "../demo/story.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
 import { escapeHtml } from "../html.js";
 import { REASON_CODE_PLAIN } from "../reason-codes.js";
@@ -142,6 +143,11 @@ function resultHtml(record: BeatRecord | undefined, moneyLabel = "PayPal"): stri
   </div>`;
 }
 
+/** Whether a step's button is offered: before it runs, and again only when nothing can have been charged. */
+function askable(beat: BeatId, record: BeatRecord | undefined): boolean {
+  return record === undefined || canAskAgain(beat, record);
+}
+
 function approvalActions(beat: BeatId, record: BeatRecord | undefined): string {
   if (record?.state !== "awaiting_approval") return "";
   return `<div class="actions">${action(`/demo/approve/${beat}`, "Approve this purchase")}${action(`/demo/reject/${beat}`, "Reject it", "quiet")}</div>`;
@@ -231,13 +237,14 @@ function harnessHtml(record: BeatRecord | undefined): string {
   </div>`;
 }
 
-function checkoutHtml(record: BeatRecord | undefined): string {
+/** Shown while any purchase step's order waits for the buyer at PayPal. */
+function checkoutHtml(beat: PurchaseBeat, record: BeatRecord | undefined): string {
   if (record?.state !== "awaiting_checkout" || record.approveUrl === null) return "";
   return `<div class="checkout">
     <p><strong>Pay at PayPal.</strong> Copy this link into a <strong>different browser</strong> from this one, log in with the sandbox buyer account, and approve. If this is Chrome, use Firefox, Safari or Edge, or your phone. PayPal's sandbox declines a second checkout in the browser session that connected PayPal in step 2, and every private window of one browser shares that session.</p>
     <p class="link-row"><input class="link" type="text" readonly value="${escapeHtml(record.approveUrl)}" aria-label="PayPal checkout link"></p>
     <p>When PayPal says you're done, come back to this tab and capture.</p>
-    <div class="actions">${action("/demo/capture/large", "Capture the payment")}</div>
+    <div class="actions">${action(`/demo/capture/${beat}`, "Capture the payment")}</div>
   </div>`;
 }
 
@@ -290,7 +297,7 @@ ${step(
   "first",
   "First purchase: Praman asks you",
   p("The agent has never bought from this shop, so Praman stops it and asks you. Once you approve, Praman charges the saved PayPal account. No buyer is at PayPal for this."),
-  `${first === undefined || first.state === "no_proposal" ? action("/demo/step/first", "Ask the agent to buy lunch", "primary", !firstReady) : ""}${resultHtml(first)}${approvalActions("first", first)}`,
+  `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", !firstReady) : ""}${resultHtml(first)}${approvalActions("first", first)}${checkoutHtml("first", first)}`,
   first?.state === "done",
 )}
 
@@ -299,7 +306,7 @@ ${step(
   "second",
   "Second purchase: the agent pays on its own",
   p("Same shop, a small amount. Nobody approves this one, and no buyer is at PayPal. The agent proposes, Praman checks the mandate, and the money moves. Praman's decision is the only thing between the agent and the money."),
-  `${second === undefined || second.state === "no_proposal" ? action("/demo/step/second", "Ask the agent to buy a coffee", "primary", !secondReady) : ""}${second?.state === "done" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second)}`,
+  `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", !secondReady) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second)}${approvalActions("second", second)}${checkoutHtml("second", second)}`,
   second?.state === "done",
 )}
 
@@ -308,7 +315,7 @@ ${step(
   "large",
   "Large purchase: you pay at PayPal",
   p("Over the approval threshold. Praman asks you first, then sends this one through a real PayPal checkout that you approve as the buyer. Before taking the money, Praman checks the mandate again: it may have been revoked or expired while you were at PayPal."),
-  `${large === undefined || large.state === "no_proposal" ? action("/demo/step/large", "Ask the agent to buy a team lunch", "primary", !secondReady) : ""}${resultHtml(large)}${approvalActions("large", large)}${checkoutHtml(large)}`,
+  `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", !secondReady) : ""}${resultHtml(large)}${approvalActions("large", large)}${checkoutHtml("large", large)}`,
   large?.state === "done",
 )}
 
@@ -318,7 +325,7 @@ ${step(
   "A poisoned listing",
   p("Corner Market's listing has a line from Praman's test corpus that tells the model to add a gift card to every order. First the live model reads it. Then a fixed cart from a fooled model goes to Praman. Then a recording of a model that really was fooled."),
   `<h3>The live model reads it</h3>
-   ${b("injection") === undefined || b("injection")?.state === "no_proposal" ? action("/demo/step/injection", "Ask the agent to order at Corner Market") : ""}
+   ${askable("injection", b("injection")) ? action("/demo/step/injection", b("injection") === undefined ? "Ask the agent to order at Corner Market" : "Ask the agent again") : ""}
    ${resultHtml(b("injection"), "Money")}
    <h3>A fooled model, simulated</h3>
    <p class="label-sim">Simulating a fooled model. No model is asked. This is the cart a fooled model proposed in a recorded run, sent straight to Praman.</p>

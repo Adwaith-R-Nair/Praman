@@ -2,19 +2,24 @@ import { readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { loadRecording, renderCheckoutReturnPage, renderDemoPage, renderErrorPage, renderStartPage } from "../pages/demo.js";
-import { SESSION_TTL_MS, type BeatId } from "./config.js";
+import { SESSION_TTL_MS, type BeatId, type PurchaseBeat } from "./config.js";
 import { finishConnect, releaseSession, startConnect, type DemoDeps } from "./connect.js";
 import type { DemoSession } from "./session.js";
-import { captureLarge, decideApproval, runBeat } from "./story.js";
+import { captureCheckout, decideApproval, runBeat } from "./story.js";
 
 export const COOKIE = "praman_demo";
 const CLIENT_JS = readFileSync(fileURLToPath(new URL("./client.js", import.meta.url)), "utf8");
 
 const STEPS: readonly BeatId[] = ["first", "second", "large", "injection", "fixture", "concurrency"];
-const APPROVABLE: readonly BeatId[] = ["first", "large"];
+/** The steps that buy at the cafe. Any of them can need approval or become a checkout. */
+const PURCHASES: readonly PurchaseBeat[] = ["first", "second", "large"];
 
 function isStep(value: string, allowed: readonly BeatId[]): value is BeatId {
   return allowed.some((s) => s === value);
+}
+
+function isPurchase(value: string): value is PurchaseBeat {
+  return PURCHASES.some((s) => s === value);
 }
 
 function readCookie(header: string | undefined): string | null {
@@ -98,7 +103,7 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
         // Often opened in a private window with no session, so it says what to do and does nothing.
         if (session !== null) {
           session.notice = path.endsWith("cancel") ? "You cancelled at PayPal. Nothing was charged." : "PayPal has your approval. Press Capture the payment to finish.";
-          redirect(res, "/demo#large");
+          redirect(res, "/demo");
           return;
         }
         send(res, 200, renderCheckoutReturnPage(path.endsWith("cancel")));
@@ -168,14 +173,14 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
           redirect(res, `/demo#${name === "fixture" ? "injection" : name}`);
           return;
         }
-        if ((verb === "approve" || verb === "reject") && isStep(name, APPROVABLE)) {
+        if ((verb === "approve" || verb === "reject") && isPurchase(name)) {
           await exclusive(session, () => decideApproval(session, name, verb, deps));
           redirect(res, `/demo#${name}`);
           return;
         }
-        if (verb === "capture" && name === "large") {
-          await exclusive(session, () => captureLarge(session, deps));
-          redirect(res, "/demo#large");
+        if (verb === "capture" && isPurchase(name)) {
+          await exclusive(session, () => captureCheckout(session, name, deps));
+          redirect(res, `/demo#${name}`);
           return;
         }
       }

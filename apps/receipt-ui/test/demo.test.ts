@@ -315,6 +315,73 @@ describe("the demo story", () => {
     expect(paypal.charges).toHaveLength(1);
   });
 
+  it("a first purchase that reaches the approval line becomes a checkout the visitor can capture", async () => {
+    const v = await startConnected();
+    // Two bowls, $25.00: at or over the $20.00 line, so PayPal's checkout instead of the saved account.
+    model.override = { merchant_id: "DEMO_CAFE", line_items: [{ sku: "SKU_CAFE_BOWL", qty: 2 }], rationale: "one for later" };
+    await v.post("/demo/step/first");
+    await v.post("/demo/approve/first");
+    model.override = null;
+    expect(sessionOf(v).beats.get("first")).toMatchObject({ state: "awaiting_checkout", payment: "checkout", amountMinor: "2500" });
+    let page = await v.page();
+    expect(page).toContain("https://www.sandbox.paypal.com/checkoutnow?token=");
+    expect(page).toContain('action="/demo/capture/first"');
+
+    paypal.approveAll();
+    await v.post("/demo/capture/first");
+    expect(sessionOf(v).beats.get("first")).toMatchObject({ state: "done", orderStatus: "captured" });
+    expect(paypal.charges).toHaveLength(0);
+
+    // The story goes on from there.
+    await v.post("/demo/step/second");
+    expect(sessionOf(v).beats.get("second")).toMatchObject({ state: "done", payment: "saved_method" });
+    page = await v.page();
+    expect(page).toContain("Only Praman's ALLOW let it through");
+  });
+
+  it("a second purchase that needs approval can be approved and paid at PayPal", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    await v.post("/demo/approve/first");
+    // Five coffees, $22.50.
+    model.override = { merchant_id: "DEMO_CAFE", line_items: [{ sku: "SKU_CAFE_COFFEE", qty: 5 }], rationale: "coffee for everyone" };
+    await v.post("/demo/step/second");
+    model.override = null;
+    expect(sessionOf(v).beats.get("second")).toMatchObject({ state: "awaiting_approval", reasonCode: "STEP_UP_THRESHOLD" });
+    let page = await v.page();
+    expect(page).toContain('action="/demo/approve/second"');
+
+    await v.post("/demo/approve/second");
+    expect(sessionOf(v).beats.get("second")).toMatchObject({ state: "awaiting_checkout" });
+    paypal.approveAll();
+    await v.post("/demo/capture/second");
+    expect(sessionOf(v).beats.get("second")).toMatchObject({ state: "done", orderStatus: "captured" });
+    page = await v.page();
+    // A person approved this one, so the page must not say nobody did.
+    expect(page).not.toContain("Only Praman's ALLOW let it through");
+  });
+
+  it("a purchase step that was refused can be asked again, so the story never gets stuck", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    await v.post("/demo/reject/first");
+    expect(sessionOf(v).beats.get("first")).toMatchObject({ state: "refused" });
+    let page = await v.page();
+    expect(page).toContain('action="/demo/step/first"');
+
+    await v.post("/demo/step/first");
+    expect(sessionOf(v).beats.get("first")).toMatchObject({ state: "awaiting_approval" });
+    await v.post("/demo/approve/first");
+    expect(sessionOf(v).beats.get("first")).toMatchObject({ state: "done" });
+    expect(paypal.charges).toHaveLength(1);
+    page = await v.page();
+    expect(page).not.toContain('action="/demo/step/first"');
+
+    // A step that charged is never offered again.
+    await v.post("/demo/step/first");
+    expect(paypal.charges).toHaveLength(1);
+  });
+
   it("a step that fails after the charge is not offered again, so a retry can't charge twice", async () => {
     const v = await startConnected();
     await v.post("/demo/step/first");

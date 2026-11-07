@@ -206,6 +206,19 @@ async function agentPurchase(session: DemoSession, deps: DemoDeps, step: Purchas
   return record;
 }
 
+/**
+ * Whether a step that already ran can be asked again. Only when no money can have moved
+ * for it: the model proposed nothing, or the purchase was refused, by Praman, by the
+ * visitor, or before Praman was asked. Asking again makes a new intent with a new key,
+ * which is safe only because the old one charged nothing. A step that paid, failed at
+ * the provider, or is still pending is shown, never run again. The fixture is a fixed
+ * cart with a fixed intent id, so it has nothing new to ask.
+ */
+export function canAskAgain(beat: BeatId, record: BeatRecord): boolean {
+  if (record.state === "no_proposal") return true;
+  return record.state === "refused" && (beat === "first" || beat === "second" || beat === "large" || beat === "injection");
+}
+
 const PRECONDITIONS: Readonly<Record<BeatId, (s: DemoSession) => string | null>> = {
   first: (s) => (s.connected ? null : "Connect a PayPal sandbox account first, in step 2."),
   second: (s) => (s.beats.get("first")?.state === "done" ? null : "Finish the first purchase first. Until then the agent has never bought from this merchant."),
@@ -221,7 +234,7 @@ const PRECONDITIONS: Readonly<Record<BeatId, (s: DemoSession) => string | null>>
  */
 export async function runBeat(session: DemoSession, beat: BeatId, deps: DemoDeps): Promise<void> {
   const existing = session.beats.get(beat);
-  if (existing !== undefined && existing.state !== "no_proposal") {
+  if (existing !== undefined && !canAskAgain(beat, existing)) {
     session.notice = "That step has already run. Its result is below.";
     return;
   }
@@ -297,17 +310,19 @@ function fromResolve(record: BeatRecord, result: ResolveResult): BeatRecord {
 }
 
 /**
- * Captures the checkout order this session's large purchase made, under the capture
- * re-check (D-31). The trace is the session's own; nothing in the request names it.
+ * Captures the checkout order one of this session's purchase steps made, under the
+ * capture re-check (D-31). Any purchase step can become a checkout: the amount the
+ * catalog gives the model's cart decides, not the step (D-50). The trace is the
+ * session's own; nothing in the request names it.
  */
-export async function captureLarge(session: DemoSession, deps: DemoDeps): Promise<void> {
-  const record = session.beats.get("large");
+export async function captureCheckout(session: DemoSession, beat: PurchaseBeat, deps: DemoDeps): Promise<void> {
+  const record = session.beats.get(beat);
   if (record === undefined || record.state !== "awaiting_checkout" || record.traceId === null) {
     session.notice = "There is no checkout waiting to be captured.";
     return;
   }
   const result = await captureOrder(record.traceId, session.mandate, deps.publicKeyPem, routeFor(session, deps), deps.now());
-  session.beats.set("large", fromCapture(record, result));
+  session.beats.set(beat, fromCapture(record, result));
 }
 
 function fromCapture(record: BeatRecord, result: CaptureResult): BeatRecord {
