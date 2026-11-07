@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { env } from "node:process";
 import { fileURLToPath } from "node:url";
@@ -15,6 +16,19 @@ const { startTracing } = await import("@praman/buyer-agent");
 const tracing = await startTracing(env);
 const { startScoreSink } = await import("./scores.js");
 const scores = await startScoreSink(env);
+
+/**
+ * The day the ablation results were committed, from git, so the report's date
+ * is never typed by hand. Null with no git or no history (a bare tarball).
+ */
+function ablationCommitDate(outDir: string): string | null {
+  try {
+    const day = execFileSync("git", ["log", "-1", "--format=%cs", "--", `${outDir}ablation`], { encoding: "utf8" }).trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Reads whatever ablation-cli.ts already wrote to eval/ablation/, if it's
@@ -47,7 +61,12 @@ function readAblationSummary(outDir: string): AblationSummary | undefined {
   // --layer1-only pass where PRAMAN_MODEL was never set this session — fall
   // back to the model ablation-cli.ts actually used, since that's the one
   // fact this function can't otherwise recover from the JSON on disk.
-  return { model_id: env["PRAMAN_MODEL"] ?? "google/gemini-3.1-flash-lite", defended, undefended };
+  return {
+    model_id: env["PRAMAN_MODEL"] ?? "google/gemini-3.1-flash-lite",
+    measured_on: ablationCommitDate(outDir),
+    defended,
+    undefended,
+  };
 }
 
 // --dev: labels the run as CI-safe (no live model calls expected) in the

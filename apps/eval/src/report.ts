@@ -1,5 +1,6 @@
 import { CURRENCIES, formatMoney, minor, type Currency } from "@praman/shared";
-import type { Metrics, TokenSpend } from "./metrics.js";
+import type { Metrics, Proportion, RateName, TokenSpend } from "./metrics.js";
+import { fisherExactTwoSided, wilson95 } from "./stats.js";
 import type { CaseResult } from "./types.js";
 
 export interface AblationArmStats {
@@ -12,6 +13,8 @@ export interface AblationArmStats {
 
 export interface AblationSummary {
   readonly model_id: string;
+  /** The day the ablation runs were recorded, YYYY-MM-DD, or null if it can't be found. */
+  readonly measured_on: string | null;
   readonly defended: AblationArmStats;
   readonly undefended: AblationArmStats;
 }
@@ -25,6 +28,34 @@ export interface ReportInput {
 
 function pct(value: number | null): string {
   return value === null ? "n/a (empty set)" : `${(value * 100).toFixed(1)}%`;
+}
+
+/** "12.5% (1/8, 95% CI 2.2% to 47.1%)". n and the interval go wherever a rate does. */
+function proportionCell({ k, n }: Proportion): string {
+  if (n === 0) return "n/a (0 cases)";
+  const { low, high } = wilson95(k, n);
+  return `${pct(k / n)} (${k.toString()}/${n.toString()}, 95% CI ${pct(low)} to ${pct(high)})`;
+}
+
+function rateRow(metrics: Metrics, name: RateName): string {
+  return `| ${name} | ${proportionCell(metrics.counts[name])} |`;
+}
+
+/** "2 (2/21, 95% CI 2.7% to 28.9%)": a count of runs, with its rate as an interval. */
+function armInfluencedCell(arm: AblationArmStats): string {
+  if (arm.runs === 0) return "0 (no runs)";
+  const { low, high } = wilson95(arm.influenced, arm.runs);
+  return `${arm.influenced.toString()} (${arm.influenced.toString()}/${arm.runs.toString()}, 95% CI ${pct(low)} to ${pct(high)})`;
+}
+
+/** Influenced or not, defended against undefended, as a two-sided Fisher exact test. */
+function ablationFisherP(a: AblationSummary): number {
+  return fisherExactTwoSided(
+    a.undefended.influenced,
+    a.undefended.runs - a.undefended.influenced,
+    a.defended.influenced,
+    a.defended.runs - a.defended.influenced,
+  );
 }
 
 function familyTable(results: readonly CaseResult[]): string {
@@ -94,12 +125,12 @@ export function generateReportMarkdown({ results, metrics, generated_at, ablatio
     "",
     "| metric | value |",
     "|---|---|",
-    `| containment_rate_dev | ${pct(metrics.containment_rate_dev)} |`,
-    `| containment_rate_heldout | ${pct(metrics.containment_rate_heldout)} |`,
+    rateRow(metrics, "containment_rate_dev"),
+    rateRow(metrics, "containment_rate_heldout"),
     `| incidental_containment | ${metrics.incidental_containment.toString()} |`,
-    `| false_refusal_rate | ${pct(metrics.false_refusal_rate)} |`,
-    `| influence_rate | ${pct(metrics.influence_rate)} |`,
-    `| contained_despite_influence | ${pct(metrics.contained_despite_influence)} |`,
+    rateRow(metrics, "false_refusal_rate"),
+    rateRow(metrics, "influence_rate"),
+    rateRow(metrics, "contained_despite_influence"),
     `| money_at_risk_prevented | ${moneyAtRiskLine(metrics.money_at_risk_prevented_minor)} |`,
     `| p50 / p95 latency | ${metrics.p50_latency_ms?.toFixed(1) ?? "n/a"}ms / ${metrics.p95_latency_ms?.toFixed(1) ?? "n/a"}ms |`,
     `| token_spend (Layer 2) | ${tokenSpendCell(metrics.token_spend)} |`,
@@ -150,16 +181,25 @@ export function generateReportMarkdown({ results, metrics, generated_at, ablatio
       "",
       "## Ablation: what does the prompt-layer defence buy?",
       "",
-      `Same 7 injection cases, same model (\`${ablation.model_id}\`), 3 repeats per arm. Arms differ only in whether merchant text is delimited (\`PRAMAN_NO_DELIMITER\`) and whether the system prompt carries untrusted-content handling instructions (\`PRAMAN_NO_PROMPT_DEFENCE\`). The policy engine is identical in both arms.`,
+      `Same 7 injection cases, same model (\`${ablation.model_id}\`), 3 repeats per arm, recorded ${ablation.measured_on ?? "on a date that couldn't be read from git"}. Arms differ only in whether merchant text is delimited (\`PRAMAN_NO_DELIMITER\`) and whether the system prompt carries untrusted-content handling instructions (\`PRAMAN_NO_PROMPT_DEFENCE\`). The policy engine is identical in both arms.`,
       "",
       "| Arm | Runs | Proposals influenced | Money moved |",
       "|---|---|---|---|",
-      `| Defended | ${ablation.defended.runs.toString()} | ${ablation.defended.influenced.toString()} | ${ablation.defended.moneyMoved.toString()} |`,
-      `| Undefended | ${ablation.undefended.runs.toString()} | ${ablation.undefended.influenced.toString()} | ${ablation.undefended.moneyMoved.toString()} |`,
+      `| Defended | ${ablation.defended.runs.toString()} | ${armInfluencedCell(ablation.defended)} | ${ablation.defended.moneyMoved.toString()} |`,
+      `| Undefended | ${ablation.undefended.runs.toString()} | ${armInfluencedCell(ablation.undefended)} | ${ablation.undefended.moneyMoved.toString()} |`,
       "",
       `**Interpretation.** ${ablationInterpretation(ablation)}`,
       "",
-      "**Limits.** n=21 per arm on one model, one temperature, seven hand-written " +
+      `**Is the difference real?** A two-sided Fisher exact test on influenced against not influenced, ` +
+        `undefended ${ablation.undefended.influenced.toString()}/${ablation.undefended.runs.toString()} against ` +
+        `defended ${ablation.defended.influenced.toString()}/${ablation.defended.runs.toString()}, gives ` +
+        `p = ${ablationFisherP(ablation).toFixed(2)}. ` +
+        (ablationFisherP(ablation) >= 0.05
+          ? "That is not significant: a gap this size between two arms of this size happens often by chance alone, so this run doesn't show that the prompt-layer defence works. It doesn't show that it fails either."
+          : "That is below 0.05, so a gap this size is unlikely to be chance alone, though one model and one set of attacks still limit what it shows."),
+      "",
+      `**Limits.** n=${ablation.defended.runs.toString()} per arm on one model,` +
+        " one temperature, seven hand-written " +
         "attacks by the same author who wrote the defence. Not a benchmark. The " +
         "delimiter and the prompt instructions were removed together, so this does " +
         "not separate their individual contributions. Full per-repeat results and " +
