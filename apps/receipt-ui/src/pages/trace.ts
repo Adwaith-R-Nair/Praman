@@ -1,6 +1,6 @@
 import { formatMoney, minorFromJSON, type ReasonCode } from "@praman/shared";
 import type { EventType } from "@praman/ledger";
-import { loadTrace } from "../data.js";
+import { loadTrace, type SettlementLine } from "../data.js";
 import { decisionClass, decisionLabel } from "../decision-display.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
 import { layout } from "../layout.js";
@@ -24,6 +24,25 @@ function langfuseTraceUrl(langfuseTraceId: string): string | null {
   const projectId = process.env["LANGFUSE_PROJECT_ID"];
   if (!base || !projectId) return null;
   return `${base}/project/${projectId}/traces?peek=${langfuseTraceId}&traceId=${langfuseTraceId}`;
+}
+
+const RAIL_NAMES: Readonly<Record<string, string>> = { paypal: "PayPal", razorpay: "Razorpay" };
+const SETTLEMENT_WORDS: Readonly<Record<string, string>> = { captured: "the capture completed", declined: "the capture was declined" };
+
+/**
+ * One line for what the provider reported by webhook. Every value is escaped even
+ * though the parser only lets ids through: this page doesn't rely on that.
+ */
+function settlementHtml(settlement: SettlementLine | null): string {
+  if (!settlement) return "";
+  const rail = settlement.rail === null ? "The payment provider" : (RAIL_NAMES[settlement.rail] ?? settlement.rail);
+  const what = settlement.status === null ? "a result" : (SETTLEMENT_WORDS[settlement.status] ?? settlement.status);
+  const ids = [settlement.paymentId ? `payment ${settlement.paymentId}` : null, settlement.eventId ? `event ${settlement.eventId}` : null].filter((x) => x !== null);
+  return `<section class="settlement">
+    <h2>Settlement</h2>
+    <p>${escapeHtml(`${rail} reported ${what}`)}, by a webhook whose signature was verified, at ${escapeHtml(settlement.at.toISOString())}.</p>
+    ${ids.length > 0 ? `<p class="data">${escapeHtml(ids.join(" · "))}</p>` : ""}
+  </section>`;
 }
 
 export async function renderTracePage(traceId: string): Promise<{ status: number; html: string }> {
@@ -118,6 +137,8 @@ ${
        </section>`
     : ""
 }
+
+${settlementHtml(trace.settlement)}
 
 ${
   trace.rationale

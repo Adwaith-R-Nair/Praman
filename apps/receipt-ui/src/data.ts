@@ -13,6 +13,15 @@ export interface MerchantItemRead {
   readonly description: string;
 }
 
+/** The latest thing a payment provider reported by verified webhook about this trace's order (D-45). */
+export interface SettlementLine {
+  readonly rail: string | null;
+  readonly status: string | null;
+  readonly paymentId: string | null;
+  readonly eventId: string | null;
+  readonly at: Date;
+}
+
 export interface TraceView {
   readonly traceId: string;
   readonly entries: readonly LedgerEntryRecord[];
@@ -29,6 +38,7 @@ export interface TraceView {
   readonly orderId: string | null;
   readonly orderStatus: string | null;
   readonly approvalVerdict: string | null;
+  readonly settlement: SettlementLine | null;
   /** Non-evidentiary pointer to this run's Langfuse trace, if tracing was configured when it ran. See D-xx. */
   readonly langfuseTraceId: string | null;
 }
@@ -122,6 +132,8 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
   const captureRefusal = standingCaptureRefusal(entries, lastSeq);
   const stepUpResolved = firstPayload(entries, "step_up_resolved");
   const transcriptPayload = firstPayload(entries, "agent_transcript");
+  const settlementRow = entries.filter((e) => e.eventType === "settlement").at(-1);
+  const settlementPayload = settlementRow ? (settlementRow.payload as Record<string, unknown>) : null;
 
   let goal: string | null = null;
   const merchantReads: string[] = [];
@@ -184,6 +196,16 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     orderId: asString(latestOutcome?.["order_id"]) ?? asString(outcome?.["order_id"]),
     orderStatus: asString(latestOutcome?.["status"]),
     approvalVerdict: asString(stepUpResolved?.["verdict"]),
+    settlement:
+      settlementRow && settlementPayload
+        ? {
+            rail: asString(settlementPayload["rail"]),
+            status: asString(settlementPayload["status"]),
+            paymentId: asString(settlementPayload["payment_id"]),
+            eventId: asString(settlementPayload["event_id"]),
+            at: settlementRow.ts,
+          }
+        : null,
     langfuseTraceId: asString((transcriptPayload?.["observability"] as Record<string, unknown> | undefined)?.["langfuse_trace_id"]),
   };
 }

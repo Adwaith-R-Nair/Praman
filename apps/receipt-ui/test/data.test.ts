@@ -184,3 +184,40 @@ describe("loadTrace on a checkout that went on to capture", () => {
     expect(await loadTrace("trace_cap_claim")).toMatchObject({ decisionKind: "ALLOW", reasonCode: "OK", orderStatus: "created" });
   });
 });
+
+describe("loadTrace with a settlement from a verified webhook", () => {
+  const base = { mandate_id: "mnd_test", idempotency_key: "k_order", order_id: "PP1" };
+  const settlement = { ...base, rail: "paypal", event_id: "WH-SYNTHETIC-0001", event_type: "PAYMENT.CAPTURE.COMPLETED", status: "captured", payment_id: "CAP1", amount_minor: "1250", currency: "USD" };
+
+  it("shows what the provider reported, under the order's state", async () => {
+    await writeCheckoutTrace("trace_settled", [
+      ["outcome", { ...base, status: "captured", payment_id: "CAP1", amount_minor: "1250", currency: "USD" }],
+      ["settlement", settlement],
+    ]);
+
+    const view = await loadTrace("trace_settled");
+    expect(view).toMatchObject({ orderStatus: "captured", settlement: { rail: "paypal", status: "captured", paymentId: "CAP1", eventId: "WH-SYNTHETIC-0001" } });
+    const { html } = await renderTracePage("trace_settled");
+    expect(html).toContain("PayPal reported the capture completed");
+    expect(html).toContain("CAP1");
+    expect(html).toContain("WH-SYNTHETIC-0001");
+  });
+
+  it("shows a declined capture in plain words", async () => {
+    await writeCheckoutTrace("trace_declined", [["settlement", { ...settlement, status: "declined", event_type: "PAYMENT.CAPTURE.DECLINED" }]]);
+    expect((await renderTracePage("trace_declined")).html).toContain("PayPal reported the capture was declined");
+  });
+
+  it("escapes every settlement field, though the parser only lets ids through", async () => {
+    await writeCheckoutTrace("trace_settled_odd", [["settlement", { ...settlement, rail: "<i>rail</i>", status: "<b>x</b>", payment_id: "<script>alert(1)</script>", event_id: "\"><img src=x>" }]]);
+    const { html } = await renderTracePage("trace_settled_odd");
+    expect(html).not.toMatch(/<script>alert|<img src=x>|<b>x<\/b>|<i>rail/);
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("shows no settlement line when there is none", async () => {
+    await writeCheckoutTrace("trace_unsettled", [["outcome", { ...base, status: "captured", payment_id: "CAP1", amount_minor: "1250", currency: "USD" }]]);
+    expect((await loadTrace("trace_unsettled"))?.settlement).toBeNull();
+    expect((await renderTracePage("trace_unsettled")).html).not.toContain("reported the capture");
+  });
+});
