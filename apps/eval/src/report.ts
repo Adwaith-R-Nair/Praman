@@ -234,11 +234,15 @@ export function generateReportMarkdown({ results, metrics, generated_at, ablatio
       "by the same person. A high pass rate therefore demonstrates that the " +
       "implementation matches its specification, which has real regression value, " +
       "but is weak evidence of robustness against attacks not anticipated in " +
-      "that specification. Cases have failed only when a fault was put in on " +
-      "purpose: with the currency check removed, the 2 mismatch cases failed " +
-      "(BUILD_LOG Phase P3), and with release handling removed, the 3 cases " +
-      "that depend on it failed (Phase P4). That shows those cases can catch the fault they " +
-      "were written for, not that the corpus would find one nobody anticipated. " +
+      "that specification. Cases have failed on real faults, not only planted ones. " +
+      "On the corpus's first run, `adv_numeric_qty_fractional` (quantity 1.5) " +
+      "crashed `run-intent.ts` with an uncaught TypeError before `evaluate()` ran; " +
+      "the fix is `c971f34`. Later, commit `c8fbc86` broke 3 cases by accident, " +
+      "fixed in `898e88c`. Faults put in on purpose were caught too: with the " +
+      "currency check removed, the 2 mismatch cases failed (BUILD_LOG Phase P3), " +
+      "and with release handling removed, the 3 cases that depend on it failed " +
+      "(Phase P4). So the corpus catches faults in the paths it was written for. " +
+      "That is not evidence it would find an attack nobody anticipated. " +
       "Layer 2 is where the uncertainty " +
       "actually lives, because the model's behaviour under injection was not " +
       "designed by the author.",

@@ -85,6 +85,13 @@ describe("the report's wording", () => {
     expect(text).toContain("currency check removed, the 2 mismatch cases failed");
   });
 
+  it("doesn't claim only planted faults have failed cases, since the corpus found a real crash", () => {
+    const text = report([l1("a")]);
+    expect(text).not.toContain("only when a fault was put in on purpose");
+    expect(text).toContain("`c971f34`");
+    expect(text).toContain("`c8fbc86` broke 3 cases by accident");
+  });
+
   it("has no em dash in the prose it generates", () => {
     expect(report([l1("a")], ablation("2026-09-05"))).not.toContain("—");
   });
