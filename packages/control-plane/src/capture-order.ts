@@ -96,7 +96,7 @@ async function locateOrder(tx: PrismaTx, traceId: string, mandateId: string): Pr
 }
 
 /** The executor for the rail the order was created on, or null. Never another rail's. */
-function executorFor(route: ExecutorRouter, rail: string): Executor | null {
+export function executorFor(route: ExecutorRouter, rail: string): Executor | null {
   if (!isRail(rail)) return null;
   const executor = route(rail);
   return executor !== null && executor.rail === rail ? executor : null;

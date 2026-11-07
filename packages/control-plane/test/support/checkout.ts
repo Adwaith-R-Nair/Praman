@@ -4,7 +4,7 @@ import { append } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
 import { routeByRail, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
-import type { Minor } from "@praman/shared";
+import type { Minor, Rail } from "@praman/shared";
 import { runIntent } from "../../src/run-intent.js";
 
 export const MERCHANT = "TEST_CHECKOUT_MERCH";
@@ -26,7 +26,7 @@ interface FakeOrder {
  * and what the release sweep looks for. Every knob is something PayPal can do.
  */
 export class CheckoutExecutor implements Executor {
-  readonly rail = "paypal";
+  constructor(readonly rail: Rail = "paypal") {}
   readonly #orders = new Map<string, FakeOrder>();
   readonly #byKey = new Map<string, string>();
   #n = 0;
