@@ -2740,3 +2740,85 @@ simply drops. The new test is the reviewer's case. Both failed before the fix. 5
 
 **Worth your look:** a capture whose call was lost and then declined now reads `IN_FLIGHT` until `pnpm reconcile` runs, where P9
 closed it as soon as the webhook came. Nothing schedules the sweep yet.
+
+### Phase P10 · 2026-11-08 · finishing Langfuse
+
+Roadmap Phase 10 puts Langfuse on the agent as a debugging view and keeps it out of the record. Most of it was built between
+30 Sep and 2 Oct. Checked against the code before starting, these were already done: token usage on provider turns (`5298946`),
+the `TracedProvider` decorator (`f1bb723`), the Langfuse variables in `.env.example` (`f0dbe13`), one trace per agent run with a
+span per tool call (`51012ef`), links both ways between a Praman trace and a Langfuse trace (`ad3be76`), the system prompt hash on
+`agent_transcript` (`864105a`), and eval runs tagged with case, arm, repeat and git SHA (`3394f5c`). That last one didn't push
+scores. This phase did the rest. Nothing in `packages/policy` changed, and `pnpm lint:policy-freeze` passes. No model was called.
+
+**Token spend in the eval report (`d2b563d`).** Each Layer 2 case now carries the tokens its provider reported, summed over every
+model call in the run. The report adds a `token_spend` row: input, output and cached input, and how many cases reported usage at
+all, so a total that undercounts says so. It counts tokens, not money, because a price list in the repo would go stale. The
+numbers come from the provider's own response, never from Langfuse. `eval/report.md` was not regenerated: that needs a live Layer
+2 run, which spends model money, so the committed report gets the row on its next live run. I ran `pnpm eval --layer1 --dev` to
+check the row renders (`n/a (no Layer 2 cases ran)`), then put the generated files back.
+
+**Stopping tracing without waiting on Langfuse (`67c6623`).** Before this, the three entrypoints started the OpenTelemetry SDK and
+never stopped it. The demo's `process.exit(0)` dropped whatever spans were still buffered, and nothing bounded how long a slow host
+could hold a run. Now `startTracing()` in `apps/buyer-agent/src/tracing.ts` starts it only when both keys are set, and `stop()`
+sends what's buffered but waits 3 seconds at most, never throws, and unregisters the global tracer so a later span goes nowhere. It
+takes its settings as an argument rather than reading `process.env`, so a test can point it at a local port without picking up a
+real key. The demo now leaves its loop with `break` and exits in one place, after `stop()`.
+
+**The inertness tests (`7b77b16`).** These matter most. `apps/eval/test/tracing-inert.test.ts` runs the demo's own path (agent,
+`runIntent` on the simulated rail, then the `agent_transcript` row) against the test database, with a scripted provider that
+replays two fixed turns, so no model is called. It runs it four ways and compares the ledger each time:
+
+| Langfuse | What the test checks |
+|---|---|
+| no keys | nothing starts, and the run is allowed |
+| keys, a local stand-in that accepts exports | spans really reach it, and the ledger rows match the no-keys run |
+| keys, a closed port | rows match, and stopping takes under 1.5 s with a 1 s limit |
+| keys, a host that accepts and never answers | rows match, and stopping gives up at the limit |
+
+The rows each time are `outcome` (a seeded earlier order, so the merchant isn't new), `intent`, `decision`, `api_call`, `outcome`,
+`agent_transcript`. The only allowed difference is the Langfuse pointer on `agent_transcript`, which exists only when tracing ran.
+Everything else in that row, the decision, the reason code, the order status and the cart must be equal. To check the tests aren't
+hollow I broke the code twice. Making `stop()` wait for Langfuse with no limit turned the two failing-host tests red (4.8 s and
+5.0 s). Skipping the transcript row when tracing is on turned the three keyed tests red. Both were put back. One thing I learned: a
+closed port doesn't fail fast. The exporter retries a refused connection, so without the limit it waits as long as a silent host.
+
+**Scores (`0f420bc`).** After each Layer 2 case, `influenced` and `money_moved` go to the case's Langfuse trace as 1 or 0. They are
+copies of the runner's own result, sent after it is final, and nothing reads them back. Each has a fixed id from the trace id and
+the score name, so sending again updates the score instead of adding one. This uses `@langfuse/client`, added to `apps/eval` at
+the same version as the other Langfuse packages.
+
+**Docs.** D-47 records the decision, revised from the roadmap draft to match what was built (`4002912`). The Langfuse comments in
+the code now say D-47 instead of D-xx (`b234454`). The README has an "Observability vs evidence" section (`d61aa21`).
+
+**Tests.** 604, up from 595: 2 for token spend, 4 for inertness, 3 for scores. Each was seen failing before its code existed. None
+weakened or removed.
+
+**A slip, worth knowing.** I committed D-47 (`4002912`) on a done-check that had failed. I piped the check into `tail`, and a pipe
+takes the exit code of its last command, so the failure didn't stop the commit. The same trap as `19a5ee2`. The failure was one
+live PayPal sandbox test timing out at 30 s; it passed when run again and in the full check after. The commit only touched
+`docs/DECISIONS.md`, so the code it holds is the same as `0f420bc`, which passed. Every commit after it ran the check inside
+`bash -c 'set -euo pipefail; ...'`, where a failure does stop the commit.
+
+**Where I went away from the plan, worth checking:**
+
+- The plan put the inertness test in `packages/agent-core/test/`. It needs `runAgent`, `runIntent` and the eval seeder, and
+  `agent-core` can't import those without a dependency loop, so it lives in `apps/eval/test/`.
+- `startTracing()` is a new file, and `apps/buyer-agent` gained `@opentelemetry/api` so `stop()` can unregister the global tracer.
+- Four commits touch more than three files. `d2b563d` has 5: the result type, the runner, metrics, the report and the test.
+  `67c6623` has 7: the new file, its export, the three entrypoints, and the package file and lockfile. `0f420bc` has 7: the new
+  file, its test, the runner, both eval entrypoints, and the package file and lockfile. `b234454` has 7, a one-word change in each.
+- The roadmap's "Langfuse is hosted where" choice wasn't recorded anywhere. The code defaults to Langfuse Cloud, so D-47 says that
+  and lists what leaves the machine. If you use a self-hosted one, D-47's hosting line should get a `Status:` pointer.
+
+**Still open:**
+
+- The Langfuse `mask` hook as a second guard against mandate limits reaching a trace. Today nothing sends them, but nothing would
+  stop a future span that did.
+- The eval entrypoints use a bare `GeminiProvider`, not `TracedProvider`, so eval traces show tool calls and tags but no model calls.
+- `apps/eval/package.json` still lists `@langfuse/otel` and `@opentelemetry/sdk-node`, which it no longer imports directly.
+- The demo hasn't been run end to end with the new exit path, because that calls Gemini.
+- The README's "24 records" count under Decision records is out of date.
+
+**For you to answer, from the roadmap's understanding gate.** An auditor asks you to prove what the agent read before trace X's
+purchase. Which system do you open, and why not the other? Name three properties the ledger has that Langfuse lacks, and one thing
+Langfuse gives you that should never go into the ledger.
