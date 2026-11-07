@@ -264,8 +264,12 @@ export class PayPalExecutor implements SavedMethodCharger {
   }
 
   /**
-   * Live capture is unverified: no sandbox buyer approval has registered yet, so
-   * this is tested against PayPal's documented shapes (test/documented-shapes.ts).
+   * Seen live on 2026-11-08 (D-49): a capture after a buyer approved gave 201 and a
+   * capture id, the same key gave the same capture again, and a new key got
+   * ORDER_ALREADY_CAPTURED, which this method read back as the one capture on all
+   * four captured orders. The unit tests still use PayPal's documented shapes
+   * (test/documented-shapes.ts), because a new capture needs a buyer to click
+   * through PayPal's checkout and can't run unattended.
    *
    * A named refusal is a failure, on the reading that this capture took no money.
    * The exceptions are CAPTURE_MAY_HAVE_MOVED_MONEY, where the order is read back and

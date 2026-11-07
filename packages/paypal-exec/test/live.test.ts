@@ -10,8 +10,9 @@ const clientSecret = process.env["PAYPAL_CLIENT_SECRET"];
 /**
  * Real calls to the PayPal sandbox when its keys are in .env, skipped otherwise,
  * as in CI. They create unapproved orders, which can't be voided (D-26) and move no
- * money. Capture after approval isn't here: no sandbox approval has registered yet,
- * so capture is only tested against PayPal's documented shapes.
+ * money. Capture after approval isn't here: it needs a buyer to approve at PayPal's
+ * checkout, so it can't run unattended. It was run by hand on 2026-11-08 and behaved
+ * as the code reads it (D-49); the unit tests use PayPal's documented shapes.
  */
 describe.runIf(clientId && clientSecret)("PayPal sandbox, live", () => {
   const paypal = new PayPalExecutor({ clientId: clientId ?? "", clientSecret: clientSecret ?? "", baseUrl: PAYPAL_SANDBOX_BASE_URL, fetch: globalThis.fetch });

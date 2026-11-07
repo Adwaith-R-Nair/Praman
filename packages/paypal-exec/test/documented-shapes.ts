@@ -1,6 +1,8 @@
 /**
  * Capture responses as PayPal documents them, NOT recorded from a live capture.
- * No sandbox buyer approval has registered yet, so a real one doesn't exist.
+ * Live captures did happen in the sandbox on 2026-11-08 and matched this reading
+ * (D-49), but they are not copied here: a test built on them would depend on orders
+ * only this sandbox account has, which PayPal may expire.
  * Source: the Orders v2 OpenAPI schema at developer.paypal.com/api/orders/v2/schema.json,
  * sample samples_orders_capture_00_orders_capture, on 2026-11-05, with buyer details,
  * shipping and the fee breakdown left out. The order id, capture id and capture
