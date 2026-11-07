@@ -2269,6 +2269,8 @@ shows the same thing Praman does, with the model's part marked as replayed.
 
 Status: the `X-Forwarded-For` bullet is replaced by D-60, which reads the address the proxy added, not the client's.
 
+Status: the "plain page until 00:00 UTC" row is replaced by D-61. Past the session cap, visitors get a labelled recorded run.
+
 ### D-58 · The server refuses to start rather than run with the wrong keys · Accepted
 
 An implementer's decision for the builder to check, made in plan Task 13 on 2026-11-08 (`ed17165`).
@@ -2361,3 +2363,29 @@ must still get in. If the phone is refused, `TRUST_PROXY=2` is the fix.
 documentation that this repo relies on promises them, and where Cloudflare isn't in front a client can send them itself.
 
 **Rejected: a list of Render's proxy address ranges.** Not published in a form this repo could check, and it would go stale.
+
+### D-61 · Past the daily session cap, visitors get a recorded run · Accepted
+
+An implementer's decision, made on 2026-11-08 after a review of the Task 13 work. It replaces D-57's row for the session cap.
+
+D-57 rejected stopping the demo at the model cap, because a judge arriving that evening would see nothing work. The session cap
+did exactly that: once the day's 200 sessions were gone, **Start a session** answered with a 429 and the start page, and nothing
+of the story was visible until 00:00 UTC. Task 13 asked for a labelled recording once a cap is reached.
+
+**Decision: past the session cap, `POST /demo/start` redirects to `/demo/recorded`.** That page says first, in bold, "Recorded
+run, not live", says the live demo opens again at 00:00 UTC, and shows a screenshot of one complete session: all seven steps,
+from `docs/screenshots/demo-story-desktop.png`, with alt text that walks through each. It has no buttons, starts no session,
+sets no cookie, and touches no database. It can be opened any time, so the builder can see what a late visitor gets.
+
+- **A screenshot, not a replay.** A replayed session would still need a session, PayPal calls and database writes, which is
+  what the cap bounds. The screenshot costs nothing to serve.
+- **It follows the screenshots.** The page serves the file the screenshot script writes, so when the final polish task
+  regenerates the screenshots the recorded run updates with them.
+- **The cap still holds.** Nothing past it creates a session, and the per-address limit (D-60) still slows one source using
+  the day's sessions up.
+
+**Rejected: raising or removing the session cap.** Sessions hold memory, PayPal vault tokens and ledger rows. The cap is what
+keeps one script from filling them; the recorded run is what keeps the cap from hiding the product.
+
+**Rejected: a per-address share of the daily cap.** It would need per-address counts that survive a restart, and it is only
+as strong as the address it keys on.
