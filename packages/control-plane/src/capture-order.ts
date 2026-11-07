@@ -171,6 +171,32 @@ async function refuseUnproven(traceId: string, claimedMandateId: string, reasonC
 }
 
 /**
+ * Sends one capture attempt under its derived key, and returns an answer that is either
+ * done or refused. Throws when it can't tell, and the caller leaves the record pending.
+ * captureOrder and the reconciler both send captures through here, so a repeat of an
+ * attempt is the same request under the same PayPal-Request-Id.
+ *
+ * Any refusal but the one seen live is read back before it is believed. A code PayPal
+ * adds later that means "under way" would otherwise close the record on money that moved
+ * (D-39, D-40). An answer about another order, or one saying the order is merely
+ * created, isn't an answer.
+ */
+export async function sendCapture(
+  executor: Executor,
+  req: { readonly orderKey: string; readonly orderId: string; readonly captureKey: string; readonly amount: Minor; readonly currency: Currency },
+): Promise<ExecOutcome> {
+  let raw = await executor.capture({ order_id: req.orderId, amount_minor: req.amount, currency: req.currency, idempotency_key: req.captureKey });
+  if (raw.status === "failed" && raw.failure_code !== ORDER_NOT_APPROVED) {
+    const read = await executor.findOrder({ receipt: receiptFor(req.orderKey), idempotency_key: req.orderKey, order_id: req.orderId, amount_minor: req.amount, currency: req.currency });
+    if (read !== null && read.status === "captured") raw = read;
+  }
+  if (raw.order_id !== req.orderId || raw.status === "created") {
+    throw new Error(`the rail's answer to capturing ${req.orderId} can't be read as done or refused`);
+  }
+  return raw;
+}
+
+/**
  * Captures a checkout order the buyer has approved, under a fresh check of the mandate
  * (D-31). The same two phases as runIntent (D-22): T1 decides and commits a capture
  * record and an api_call before the rail is called, the call runs outside any
@@ -301,19 +327,9 @@ export async function captureOrder(traceId: string, signed: SignedMandate, publi
   // ── The rail call. Outside any transaction. ──
   let raw: ExecOutcome;
   try {
-    raw = await phase1.executor.capture({ order_id: orderId, amount_minor: amount, currency, idempotency_key: captureKey });
-    // Any refusal but the one seen live is read back before it is believed. A code PayPal
-    // adds later that means "under way" would otherwise close the record on money that moved (D-39, D-40).
-    if (raw.status === "failed" && raw.failure_code !== ORDER_NOT_APPROVED) {
-      const read = await phase1.executor.findOrder({ receipt: receiptFor(where.idempotency_key), idempotency_key: where.idempotency_key, order_id: orderId, amount_minor: amount, currency });
-      if (read !== null && read.status === "captured") raw = read;
-    }
+    raw = await sendCapture(phase1.executor, { orderKey: where.idempotency_key, orderId, captureKey, amount, currency });
   } catch (err) {
     return { kind: "IN_FLIGHT", trace_id: traceId, detail: `capture call failed with unknown outcome: ${String(err)}` };
-  }
-  // An answer about another order, or a capture that says the order is merely created, isn't an answer.
-  if (raw.order_id !== orderId || raw.status === "created") {
-    return { kind: "IN_FLIGHT", trace_id: traceId, detail: `the rail's answer to capturing ${orderId} can't be read as done or refused` };
   }
   const outcome: AcceptedOutcome = acceptOutcome(raw, { amount_minor: amount, currency });
 

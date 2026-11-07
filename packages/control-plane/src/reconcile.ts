@@ -2,7 +2,7 @@ import { prisma } from "@praman/db";
 import { append } from "@praman/ledger";
 import { currencyFromDb, isRail, minorFromDb, minorToJSON } from "@praman/shared";
 import { acceptOutcome, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
-import { executorFor } from "./capture-order.js";
+import { executorFor, sendCapture } from "./capture-order.js";
 import { readOrderView } from "./order-view.js";
 import { MANDATE_LOCK_NS, RECONCILE_MIN_AGE_MS } from "./run-intent.js";
 
@@ -12,10 +12,15 @@ type PendingRecord = Awaited<ReturnType<typeof prisma.idempotencyRecord.findMany
  * A capture record is checked by reading its order by id. Repeating the create would
  * hand back the order as first created, and say nothing about the capture (D-38).
  *
- * Captured at the rail: the capture is recorded, under the ORDER's key. Anything else
- * means this capture took no money, so it is recorded as failed. That keeps the hold,
- * and the order can be captured again or released later (D-40). The record is
- * re-read under the mandate lock, so a late T2 and this can't both write.
+ * Captured or refused at the rail: that is recorded, under the ORDER's key. Not captured
+ * yet doesn't prove no money moved, because PayPal may still be completing the capture
+ * (D-39), and a record closed as failed would let the release sweep free the hold. So
+ * the same attempt is sent again under the same key (D-41). PayPal-Request-Id makes it
+ * the same capture. A capture that never arrived is made now, under the decision T1
+ * already recorded. One still being completed throws, and the record stays pending. A
+ * definite refusal, such as ORDER_NOT_APPROVED, is recorded as failed and keeps the hold.
+ *
+ * The record is re-read under the mandate lock, so a late T2 and this can't both write.
  */
 async function reconcileCapture(rec: PendingRecord, route: ExecutorRouter, now: Date): Promise<boolean> {
   if (rec.orderKey === null || rec.orderId === null) throw new TypeError(`capture record ${rec.key} names no order`);
@@ -34,9 +39,7 @@ async function reconcileCapture(rec: PendingRecord, route: ExecutorRouter, now: 
   if (read !== null && read.order_id !== orderId) throw new Error(`the rail answered about order ${read.order_id}, not ${orderId}`);
 
   let outcome: AcceptedOutcome;
-  if (read !== null && (read.status === "captured" || read.status === "failed")) {
-    outcome = acceptOutcome(read, { amount_minor: amount, currency });
-  } else {
+  if (read === null) {
     outcome = {
       rail: executor.rail,
       order_id: orderId,
@@ -45,8 +48,14 @@ async function reconcileCapture(rec: PendingRecord, route: ExecutorRouter, now: 
       currency,
       payment_id: null,
       approve_url: null,
-      failure_code: read === null ? "RECONCILE_ORDER_NOT_FOUND" : "RECONCILE_NOT_CAPTURED",
+      failure_code: "RECONCILE_ORDER_NOT_FOUND",
     };
+  } else if (read.status === "captured" || read.status === "failed") {
+    outcome = acceptOutcome(read, { amount_minor: amount, currency });
+  } else {
+    // Throws when the rail can't yet say, and the record stays pending.
+    const sent = await sendCapture(executor, { orderKey, orderId, captureKey: rec.key, amount, currency });
+    outcome = acceptOutcome(sent, { amount_minor: amount, currency });
   }
 
   return prisma.$transaction(async (tx) => {

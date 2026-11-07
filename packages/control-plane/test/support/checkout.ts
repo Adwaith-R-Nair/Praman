@@ -18,6 +18,8 @@ interface FakeOrder {
   readonly amount: Minor;
   approved: boolean;
   captured: boolean;
+  /** PayPal took a capture and is still completing it. Reads show the order as approved, not captured. */
+  completing: boolean;
 }
 
 /**
@@ -38,7 +40,7 @@ export class CheckoutExecutor implements Executor {
   /** What a read reports as the order's amount. */
   quoteAmount: Minor | null = null;
   /** How capture answers. */
-  captureAnswer: "capture" | "refuse" | "refuse_but_captured" | "throw" | "throw_but_captured" = "capture";
+  captureAnswer: "capture" | "refuse" | "refuse_but_captured" | "throw" | "throw_but_captured" | "throw_completing" = "capture";
   refuseCode = "ORDER_NOT_APPROVED";
   findThrows = false;
   /** Lets two captures overlap. */
@@ -62,7 +64,7 @@ export class CheckoutExecutor implements Executor {
     const id = existing ?? `PP${String(++this.#n).padStart(6, "0")}`;
     if (existing === undefined) {
       this.#byKey.set(req.idempotency_key, id);
-      this.#orders.set(id, { id, amount: this.createAmount ?? req.amount_minor, approved: false, captured: false });
+      this.#orders.set(id, { id, amount: this.createAmount ?? req.amount_minor, approved: false, captured: false, completing: false });
     }
     return this.#view(this.order(id));
   }
@@ -80,11 +82,16 @@ export class CheckoutExecutor implements Executor {
     if (this.captureDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.captureDelayMs));
     const o = this.order(req.order_id);
     const failed = (code: string): ExecOutcome => ({ ...this.#view(o), status: "failed", payment_id: null, approve_url: null, failure_code: code });
+    // paypal-exec reads ORDER_COMPLETION_IN_PROGRESS back, sees no capture yet, and throws unknown (D-39).
+    if (o.completing) throw new Error("PayPal: capture answered with an order that isn't captured");
     switch (this.captureAnswer) {
       case "throw":
         throw new Error("ECONNRESET");
       case "throw_but_captured":
         o.captured = true;
+        throw new Error("ECONNRESET");
+      case "throw_completing":
+        o.completing = true;
         throw new Error("ECONNRESET");
       case "refuse":
         return failed(this.refuseCode);
@@ -102,6 +109,13 @@ export class CheckoutExecutor implements Executor {
     const o = this.#orders.get(id);
     if (o === undefined) throw new Error(`no fake order ${id}`);
     return o;
+  }
+
+  /** PayPal finishes a capture it was still completing. */
+  finishCapture(id: string): void {
+    const o = this.order(id);
+    o.completing = false;
+    o.captured = true;
   }
 
   /** The buyer approves at checkout. */
