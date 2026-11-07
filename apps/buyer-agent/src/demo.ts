@@ -12,16 +12,19 @@ import type { PurchaseIntent } from "@praman/policy";
 // they're safe to keep static.
 config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 
-// Dev observability only (D-xx) — initialised here, the entrypoint, never
-// inside a library package (CI enforces this, see lint:boundary). Started
-// only when both keys are actually present: LangfuseSpanProcessor doesn't
-// throw on missing credentials, it just logs a warning and lets every
-// export fail — explicit opt-in here avoids that noise entirely for anyone
-// who hasn't set up Langfuse, rather than relying on its own fallback.
-if (env["LANGFUSE_SECRET_KEY"] && env["LANGFUSE_PUBLIC_KEY"]) {
-  const { NodeSDK } = await import("@opentelemetry/sdk-node");
-  const { LangfuseSpanProcessor } = await import("@langfuse/otel");
-  new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
+// Dev observability only (D-47), started here in the entrypoint and never
+// inside a library package (CI enforces this, see lint:boundary). With no
+// Langfuse keys nothing starts. See tracing.ts.
+const { startTracing } = await import("./tracing.js");
+const tracing = await startTracing(env);
+
+/** Sends buffered traces, waiting a few seconds at most, then exits. A Langfuse outage can't hold the demo. */
+async function exit(code: number): Promise<never> {
+  const outcome = await tracing.stop();
+  if (outcome === "timed_out" || outcome === "failed") {
+    console.log(`▸ langfuse: traces not sent (${outcome}). The ledger is not affected.`);
+  }
+  process.exit(code);
 }
 
 const { runIntent } = await import("@praman/control-plane");
@@ -90,7 +93,7 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
   if (agent.kind !== "PROPOSED") {
     console.log(`▸ agent made no proposal (${agent.kind})`);
     if (agent.kind === "NO_PROPOSAL") console.log(`  reason: ${agent.reason}`);
-    process.exit(0);
+    break;
   }
 
   console.log(`▸ agent proposes: ${agent.cart.line_items.map((i) => `${i.qty}× ${i.sku}`).join(", ")}`);
@@ -136,7 +139,7 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     console.log(`\n  The system does not know whether this order was created. It will not`);
     console.log(`  guess by retrying — that is how a double charge happens. A reconciler`);
     console.log(`  resolves this once Razorpay's own propagation lag has passed (D-22).\n`);
-    process.exit(0);
+    break;
   }
 
   const v = result.agent_visible;
@@ -168,3 +171,5 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
   }
   break;
 }
+
+await exit(0);

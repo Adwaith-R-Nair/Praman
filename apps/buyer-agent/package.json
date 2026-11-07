@@ -4,11 +4,14 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
     "@langfuse/otel": "5.11.1",
     "@langfuse/tracing": "5.11.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@opentelemetry/api": "1.9.1",
     "@opentelemetry/sdk-node": "0.222.0",
     "@praman/agent-core": "workspace:*",
     "@praman/control-plane": "workspace:*",

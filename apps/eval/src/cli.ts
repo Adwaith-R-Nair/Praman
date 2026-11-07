@@ -7,15 +7,12 @@ import { generateBadge, generateReportMarkdown, type AblationArmStats, type Abla
 import { runLayer1Corpus, runLayer2Corpus } from "./runner.js";
 import type { CaseResult, Layer1Case, Layer2Case } from "./types.js";
 
-// Dev observability only (D-xx) — "./runner.js" already imported "./db.js",
-// whose own top-level code loads .env before this line runs. Started only
-// when both keys are present; CI has no Langfuse keys configured and never
-// starts this, by design (see docs/BUILD_LOG.md on --layer1 --dev).
-if (env["LANGFUSE_SECRET_KEY"] && env["LANGFUSE_PUBLIC_KEY"]) {
-  const { NodeSDK } = await import("@opentelemetry/sdk-node");
-  const { LangfuseSpanProcessor } = await import("@langfuse/otel");
-  new NodeSDK({ spanProcessors: [new LangfuseSpanProcessor()] }).start();
-}
+// Dev observability only (D-47). "./runner.js" has already imported
+// "./db.js", which loads .env and points DATABASE_URL at the test database,
+// so this dynamic import can't reach the real one. With no Langfuse keys
+// nothing starts; CI has none.
+const { startTracing } = await import("@praman/buyer-agent");
+const tracing = await startTracing(env);
 
 /**
  * Reads whatever ablation-cli.ts already wrote to eval/ablation/, if it's
@@ -116,4 +113,5 @@ console.log(`\nWrote ${outDir}report.md, report.json, badge.json`);
 
 const { prisma } = await import("./db.js");
 await prisma.$disconnect();
+await tracing.stop();
 process.exit(failed > 0 ? 1 : 0);
