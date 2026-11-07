@@ -1361,6 +1361,8 @@ way. `PREVIOUS_REQUEST_IN_PROGRESS` is the nearest. It is listed as a `RESOURCE_
 
 ### D-40 · Capturing and releasing a checkout order · Accepted
 
+Status: section 9's "not captured" row is replaced. A pending capture whose order reads as not captured is now sent again under the same key, not recorded as failed. See D-41.
+
 Plan Task 7. An implementer's decisions for the builder to check. Two of them, what a failed capture leaves behind and reading
 the order back after a refusal, were set as requirements in the Task 7 brief, and are recorded here so the reasoning sits next to
 the code. None of this has run against a live PayPal capture yet. The last section says exactly what is unverified.
@@ -1466,3 +1468,45 @@ above is tested against a stand-in rail in `packages/control-plane/test/support/
 - `api_call` rows for a capture carry the order's key, with `operation: "orders.capture"`. Task 8 pairs attempted calls with
   outcomes by key to reserve budget, and needs to tell a capture call from a create call by `operation`.
 - Ten minutes is a judgement, as D-30 says. It is a constant, `ORDER_HOLD_TTL_MS`.
+
+### D-41 · A pending capture is sent again, not guessed at · Accepted
+
+An implementer's decision for the builder to check, after a review of Task 7 found a money bug in D-40 section 9.
+
+**The bug.** The reconciler read a pending capture's order by id, and if the order showed as approved but not captured, it
+recorded the capture as failed with `RECONCILE_NOT_CAPTURED`. That read can't tell "no capture" from "a capture PayPal is still
+completing", which D-39 counts as money possibly moving. Once the record was failed, nothing was pending, so the release sweep in
+the same `pnpm reconcile` run could write `released`. If PayPal then finished the capture, the ledger read created, failed,
+released, and the budget it spent was free to spend again. Nothing looks at a released order again.
+
+**The decision.** When the read shows the order as not captured, the reconciler sends the same capture attempt again, with the
+record's own derived key. It goes through `sendCapture`, the one function `captureOrder` uses too, so a refusal other than
+`ORDER_NOT_APPROVED` is read back before it is believed.
+
+| What the repeat gets | Recorded |
+|---|---|
+| a capture, new or the one already made | captured, under the order's key |
+| `ORDER_NOT_APPROVED` | failed, with that code, hold kept |
+| another refusal, and the read-back shows no capture | failed, with the rail's code, hold kept |
+| no answer it can read, such as a capture still completing | nothing, still pending |
+
+The other rows of D-40 section 9 are unchanged: an order read as captured or failed is recorded as such, an order the rail doesn't
+know is failed with `RECONCILE_ORDER_NOT_FOUND`, and a read that throws leaves the record pending. A pending capture keeps the
+release sweep away, as before.
+
+**Why the same key is safe.** `PayPal-Request-Id` makes a repeat with the same key the same request. If PayPal no longer holds the
+key, a capture that already happened answers `ORDER_ALREADY_CAPTURED`, which `paypal-exec` reads back and reports as the capture.
+Either way the order can be captured once, since it was created with intent `CAPTURE`.
+
+**What this changes.** A capture that never reached PayPal on an approved order used to be recorded as failed, and waited for the
+buyer to retry. The reconciler now makes it. That capture was already decided in T1, under the mandate lock, and recorded as a
+pending attempt with its amount; the reconciler finishes that attempt and doesn't decide a new one. It is the same shape as an order
+record, which the reconciler settles by repeating the create with its key (D-26). The cost is that a mandate revoked between T1 and
+the reconcile doesn't stop the repeat, just as it couldn't stop the first call had it arrived.
+
+**Rejected: leaving the record pending while the order reads as approved.** It is safe for the money, but a capture that never
+reached PayPal would stay pending for ever. That blocks every retry and the release sweep, so the order is stuck holding budget
+until a person steps in.
+
+**Still unverified live.** As with D-40, nothing has been captured on the sandbox. What a capture still completing looks like, and
+how long it lasts, is from PayPal's documentation. Webhooks (Task 9) remain the backstop for a capture Praman didn't see finish.
