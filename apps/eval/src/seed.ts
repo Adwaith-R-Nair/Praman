@@ -1,35 +1,23 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { append } from "@praman/ledger";
 import { generateKeypair, signMandate, type MandateDocument, type SignedMandate } from "@praman/mandate";
 import { idempotencyKey } from "@praman/exec-core";
 import { isCurrency, type Currency } from "@praman/shared";
 import type { PurchaseIntent } from "@praman/policy";
 import { prisma } from "./db.js";
+import { loadCatalogFixture, loadMandateFixture, railFor, type CatalogFixture } from "./fixtures.js";
 import type { Layer1Case, Layer2Case, SeedEvent } from "./types.js";
 
-const FIXTURES_DIR = fileURLToPath(new URL("../fixtures", import.meta.url));
-
-interface CatalogFixtureItem {
-  readonly sku: string;
-  readonly title: string;
-  readonly description: string;
-  readonly category: string;
-  readonly price_minor: string;
-  readonly currency: string;
-  readonly stock_qty: number;
-}
-interface CatalogFixture {
-  readonly merchant_id: string;
-  readonly items: readonly CatalogFixtureItem[];
+/**
+ * The same fixture in another currency, for a mirrored run. Only called on a
+ * case mirrorPlan() cleared, so the mandate is v2 and has one currency.
+ */
+function relabelMandate(doc: MandateDocument, currency: Currency): MandateDocument {
+  if (doc.version === 1) throw new Error(`${doc.mandate_id}: a v1 mandate can only be in INR, so it can't be mirrored`);
+  return { ...doc, scope: { ...doc.scope, currency } };
 }
 
-function loadMandateFixture(name: string): MandateDocument {
-  return JSON.parse(readFileSync(`${FIXTURES_DIR}/mandates/${name}.json`, "utf8")) as MandateDocument;
-}
-
-function loadCatalogFixture(name: string): CatalogFixture {
-  return JSON.parse(readFileSync(`${FIXTURES_DIR}/catalogs/${name}.json`, "utf8")) as CatalogFixture;
+function relabelCatalog(cat: CatalogFixture, currency: Currency): CatalogFixture {
+  return { ...cat, items: cat.items.map((i) => ({ ...i, currency })) };
 }
 
 /** Truncates everything a case could have touched. Called before every case. */
@@ -115,23 +103,39 @@ export interface SeededCase {
   readonly merchantId: string;
   /** Null when the fixture's mandate is deliberately in a currency we don't support. */
   readonly currency: Currency | null;
+  /** The rail the primary merchant was configured on. Null when its currency is one no rail takes. */
+  readonly rail: "razorpay" | "paypal" | null;
 }
 
-/** Resets the DB, seeds the case's catalog and prior ledger history, signs its mandate fixture fresh. */
-export async function seedCase(c: Layer1Case | Layer2Case): Promise<SeededCase> {
+/** The rail a fixture merchant is configured on. Nothing here picks the executor: that is always the simulated one. */
+function merchantRail(currency: string): "razorpay" | "paypal" | "simulated" {
+  return isCurrency(currency) ? railFor(currency) : "simulated";
+}
+
+/**
+ * Resets the DB, seeds the case's catalog and prior ledger history, signs its
+ * mandate fixture fresh. With `mirrorTo`, every currency in the case becomes
+ * that one, so the same case runs at a merchant on the other rail.
+ */
+export async function seedCase(c: Layer1Case | Layer2Case, mirrorTo?: Currency): Promise<SeededCase> {
   await resetTestDb();
 
   const now = new Date();
-  const doc = loadMandateFixture(c.mandate);
+  const fixture = loadMandateFixture(c.mandate);
+  const doc = mirrorTo === undefined ? fixture : relabelMandate(fixture, mirrorTo);
   const { privateKeyPem, publicKeyPem } = generateKeypair();
   const signed = signMandate(doc, privateKeyPem, "eval_k1");
 
-  const catalog = loadCatalogFixture(c.catalog);
-  const catalogsToSeed = [catalog, ...(c.layer === 1 ? (c.extra_catalogs ?? []) : []).map(loadCatalogFixture)];
+  const relabel = (cat: CatalogFixture): CatalogFixture => (mirrorTo === undefined ? cat : relabelCatalog(cat, mirrorTo));
+  const catalog = relabel(loadCatalogFixture(c.catalog));
+  const catalogsToSeed = [catalog, ...(c.layer === 1 ? (c.extra_catalogs ?? []) : []).map((name) => relabel(loadCatalogFixture(name)))];
   for (const cat of catalogsToSeed) {
-    // Every eval merchant is on the simulated rail. Evals never reach a real gateway.
+    // The merchant is configured on the rail its currency belongs to, as it
+    // would be in production. The runner still routes every rail to the
+    // simulated executor, so evals never reach a real gateway.
+    const currency = cat.items[0]?.currency ?? "INR";
     await prisma.merchant.create({
-      data: { merchantId: cat.merchant_id, rail: "simulated", currency: cat.items[0]?.currency ?? "INR" },
+      data: { merchantId: cat.merchant_id, rail: merchantRail(currency), currency },
     });
     await prisma.catalogItem.createMany({
       data: cat.items.map((i) => ({
@@ -152,13 +156,15 @@ export async function seedCase(c: Layer1Case | Layer2Case): Promise<SeededCase> 
   }
 
   const currency = isCurrency(doc.scope.currency) ? doc.scope.currency : null;
+  const primaryCurrency = catalog.items[0]?.currency ?? "INR";
+  const rail = isCurrency(primaryCurrency) ? railFor(primaryCurrency) : null;
 
   // Simulates a forged mandate: return a public key that does not match the
   // one actually used to sign, so verifyMandate fails at the source.
   if (c.layer === 1 && c.tamper === "wrong_key") {
     const wrongKeypair = generateKeypair();
-    return { signed, publicKeyPem: wrongKeypair.publicKeyPem, now, merchantId: catalog.merchant_id, currency };
+    return { signed, publicKeyPem: wrongKeypair.publicKeyPem, now, merchantId: catalog.merchant_id, currency, rail };
   }
 
-  return { signed, publicKeyPem, now, merchantId: catalog.merchant_id, currency };
+  return { signed, publicKeyPem, now, merchantId: catalog.merchant_id, currency, rail };
 }

@@ -15,6 +15,7 @@ import type { PurchaseIntent } from "@praman/policy";
 import { runAgent, type AgentResult } from "@praman/buyer-agent";
 import type { ModelProvider } from "@praman/agent-core";
 import { prisma } from "./db.js";
+import { mirrorPlan } from "./fixtures.js";
 import { seedCase } from "./seed.js";
 import type { ScoreSink } from "./scores.js";
 import { writeTranscript } from "./transcript.js";
@@ -29,9 +30,14 @@ function gitShaOrUnknown(): string {
   }
 }
 
+/** The rail fields of a result. A rail of null (a currency no rail takes) leaves `rail` out. */
+function railFields(rail: "razorpay" | "paypal" | null, mirrorTo: Currency | undefined) {
+  return { ...(rail !== null ? { rail } : {}), mirrored: mirrorTo !== undefined };
+}
+
 /** Asks evaluateCapture about a seeded order. A case's money_moved here means the capture would have been allowed. */
-async function runCaptureCase(c: Layer1Case, capture: CaseCapture): Promise<CaseResult> {
-  const { signed, publicKeyPem, now, currency } = await seedCase(c);
+async function runCaptureCase(c: Layer1Case, capture: CaseCapture, mirrorTo?: Currency): Promise<CaseResult> {
+  const { signed, publicKeyPem, now, currency, rail } = await seedCase(c, mirrorTo);
 
   const t0 = performance.now();
   const verified = verifyMandate(signed, publicKeyPem);
@@ -46,7 +52,7 @@ async function runCaptureCase(c: Layer1Case, capture: CaseCapture): Promise<Case
       idempotency_key: capture.order_key,
       held_amount_minor: minorFromJSON(capture.held_amount_minor),
       quoted_amount_minor: minorFromJSON(capture.quoted_amount_minor),
-      currency: capture.currency,
+      currency: mirrorTo ?? capture.currency,
     },
   });
   const latency_ms = performance.now() - t0;
@@ -68,15 +74,21 @@ async function runCaptureCase(c: Layer1Case, capture: CaseCapture): Promise<Case
     incidental: outcomeMatches && !reasonExpected,
     money_at_risk_minor: BigInt(c.money_at_risk_minor),
     currency,
+    ...railFields(rail, mirrorTo),
     latency_ms,
     detail: reasonExpected ? "" : `unexpected reason ${decision.reason_code} (money_moved=${String(moneyMoved)})`,
   };
 }
 
-export async function runLayer1(c: Layer1Case): Promise<CaseResult> {
-  if (c.capture !== undefined) return runCaptureCase(c, c.capture);
+/**
+ * Runs one Layer 1 case. With `mirrorTo`, every currency in the case is
+ * relabelled to that one first, so the case runs at a merchant on the other
+ * rail with the same integers (see mirrorPlan).
+ */
+export async function runLayer1(c: Layer1Case, mirrorTo?: Currency): Promise<CaseResult> {
+  if (c.capture !== undefined) return runCaptureCase(c, c.capture, mirrorTo);
 
-  const { signed, publicKeyPem, now, currency } = await seedCase(c);
+  const { signed, publicKeyPem, now, currency, rail } = await seedCase(c, mirrorTo);
 
   const intent: PurchaseIntent = {
     intent_id: `int_${c.case_id}`,
@@ -115,17 +127,31 @@ export async function runLayer1(c: Layer1Case): Promise<CaseResult> {
     incidental: outcomeMatches && !reasonExpected,
     money_at_risk_minor: BigInt(c.money_at_risk_minor),
     currency,
+    ...railFields(rail, mirrorTo),
     latency_ms,
     detail: reasonExpected ? "" : `unexpected reason ${reasonCode} (money_moved=${String(moneyMoved)})`,
   };
 }
 
-export async function runLayer1Corpus(cases: readonly Layer1Case[]): Promise<CaseResult[]> {
+export interface Layer1CorpusRun {
+  /** Every case as written, then every case that could be mirrored, on the other rail. */
+  readonly results: readonly CaseResult[];
+  /** Cases that ran on one rail only, and why. */
+  readonly not_mirrored: readonly { readonly case_id: string; readonly why: string }[];
+}
+
+export async function runLayer1Corpus(cases: readonly Layer1Case[]): Promise<Layer1CorpusRun> {
   const results: CaseResult[] = [];
+  const not_mirrored: { case_id: string; why: string }[] = [];
   for (const c of cases) {
     results.push(await runLayer1(c));
   }
-  return results;
+  for (const c of cases) {
+    const plan = mirrorPlan(c);
+    if (plan.kind === "skip") not_mirrored.push({ case_id: c.case_id, why: plan.why });
+    else results.push(await runLayer1(c, plan.currency));
+  }
+  return { results, not_mirrored };
 }
 
 /**
@@ -163,7 +189,7 @@ async function runLayer2Inner(
   transcriptSubdir: string | undefined,
   scores: ScoreSink | undefined,
 ): Promise<CaseResult> {
-  const { signed, publicKeyPem, now, merchantId, currency } = await seedCase(c);
+  const { signed, publicKeyPem, now, merchantId, currency, rail } = await seedCase(c);
 
   const t0 = performance.now();
   const agent = await runAgent(provider, c.goal, merchantId);
@@ -171,7 +197,8 @@ async function runLayer2Inner(
 
   writeTranscript(c.case_id, agent.transcript, transcriptSubdir);
 
-  const result = await decideLayer2(c, agent, signed, publicKeyPem, now, currency, latency_ms);
+  const decided = await decideLayer2(c, agent, signed, publicKeyPem, now, currency, latency_ms);
+  const result: CaseResult = { ...decided, ...(rail !== null ? { rail } : {}) };
   // A copy for the trace, after the result is final. Nothing reads it back.
   if (scores !== undefined && agent.langfuseTraceId !== undefined) scores.push(agent.langfuseTraceId, result);
   return result;

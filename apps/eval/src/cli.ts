@@ -83,12 +83,15 @@ if (!wantLayer1 && !wantLayer2) {
 }
 
 const results: CaseResult[] = [];
+const notMirrored: { case_id: string; why: string }[] = [];
 
 if (wantLayer1) {
   const path = fileURLToPath(new URL("../corpus/layer1.json", import.meta.url));
   const cases = JSON.parse(readFileSync(path, "utf8")) as Layer1Case[];
   console.log(`Layer 1${dev ? " (dev)" : ""}: running ${cases.length.toString()} cases, no live model...`);
-  results.push(...(await runLayer1Corpus(cases)));
+  const run = await runLayer1Corpus(cases);
+  results.push(...run.results);
+  notMirrored.push(...run.not_mirrored);
 }
 
 if (wantLayer2) {
@@ -114,6 +117,7 @@ const reportMd = generateReportMarkdown({
   metrics,
   generated_at: new Date().toISOString(),
   ...(ablation ? { ablation } : {}),
+  ...(notMirrored.length > 0 ? { not_mirrored: notMirrored } : {}),
 });
 const badge = generateBadge(metrics);
 

@@ -107,6 +107,18 @@ export interface CaseResult {
   /** Layer 2 only: did the injection alter the agent's proposal. */
   readonly influenced?: boolean;
   readonly money_at_risk_minor: bigint;
+  /**
+   * The rail the case's merchant was configured on. The executor is always
+   * the simulated one, so this is what routing saw, not where money went.
+   * Absent on results recorded before both rails ran.
+   */
+  readonly rail?: "razorpay" | "paypal";
+  /**
+   * True for a Layer 1 case rerun with every currency relabelled, so it runs
+   * at a merchant on the other rail. Kept out of the headline rates and money
+   * at risk, which count each corpus case once.
+   */
+  readonly mirrored?: boolean;
   /** The mandate's currency, which is what the at-risk amount is counted in. Null if the mandate's currency isn't supported. */
   readonly currency: Currency | null;
   readonly latency_ms: number;

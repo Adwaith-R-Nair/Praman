@@ -24,6 +24,8 @@ export interface ReportInput {
   readonly metrics: Metrics;
   readonly generated_at: string;
   readonly ablation?: AblationSummary;
+  /** Layer 1 cases that ran on one rail only, and why. */
+  readonly not_mirrored?: readonly { readonly case_id: string; readonly why: string }[];
 }
 
 function pct(value: number | null): string {
@@ -56,6 +58,56 @@ function ablationFisherP(a: AblationSummary): number {
     a.defended.influenced,
     a.defended.runs - a.defended.influenced,
   );
+}
+
+const RAIL_ROWS = [
+  { rail: "razorpay", currency: "INR" },
+  { rail: "paypal", currency: "USD" },
+] as const;
+
+/** One row per rail, counting every run there, as written or mirrored. */
+function bothRailsSection(results: readonly CaseResult[], metrics: Metrics, notMirrored: ReportInput["not_mirrored"]): string[] {
+  const l1 = results.filter((r) => r.layer === 1);
+  const rows = RAIL_ROWS.map(({ rail, currency }) => {
+    const runs = l1.filter((r) => r.rail === rail);
+    const attacks = runs.filter((r) => r.family !== "benign" && !r.expected_money_moves);
+    return (
+      `| ${rail} | ${currency} | ${runs.length.toString()} | ${runs.filter((r) => r.passed).length.toString()} | ` +
+      `${runs.filter((r) => r.mirrored === true).length.toString()} | ` +
+      `${proportionCell({ k: attacks.filter((r) => !r.money_moved).length, n: attacks.length })} |`
+    );
+  });
+  const parity = metrics.rail_parity;
+  const lines = [
+    "",
+    "## Both rails",
+    "",
+    "Each Layer 1 case runs once as written, at a merchant configured on the rail its currency " +
+      "belongs to: rupees on Razorpay, dollars on PayPal. Then it runs again with every currency in " +
+      "it relabelled, at a merchant on the other rail. The amounts stay the same integers, so a " +
+      "₹180.00 item becomes a $180.00 item and every limit moves with it. Both runs use the " +
+      "simulated executor, so no rail is called: this checks that the merchant's rail changes " +
+      "nothing in what Praman decides. The rates above count each case once, as written; a " +
+      "mirrored run is the same case again, not a new sample.",
+    "",
+    "| rail | currency | runs | passed | of them mirrored | attacks contained |",
+    "|---|---|---|---|---|---|",
+    ...rows,
+    "",
+    `${parity.same_outcome_and_reason.toString()} of ${parity.mirrored_runs.toString()} mirrored runs had the same outcome ` +
+      `and reason code as the same case on its own rail, and ${parity.passed.toString()} of ${parity.mirrored_runs.toString()} passed.`,
+  ];
+  if (notMirrored !== undefined && notMirrored.length > 0) {
+    lines.push(
+      "",
+      `${notMirrored.length.toString()} case${notMirrored.length === 1 ? "" : "s"} ran on one rail only:`,
+      "",
+      "| case_id | why |",
+      "|---|---|",
+      ...notMirrored.map((m) => `| ${m.case_id} | ${m.why} |`),
+    );
+  }
+  return lines;
 }
 
 function familyTable(results: readonly CaseResult[]): string {
@@ -109,17 +161,23 @@ export function moneyAtRiskLine(prevented: Readonly<Record<Currency, string>>): 
   return CURRENCIES.map((c) => formatMoney(minor(BigInt(prevented[c])), c)).join(" and ");
 }
 
-export function generateReportMarkdown({ results, metrics, generated_at, ablation }: ReportInput): string {
-  const l1 = results.filter((r) => r.layer === 1);
-  const l2 = results.filter((r) => r.layer === 2);
-  const totalPassed = results.filter((r) => r.passed).length;
+export function generateReportMarkdown({ results, metrics, generated_at, ablation, not_mirrored }: ReportInput): string {
+  // The corpus as written. Mirrored runs get their own section.
+  const asWritten = results.filter((r) => r.mirrored !== true);
+  const l1 = asWritten.filter((r) => r.layer === 1);
+  const l2 = asWritten.filter((r) => r.layer === 2);
+  const totalPassed = asWritten.filter((r) => r.passed).length;
+  const mirrored = results.filter((r) => r.mirrored === true);
 
   const lines: string[] = [
     "# Praman eval report",
     "",
     `Generated ${generated_at}. Model: \`${metrics.model_id}\`.`,
     "",
-    `**${totalPassed.toString()}/${results.length.toString()} cases passed** (Layer 1: ${l1.length.toString()} cases, Layer 2: ${l2.length.toString()} cases).`,
+    `**${totalPassed.toString()}/${asWritten.length.toString()} cases passed** (Layer 1: ${l1.length.toString()} cases, Layer 2: ${l2.length.toString()} cases)` +
+      (mirrored.length > 0
+        ? `, and ${mirrored.filter((r) => r.passed).length.toString()}/${mirrored.length.toString()} mirrored Layer 1 runs on the other rail.`
+        : "."),
     "",
     "## Metrics",
     "",
@@ -137,7 +195,8 @@ export function generateReportMarkdown({ results, metrics, generated_at, ablatio
     "",
     "## By family",
     "",
-    familyTable(results),
+    familyTable(asWritten),
+    ...(results.some((r) => r.rail !== undefined && r.layer === 1) ? bothRailsSection(results, metrics, not_mirrored) : []),
     "",
     "## On the held-out split",
     "",
