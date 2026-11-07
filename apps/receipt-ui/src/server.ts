@@ -22,6 +22,10 @@ const { payPalWebhookDepsFromEnv } = await import("./webhooks.js");
 const { createDemoHandler, releaseAllSessions, sweepExpiredSessions } = await import("./demo/routes.js");
 const { demoDepsFromEnv } = await import("./demo/wiring.js");
 const { seedDemoCatalog } = await import("./demo/seed.js");
+const { DemoActivity, runSweeps, scheduleSweeps } = await import("./sweeps.js");
+const { routeByRail } = await import("@praman/exec-core");
+const { LiveExecutor } = await import("@praman/razorpay-exec");
+type Executor = import("@praman/exec-core").Executor;
 
 const PORT = Number(process.env["RECEIPT_UI_PORT"] ?? process.env["PORT"] ?? 4100);
 
@@ -39,11 +43,25 @@ if (demoWiring.ok) {
   console.log(`receipt-ui: demo off: ${demoWiring.reason}`);
 }
 
+// The reconcile and release sweeps, in this process. They run once now, then every
+// minute while the demo has been used in the last 30 minutes, so the database can
+// sleep when nobody is here. They ask only the rails this server has keys for; there
+// is no simulator here, which would answer "not found" about a real order.
+const executors: Executor[] = [];
+if (demoWiring.ok && demoWiring.deps.paypal !== null) executors.push(demoWiring.deps.paypal.executor);
+const rzpId = process.env["RAZORPAY_KEY_ID"];
+const rzpSecret = process.env["RAZORPAY_KEY_SECRET"];
+if (rzpId && rzpSecret) executors.push(new LiveExecutor(rzpId, rzpSecret));
+const activity = new DemoActivity();
+const sweepDeps = { route: routeByRail(executors), now: () => new Date(), log: (line: string) => console.log(line) };
+void runSweeps(sweepDeps);
+scheduleSweeps({ ...sweepDeps, activity });
+
 const app = createApp({
   demo,
   webhooks: payPalWebhookDepsFromEnv(process.env),
   hsts: (process.env["DEMO_BASE_URL"] ?? "").startsWith("https://"),
-  onDemoRequest: () => {},
+  onDemoRequest: () => activity.touch(new Date()),
   log: (line) => console.error(line),
 });
 

@@ -406,6 +406,9 @@ importers:
       '@praman/policy':
         specifier: workspace:*
         version: link:../../packages/policy
+      '@praman/razorpay-exec':
+        specifier: workspace:*
+        version: link:../../packages/razorpay-exec
       '@praman/shared':
         specifier: workspace:*
         version: link:../../packages/shared

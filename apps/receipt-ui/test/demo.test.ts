@@ -14,6 +14,9 @@ import { HARNESS_LIMITS } from "../src/demo/config.js";
 import { routeFor, type DemoDeps, type VaultApi } from "../src/demo/connect.js";
 import { createDemoHandler, releaseAllSessions, sweepExpiredSessions, COOKIE } from "../src/demo/routes.js";
 import { seedDemoCatalog } from "../src/demo/seed.js";
+import { createApp } from "../src/app.js";
+import { DemoActivity, scheduleSweeps } from "../src/sweeps.js";
+import { routeByRail } from "@praman/exec-core";
 import { SavedMethods, SessionStore } from "../src/demo/session.js";
 import { loadRecording, recordingHtml } from "../src/pages/demo.js";
 
@@ -92,8 +95,14 @@ class FakePayPal implements SavedMethodCharger, VaultApi {
       failure_code: null,
     };
   }
+  /** The next saved-method charge gets no answer, as when the network drops after PayPal took it. */
+  failNextCharge = false;
   async chargeSavedMethod(req: CreateOrderRequest, vaultId: string): Promise<ExecOutcome> {
     this.charges.push({ req, vaultId });
+    if (this.failNextCharge) {
+      this.failNextCharge = false;
+      throw new Error("ETIMEDOUT");
+    }
     const o = { id: `VLT${String(++this.#n)}`, amount: req.amount_minor, approved: true, captured: true };
     this.orders.set(o.id, o);
     return this.#view(o);
@@ -728,5 +737,108 @@ describe("the demo under a content security policy", () => {
     const css = await visitor().get("/demo/demo.css");
     expect(css.status).toBe(200);
     expect(css.text).toContain(".demo");
+  });
+});
+
+describe("the sweeps, through the running server", () => {
+  /** The server as server.ts builds it: the app around the demo, telling the sweeps when the demo is used. */
+  function hostedServer() {
+    const activity = new DemoActivity();
+    handler = createApp({
+      demo: createDemoHandler(deps),
+      webhooks: { webhookId: null, verify: async () => false, apply: async () => "unmatched", now: () => new Date(clock) },
+      hsts: false,
+      onDemoRequest: () => activity.touch(new Date(clock)),
+      log: (line) => logs.push(line),
+    });
+    // The same rails server.ts gives the sweeps: PayPal, and no simulator.
+    return scheduleSweeps({ route: routeByRail([paypal]), now: () => new Date(clock), log: (line) => logs.push(line), activity, intervalMs: 20 });
+  }
+  async function waitFor(check: () => Promise<boolean>, ms = 5_000): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < ms) {
+      if (await check()) return true;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return false;
+  }
+  const outcomeStatuses = async (traceId: string | null) => (await ledgerFor(traceId)).filter((r) => r.eventType === "outcome").map((r) => (r.payload as { status?: string }).status);
+
+  it("an unpaid checkout is released after 10 minutes, and capturing it then is refused in plain words", async () => {
+    const sweeps = hostedServer();
+    try {
+      const v = await startConnected();
+      await v.post("/demo/step/first");
+      await v.post("/demo/approve/first");
+      await v.post("/demo/step/large");
+      await v.post("/demo/approve/large");
+      const large = sessionOf(v).beats.get("large");
+      expect(large).toMatchObject({ state: "awaiting_checkout" });
+
+      // Nine minutes: the sweeps run, and the order is still held.
+      clock += 9 * 60 * 1000;
+      await new Promise((r) => setTimeout(r, 100));
+      expect(await outcomeStatuses(large?.traceId ?? null)).toEqual(["created"]);
+
+      clock += 2 * 60 * 1000;
+      expect(await waitFor(async () => (await outcomeStatuses(large?.traceId ?? null)).includes("released"))).toBe(true);
+
+      paypal.approveAll();
+      await v.post("/demo/capture/large");
+      const page = await v.page();
+      expect(page).toContain("ORDER_RELEASED");
+      expect(page).toContain("wasn&#39;t approved in time");
+      expect([...paypal.orders.values()].some((o) => o.captured && o.id.startsWith("CHK"))).toBe(false);
+    } finally {
+      sweeps.stop();
+    }
+  });
+
+  it("a payment call left with no answer is settled by the sweep, and not charged again", async () => {
+    const sweeps = hostedServer();
+    try {
+      const v = await startConnected();
+      await v.post("/demo/step/first");
+      await v.post("/demo/approve/first");
+      paypal.failNextCharge = true;
+      await v.post("/demo/step/second");
+      const second = sessionOf(v).beats.get("second");
+      expect(second?.state).toBe("pending");
+      const key = (await prisma.idempotencyRecord.findFirst({ where: { traceId: second?.traceId ?? "" } }))?.key ?? "";
+      expect((await prisma.idempotencyRecord.findUnique({ where: { key } }))?.status).toBe("pending");
+
+      // A minute later the record is old enough for the reconciler, which asks PayPal and records the answer.
+      clock += 2 * 60 * 1000;
+      await v.page();
+      expect(await waitFor(async () => (await prisma.idempotencyRecord.findUnique({ where: { key } }))?.status !== "pending")).toBe(true);
+      const statuses = await outcomeStatuses(second?.traceId ?? null);
+      expect(statuses).toHaveLength(1);
+      const reconciled = (await ledgerFor(second?.traceId ?? null)).filter((r) => r.eventType === "outcome")[0];
+      expect(reconciled?.actor).toBe("reconciler");
+      // The saved account was charged once, by the call that lost its answer. The sweep never charges.
+      expect(paypal.charges).toHaveLength(2);
+    } finally {
+      sweeps.stop();
+    }
+  });
+
+  it("does nothing while nobody has used the demo for 30 minutes", async () => {
+    const sweeps = hostedServer();
+    try {
+      const v = await startConnected();
+      await v.post("/demo/step/first");
+      await v.post("/demo/approve/first");
+      await v.post("/demo/step/large");
+      await v.post("/demo/approve/large");
+      const large = sessionOf(v).beats.get("large");
+      clock += 31 * 60 * 1000;
+      await new Promise((r) => setTimeout(r, 120));
+      expect(await outcomeStatuses(large?.traceId ?? null)).toEqual(["created"]);
+      // The next visit wakes them, and the overdue order is released.
+      await visitor().get("/demo");
+      expect(await waitFor(async () => (await outcomeStatuses(large?.traceId ?? null)).includes("released"))).toBe(true);
+    } finally {
+      sweeps.stop();
+    }
   });
 });

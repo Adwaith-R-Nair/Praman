@@ -2,7 +2,9 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { generateKeypair } from "@praman/mandate";
+import { routeByRail } from "@praman/exec-core";
 import { checkEnv, checkStartup, keyFingerprint, DEVELOPER_KEY_FINGERPRINTS } from "../src/startup.js";
+import { DemoActivity, runSweeps, scheduleSweeps } from "../src/sweeps.js";
 
 // Plan Task 13: what the hosted server refuses, and what it does when it is pushed.
 
@@ -88,4 +90,91 @@ describe("start-up refusals", () => {
     expect(output).not.toContain("listening");
     expect(output).not.toContain("rzp_live_not_allowed");
   }, 30_000);
+});
+
+describe("the in-process sweeps", () => {
+  const until = async (done: () => boolean, ms = 2_000) => {
+    const start = Date.now();
+    while (!done() && Date.now() - start < ms) await new Promise((r) => setTimeout(r, 5));
+  };
+
+  it("the sweep runs on an interval and one failure does not stop it", async () => {
+    const calls: string[] = [];
+    const logs: string[] = [];
+    const activity = new DemoActivity();
+    activity.touch(new Date());
+    let reconcileRuns = 0;
+    const schedule = scheduleSweeps({
+      route: routeByRail([]),
+      now: () => new Date(),
+      log: (l) => logs.push(l),
+      activity,
+      intervalMs: 10,
+      reconcile: async () => {
+        reconcileRuns += 1;
+        calls.push("reconcile");
+        if (reconcileRuns === 1) throw new Error("database asleep: postgresql://u:secret@host");
+        return 0;
+      },
+      release: async () => {
+        calls.push("release");
+        if (reconcileRuns === 2) throw new Error("rail down");
+        return 1;
+      },
+    });
+    await until(() => reconcileRuns >= 4);
+    schedule.stop();
+    expect(reconcileRuns).toBeGreaterThanOrEqual(4);
+    // The release ran even in the pass where reconcile threw, and the pass after release threw ran too.
+    expect(calls.slice(0, 6)).toEqual(["reconcile", "release", "reconcile", "release", "reconcile", "release"]);
+    expect(logs.some((l) => l.includes("reconcile failed"))).toBe(true);
+    expect(logs.some((l) => l.includes("release failed"))).toBe(true);
+    expect(logs.join("\n")).not.toContain("secret");
+  });
+
+  it("runs only while the demo has been used in the last 30 minutes", async () => {
+    let now = Date.parse("2026-11-08T10:00:00Z");
+    const activity = new DemoActivity();
+    let runs = 0;
+    const deps = { route: routeByRail([]), now: () => new Date(now), log: () => {}, activity, intervalMs: 60_000, reconcile: async () => (runs += 1, 0), release: async () => 0 };
+    const schedule = scheduleSweeps(deps);
+    expect(await schedule.tick()).toBe(false);
+    activity.touch(new Date(now));
+    now += 29 * 60 * 1000;
+    expect(await schedule.tick()).toBe(true);
+    now += 2 * 60 * 1000;
+    expect(await schedule.tick()).toBe(false);
+    schedule.stop();
+    expect(runs).toBe(1);
+  });
+
+  it("a pass never overlaps the one before it", async () => {
+    const activity = new DemoActivity();
+    activity.touch(new Date());
+    let release: () => void = () => {};
+    let runs = 0;
+    const schedule = scheduleSweeps({
+      route: routeByRail([]),
+      now: () => new Date(),
+      log: () => {},
+      activity,
+      intervalMs: 60_000,
+      reconcile: () => {
+        runs += 1;
+        return new Promise<number>((r) => (release = () => r(0)));
+      },
+      release: async () => 0,
+    });
+    const first = schedule.tick();
+    expect(await schedule.tick()).toBe(false);
+    release();
+    expect(await first).toBe(true);
+    schedule.stop();
+    expect(runs).toBe(1);
+  });
+
+  it("one pass reports what each sweep did, and null for one that failed", async () => {
+    const run = await runSweeps({ route: routeByRail([]), now: () => new Date(), log: () => {}, reconcile: async () => 2, release: async () => Promise.reject(new Error("x")) });
+    expect(run).toEqual({ resolved: 2, released: null });
+  });
 });
