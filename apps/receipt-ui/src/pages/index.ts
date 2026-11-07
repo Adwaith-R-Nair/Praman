@@ -9,6 +9,9 @@ import { classifyTrace } from "../verify.js";
 
 const RECENT_LIMIT = 25;
 
+/** Demo visitors' traces aren't listed here, so the index points to where they are. */
+const DEMO_LINK = `<p class="index-demo-link"><a href="/demo">Walk through the demo story</a>, where each step links to its own trace.</p>`;
+
 /** The masthead's chain-status line, in plain language, off the same VerifyResult every row is already classified against. */
 function chainSummary(chainResult: Awaited<ReturnType<typeof verifyChain>>): { label: string; detail: string; ok: boolean } {
   if (chainResult.ok) {
@@ -21,7 +24,7 @@ export async function renderIndexPage(): Promise<string> {
   const traceIds = await listRecentTraceIds(RECENT_LIMIT);
 
   if (traceIds.length === 0) {
-    return layout("Recent traces", "<h1 class=\"decision\">No traces yet</h1><p>Run <code>pnpm demo</code> to create one.</p>");
+    return layout("Recent traces", `<h1 class="decision">No traces yet</h1><p>Run <code>pnpm demo</code> to create one.</p>${DEMO_LINK}`);
   }
 
   // One global walk, reused for every row — verifyChain() checks the whole
@@ -78,6 +81,8 @@ export async function renderIndexPage(): Promise<string> {
     <span class="masthead-chain-detail data">${escapeHtml(chain.detail)}</span>
   </div>
 </header>
+
+${DEMO_LINK}
 
 <ul class="trace-list">${rowsHtml}</ul>
 

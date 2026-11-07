@@ -2,6 +2,7 @@ import { prisma } from "@praman/db";
 import { amountIfPresent, read, readCurrency, type LedgerEntryRecord } from "@praman/ledger";
 import { isCurrency, type Currency } from "@praman/shared";
 import type { ConversationItem } from "@praman/agent-core";
+import { DEMO_MERCHANTS } from "./demo/config.js";
 
 export interface MerchantItemRead {
   readonly sku: string;
@@ -227,15 +228,20 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
   };
 }
 
-/** Total number of real purchase traces ever recorded — not capped by listRecentTraceIds' limit. */
+/** Total number of real purchase traces ever recorded, demo visitors' left out — not capped by listRecentTraceIds' limit. */
 export async function countTraces(): Promise<number> {
   const rows = await prisma.$queryRaw<{ count: bigint }[]>`
-    SELECT COUNT(DISTINCT trace_id)::bigint AS count FROM ledger_entry WHERE event_type = 'intent'
+    SELECT COUNT(DISTINCT trace_id)::bigint AS count FROM ledger_entry
+    WHERE event_type = 'intent' AND COALESCE(payload->>'merchant_id', '') <> ALL(${DEMO_MERCHANTS})
   `;
   return Number(rows[0]?.count ?? 0n);
 }
 
-/** The most recently active trace_ids, newest first — one row per trace, not per entry. */
+/**
+ * The most recently active trace_ids, newest first — one row per trace, not per entry.
+ * Demo visitors' traces are left out: each visitor reaches their own from the demo page,
+ * and a public list of everyone's would show one visitor another's purchases.
+ */
 export async function listRecentTraceIds(limit: number): Promise<readonly string[]> {
   // checkpoint entries carry a synthetic "ckpt_<seq>" trace_id (see
   // packages/ledger/src/checkpoint.ts) — a maintenance record, not a
@@ -243,7 +249,10 @@ export async function listRecentTraceIds(limit: number): Promise<readonly string
   // with an "intent" event; checkpoints never have one.
   const rows = await prisma.$queryRaw<{ trace_id: string }[]>`
     SELECT trace_id FROM ledger_entry
-    WHERE trace_id IN (SELECT DISTINCT trace_id FROM ledger_entry WHERE event_type = 'intent')
+    WHERE trace_id IN (
+      SELECT DISTINCT trace_id FROM ledger_entry
+      WHERE event_type = 'intent' AND COALESCE(payload->>'merchant_id', '') <> ALL(${DEMO_MERCHANTS})
+    )
     GROUP BY trace_id
     ORDER BY MAX(seq) DESC
     LIMIT ${limit}

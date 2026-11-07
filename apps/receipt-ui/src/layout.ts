@@ -3,7 +3,15 @@ import { fileURLToPath } from "node:url";
 
 const CSS = readFileSync(fileURLToPath(new URL("./style.css", import.meta.url)), "utf8");
 
-export function layout(title: string, body: string): string {
+/** Where the top link of a page leads. A demo step's trace goes back to the demo, since that is where its visitor came from. */
+export type NavTarget = "index" | "demo";
+
+const NAV_LINKS: Readonly<Record<NavTarget, string>> = {
+  index: `<a href="/">← all traces</a>`,
+  demo: `<a href="/demo">← back to the demo</a>`,
+};
+
+export function layout(title: string, body: string, nav: NavTarget = "index"): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -17,7 +25,7 @@ export function layout(title: string, body: string): string {
 </head>
 <body>
 <div class="record">
-<nav class="nav"><a href="/">← all traces</a></nav>
+<nav class="nav">${NAV_LINKS[nav]}</nav>
 ${body}
 <footer class="print-footer"></footer>
 </div>

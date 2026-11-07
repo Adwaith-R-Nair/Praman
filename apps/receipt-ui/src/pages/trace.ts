@@ -1,6 +1,7 @@
 import { formatMoney, minorFromJSON, type ReasonCode } from "@praman/shared";
 import type { EventType } from "@praman/ledger";
 import { loadTrace, type SettlementLine } from "../data.js";
+import { DEMO_MERCHANTS } from "../demo/config.js";
 import { decisionClass, decisionLabel } from "../decision-display.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
 import { layout } from "../layout.js";
@@ -272,5 +273,6 @@ ${(() => {
 </script>
 `;
 
-  return { status: 200, html: layout(`Trace ${traceId}`, body) };
+  const fromDemo = trace.merchantId !== null && DEMO_MERCHANTS.includes(trace.merchantId);
+  return { status: 200, html: layout(`Trace ${traceId}`, body, fromDemo ? "demo" : "index") };
 }

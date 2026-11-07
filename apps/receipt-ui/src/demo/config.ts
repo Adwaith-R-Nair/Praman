@@ -10,6 +10,8 @@ export const CAFE = "DEMO_CAFE";
 export const MARKET = "DEMO_MARKET";
 /** The concurrency harness merchant. Simulated rail, and no model is ever asked about it. */
 export const HARNESS = "DEMO_HARNESS";
+/** Every merchant the demo buys from. A trace at one of these belongs to a demo visitor. */
+export const DEMO_MERCHANTS: readonly string[] = [CAFE, MARKET, HARNESS];
 
 export const DEMO_CURRENCY = "USD";
 

@@ -110,6 +110,16 @@ code,
   border-bottom: 1px solid var(--hairline);
 }
 
+.index-demo-link {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+}
+
+.index-demo-link a {
+  color: var(--ink);
+}
+
 /* The index masthead — the one hero moment on this page, styled like the
    ornamental header on a bank draft: a serial-number-style count and the
    chain's own integrity status, hairline-bounded, nothing else competing
