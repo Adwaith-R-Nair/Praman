@@ -13,28 +13,13 @@ if (!mandateId || !reason) {
 }
 
 const { prisma } = await import("@praman/db");
-const { append, maybeCheckpoint } = await import("@praman/ledger");
-const { MANDATE_LOCK_NS } = await import("@praman/control-plane");
+const { revokeMandate } = await import("@praman/control-plane");
 
 const now = new Date();
-const traceId = `trc_revoke_${now.getTime()}`;
-
-await prisma.$transaction(async (tx) => {
-  // Same per-mandate serialisation run-intent.ts and resolve-approval.ts use —
-  // a revocation racing an in-flight intent must commit before that intent's
-  // own transaction can read this mandate's state, not after.
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${mandateId}))`;
-
-  await append(tx, {
-    traceId,
-    ts: now,
-    actor: "issuer",
-    eventType: "mandate_revoked",
-    payload: { mandate_id: mandateId, reason },
-  });
-
-  await maybeCheckpoint(tx, now);
-});
+// Takes the same per-mandate lock run-intent.ts and resolve-approval.ts use, so a
+// revocation racing an in-flight intent commits before that intent's own transaction
+// can read this mandate's state, not after. The demo's revoke step calls the same function.
+await revokeMandate({ mandateId, reason, traceId: `trc_revoke_${now.getTime()}`, now });
 
 console.log(`✓ revoked ${mandateId}`);
 console.log(`  reason: ${reason}`);
