@@ -23,7 +23,7 @@ export async function recordAgentTranscript(
   transcript: readonly ConversationItem[],
   /**
    * Pointer to this run's Langfuse trace, if tracing was configured.
-   * Explicitly non-evidentiary (D-xx): a convenience for a human jumping to
+   * Explicitly non-evidentiary (D-47): a convenience for a human jumping to
    * the debugging view, never asserted as true and never read back by any
    * verification path. A broken or stale pointer has no effect on the
    * ledger's own tamper-evidence.
@@ -31,7 +31,7 @@ export async function recordAgentTranscript(
   langfuseTraceId?: string,
   /**
    * Which defence prompt and ablation flags were active when this purchase
-   * was proposed — an audit fact (D-xx): "which prompt was live" belongs in
+   * was proposed — an audit fact (D-47): "which prompt was live" belongs in
    * the tamper-evident record, not only in Langfuse. The prompt text itself
    * is never recorded, only its hash — sufficient to prove which exact
    * version was active without duplicating prompt.ts into every trace.

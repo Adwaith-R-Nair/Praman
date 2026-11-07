@@ -129,7 +129,7 @@ export async function runLayer1Corpus(cases: readonly Layer1Case[]): Promise<Cas
 }
 
 /**
- * Dev observability only (D-xx) — tags this case's whole run (agent trace
+ * Dev observability only (D-47) — tags this case's whole run (agent trace
  * and run-intent trace both) with case_id, arm/repeat when running under
  * the ablation, and the git SHA that produced the defence being measured.
  * With no Langfuse keys configured at the entrypoint, propagateAttributes

@@ -5,7 +5,7 @@ import { TracedProvider } from "../src/traced-provider.js";
 // No Langfuse keys are set anywhere in this test run, so no OpenTelemetry
 // SDK is ever started — exactly the "no keys configured" state the real
 // entrypoints are in until Phase 10's .env wiring step. TracedProvider must
-// behave identically to the bare provider in this state (D-xx).
+// behave identically to the bare provider in this state (D-47).
 class FakeProvider implements ModelProvider {
   readonly id = "fake/model";
   #turn: ProviderTurn;

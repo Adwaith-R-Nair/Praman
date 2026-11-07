@@ -39,7 +39,7 @@ export interface TraceView {
   readonly orderStatus: string | null;
   readonly approvalVerdict: string | null;
   readonly settlement: SettlementLine | null;
-  /** Non-evidentiary pointer to this run's Langfuse trace, if tracing was configured when it ran. See D-xx. */
+  /** Non-evidentiary pointer to this run's Langfuse trace, if tracing was configured when it ran. See D-47. */
   readonly langfuseTraceId: string | null;
 }
 

@@ -4,7 +4,7 @@ import type { ConversationItem, ModelProvider, ProviderTurn, ToolSpec } from "./
 /**
  * Wraps any ModelProvider with a Langfuse generation observation per call.
  * Pure dev-observability — nothing here feeds back into a decision, a
- * prompt, or a reported metric (D-xx). With no Langfuse keys configured in
+ * prompt, or a reported metric (D-47). With no Langfuse keys configured in
  * the entrypoint, no OpenTelemetry SDK ever starts, and `startObservation`
  * becomes a standard OTel no-op: this class behaves identically either way,
  * so it's safe to apply unconditionally.

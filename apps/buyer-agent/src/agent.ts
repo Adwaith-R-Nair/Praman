@@ -17,7 +17,7 @@ export interface ProposedCart {
 
 /**
  * Which defence prompt was active, and which ablation flags, when a
- * purchase was proposed — an audit fact (D-xx), not just a debugging
+ * purchase was proposed — an audit fact (D-47), not just a debugging
  * convenience, so this is what ends up in the ledger's agent_transcript
  * event, not only in Langfuse. The prompt itself is never recorded here
  * (it's not secret, but the hash is cheaper and sufficient to prove which
@@ -36,7 +36,7 @@ export type AgentResult =
       readonly transcript: readonly ConversationItem[];
       readonly modelId: string;
       readonly usage?: TokenUsage;
-      /** Non-evidentiary pointer to this run's Langfuse trace, if tracing is configured. See D-xx. */
+      /** Non-evidentiary pointer to this run's Langfuse trace, if tracing is configured. See D-47. */
       readonly langfuseTraceId?: string;
       readonly promptProvenance: PromptProvenance;
     }
@@ -119,7 +119,7 @@ async function runTool(name: string, input: Record<string, unknown>, catalog: Ca
 }
 
 /**
- * Dev-observability only — see D-xx. Wraps the whole goal in one Langfuse
+ * Dev-observability only — see D-47. Wraps the whole goal in one Langfuse
  * trace so every model call and tool call below nests under it via ambient
  * OpenTelemetry context. With no Langfuse keys configured at the entrypoint,
  * no SDK ever starts and this is a standard OTel no-op (proven by

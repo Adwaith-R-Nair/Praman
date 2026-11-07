@@ -160,7 +160,7 @@ ${
 ${(() => {
   if (!trace.langfuseTraceId) return "";
   const url = langfuseTraceUrl(trace.langfuseTraceId);
-  // Not evidence (D-xx) — a debugging convenience shown as plain text when
+  // Not evidence (D-47) — a debugging convenience shown as plain text when
   // LANGFUSE_PROJECT_ID isn't set, a link when it is, never anything more.
   const linkOrText = url
     ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(trace.langfuseTraceId)}</a>`
