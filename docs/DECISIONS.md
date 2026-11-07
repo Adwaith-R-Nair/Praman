@@ -593,6 +593,8 @@ Status: decision 1 is changed by D-33. The comparison moved out of `paypal-exec`
 
 Status: the transaction search and vault setup token rows, and decision 5's reasoning, are moved forward by D-37. Direct card was not re-tested.
 
+Status: two of the three "not yet tested" items are settled by D-49. Capture after approval gives 201 `COMPLETED`, and a capture retried with the same key gives 200 and the same capture. Real webhook delivery is still untested.
+
 D-22 taught this project not to trust a provider's documented behaviour
 without testing it, so PayPal got the same treatment before any rail code was
 written. Tested on 2026-11-04 against Orders v2 in the sandbox, with a merchant
@@ -1203,6 +1205,8 @@ demo needs to deal with this in Task 12 or 13.
 
 ### D-37 · What the PayPal app allows once its features are on · Accepted
 
+Status: all three "still untested" items are settled by D-49. A payment token was created from an approved setup token, captures after approval and their retries behaved, and a no-buyer `vault_id` charge came back `COMPLETED` at once. A purchase with no buyer present works in this sandbox, so plan Task 14 no longer waits on PayPal.
+
 Moves D-26 forward. D-26 recorded transaction search and vault setup tokens as 403 `NOT_AUTHORIZED` on this app. After the
 app's features were enabled and the old token was terminated, they answer. An implementer's record for the builder to check.
 
@@ -1242,6 +1246,8 @@ out of scope.
 Status: the row saying a named 4xx is `failed`, and the claim that a `failed` capture took no money, were false for two capture codes when written. D-39 corrects them.
 
 Status: the reconciler now reads a capture record's order by id, and a capture retry uses a fresh derived key. See D-40.
+
+Status: `ORDER_ALREADY_CAPTURED` has now been seen live, and `paypal-exec` read the order back and reported the real capture. Two of the three questions under Limits are answered: a repeated capture key returns the same capture, and a key refused with `ORDER_NOT_APPROVED` captures normally after approval. The third, a repeated create after capture, is still untested. See D-49.
 
 An implementer's decisions for the builder to check. The `Executor` contract gives a rail three ways to answer, and getting one
 wrong has a price in money. A false `failed` frees budget for an order that exists. A false "created" sends a buyer to pay
@@ -1323,6 +1329,8 @@ Status: "the capture has often finished by the time PayPal answers" is a guess, 
 
 Status: the order is now read back after every capture refusal except `ORDER_NOT_APPROVED`, in `captureOrder`. See D-40.
 
+Status: live captures have now run (D-49), so "live capture can't be exercised yet" no longer holds. Neither code here was seen, because every sandbox capture finished in its first answer. The evidence for both is still PayPal's documentation.
+
 An implementer's decision for the builder to check, after a review found the bug in D-38. D-38 treated every named refusal on a
 capture as "this capture took no money", with one exception, `ORDER_ALREADY_CAPTURED`. PayPal's Orders v2 error reference lists two
 more 422s under capture that don't fit that reading:
@@ -1366,6 +1374,8 @@ way. `PREVIOUS_REQUEST_IN_PROGRESS` is the nearest. It is listed as a `RESOURCE_
 ### D-40 · Capturing and releasing a checkout order · Accepted
 
 Status: section 9's "not captured" row is replaced. A pending capture whose order reads as not captured is now sent again under the same key, not recorded as failed. See D-41.
+
+Status: the first item under "Unverified live" is settled by D-49: a capture key refused with 422 before approval captured normally after it. Decision 7's reliance on `ORDER_ALREADY_CAPTURED` was also seen live. The other two items are still unverified, and `captureOrder` itself has not yet run against a live approval.
 
 Plan Task 7. An implementer's decisions for the builder to check. Two of them, what a failed capture leaves behind and reading
 the order back after a refusal, were set as requirements in the Task 7 brief, and are recorded here so the reasoning sits next to
@@ -1474,6 +1484,8 @@ above is tested against a stand-in rail in `packages/control-plane/test/support/
 - Ten minutes is a judgement, as D-30 says. It is a constant, `ORDER_HOLD_TTL_MS`.
 
 ### D-41 · A pending capture is sent again, not guessed at · Accepted
+
+Status: "Why the same key is safe" is confirmed live by D-49. A repeated capture key got 200 and the same capture, and a new key got `ORDER_ALREADY_CAPTURED`, which `paypal-exec` read back as that capture. What a capture still completing looks like is still unverified.
 
 An implementer's decision for the builder to check, after a review of Task 7 found a money bug in D-40 section 9.
 
@@ -1735,6 +1747,8 @@ is counted.
 same id. The handler holds a 64 KiB body limit, which PayPal's documented events are far under.
 
 ### D-46 · A declined webhook can't close a capture attempt · Accepted
+
+Status: what "Still unverified live" relies on is confirmed by D-49. PayPal answered a repeated capture key with the first capture. No real webhook, declined or completed, has been delivered yet.
 
 An implementer's decision for the builder to check, made on 2026-11-08 after a review of plan Task 9 found a money bug in D-45.
 
