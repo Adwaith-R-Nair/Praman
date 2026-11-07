@@ -7,7 +7,8 @@
   "exports": { ".": "./src/index.ts" },
   "scripts": {
     "generate": "prisma generate",
-    "migrate": "prisma migrate dev"
+    "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy"
   },
   "dependencies": {
     "@praman/shared": "workspace:*",

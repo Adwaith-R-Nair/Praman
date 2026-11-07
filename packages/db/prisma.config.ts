@@ -8,9 +8,15 @@ import { defineConfig, env } from "prisma/config";
 // instead, so `prisma migrate` works the same regardless of invocation dir.
 config({ path: fileURLToPath(new URL("../../.env", import.meta.url)) });
 
+// The CLI (migrate, generate) connects with DIRECT_DATABASE_URL when it is set. On the
+// hosted demo, DATABASE_URL is Neon's pooled address, which the running server uses;
+// migrations take an advisory lock and need a direct connection, not a pooler. Unset,
+// as in local dev, the CLI uses DATABASE_URL as before. The server never reads this file.
+const direct = process.env["DIRECT_DATABASE_URL"];
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   datasource: {
-    url: env("DATABASE_URL"),
+    url: direct !== undefined && direct !== "" ? direct : env("DATABASE_URL"),
   },
 });
