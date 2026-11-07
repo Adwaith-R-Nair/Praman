@@ -196,6 +196,18 @@ export async function sendCapture(
   return raw;
 }
 
+/** What a capture record that someone else resolved says, as a CaptureResult. */
+function resultFromRecord(traceId: string, orderId: string, status: string, stored: unknown): CaptureResult {
+  const fields = stored !== null && typeof stored === "object" && !Array.isArray(stored) ? Object.entries(stored) : [];
+  const field = (name: string): string | null => {
+    const value = fields.find(([k]) => k === name)?.[1];
+    return typeof value === "string" ? value : null;
+  };
+  if (status === "failed") return { kind: "FAILED", trace_id: traceId, order_id: orderId, failure_code: field("failure_code") };
+  if (field("status") === "mismatch") return { kind: "MISMATCH", trace_id: traceId, order_id: orderId, detail: "the rail reported other money than the ledger held" };
+  return { kind: "CAPTURED", trace_id: traceId, order_id: orderId, payment_id: field("payment_id") };
+}
+
 /**
  * Captures a checkout order the buyer has approved, under a fresh check of the mandate
  * (D-31). The same two phases as runIntent (D-22): T1 decides and commits a capture
@@ -333,9 +345,14 @@ export async function captureOrder(traceId: string, signed: SignedMandate, publi
   }
   const outcome: AcceptedOutcome = acceptOutcome(raw, { amount_minor: amount, currency });
 
-  // ── T2: record what happened. ──
-  await prisma.$transaction(async (tx) => {
+  // ── T2: record what happened, unless the record was settled meanwhile. ──
+  // The reconciler or a webhook can resolve a record while its call is still out
+  // (D-45). They write the same answer about the same capture, so a second outcome
+  // would only be a second row, and what was recorded first stands.
+  const settledFirst = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${where.mandate_id}))`;
+    const current = await tx.idempotencyRecord.findUnique({ where: { key: captureKey }, select: { status: true, outcome: true } });
+    if (current !== null && current.status !== "pending") return { status: current.status, outcome: current.outcome };
     await append(tx, {
       traceId,
       ts: now,
@@ -352,7 +369,10 @@ export async function captureOrder(traceId: string, signed: SignedMandate, publi
       },
     });
     await maybeCheckpoint(tx, now);
+    return null;
   });
+
+  if (settledFirst !== null) return resultFromRecord(traceId, orderId, settledFirst.status, settledFirst.outcome);
 
   switch (outcome.status) {
     case "captured":
