@@ -317,6 +317,29 @@ export function renderStartPage(notice: string | null, configured: { readonly pa
   );
 }
 
+/**
+ * Shown once the day's new sessions are used up, so a visitor still sees the whole
+ * story. It is a screenshot of one complete session, made by the repo's screenshot
+ * script, and says so before anything else. Nothing on it is live, and it has no buttons.
+ */
+export function renderRecordedRunPage(): string {
+  return demoLayout(
+    "Recorded run",
+    `<header class="masthead">
+      <h1>An agent with a budget, and the one thing that can say yes</h1>
+      <p class="lede">An AI agent buys lunch with a PayPal sandbox account. Every purchase it proposes goes to Praman, which checks it against a mandate you signed and decides. The agent can't pay without that decision, and the ledger keeps a verifiable record of each one.</p>
+    </header>
+    <p class="notice" role="status">The live demo has started as many sessions today as it allows, to stay within its free hosting and model limits. It opens again at 00:00 UTC. Until then, here is a recorded run.</p>
+    <figure class="recording recorded-run">
+      <figcaption><strong>Recorded run, not live.</strong> A screenshot of one complete session of this demo, taken by the repo's screenshot script against the PayPal sandbox. Nothing on this page runs, and nothing is charged.</figcaption>
+      <img src="/demo/recorded-run.png" width="1280" alt="${escapeHtml(RECORDED_RUN_ALT)}">
+    </figure>`,
+  );
+}
+
+const RECORDED_RUN_ALT =
+  "The demo page after all seven steps. The signed mandate. PayPal connected. A first purchase Praman held for approval and then charged to the saved PayPal account. A coffee Praman allowed with nobody approving. A large purchase approved and sent to a PayPal checkout. A poisoned listing: the live model ignored it, and a fooled model's cart was refused. Twenty purchases at once, where the budget stopped all but those that fit.";
+
 export function renderDemoPage(session: DemoSession, recording: Recording, configured: { readonly paypal: boolean; readonly model: boolean } = { paypal: true, model: true }): string {
   const b = (id: BeatId) => session.beats.get(id);
   const first = b("first");

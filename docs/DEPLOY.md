@@ -151,5 +151,5 @@ The first five answer `303` and the rest `429`, even though each request claims 
 - **Every demo button shows "That step didn't finish".** If the Render log has no matching `demo: ... failed` line, the request was refused because `DEMO_BASE_URL` doesn't match the address in the browser. Fix it as in step 5.
 - **The first page is slow.** Render was asleep, or Neon was. The first request after a sleep can take 30 to 60 seconds. Check the cron job is running.
 - **Steps say they replayed a recorded answer.** The day's 400 model calls are used up. It resets at 00:00 UTC. Raising `DEMO_DAILY_MODEL_CALLS` in `render.yaml` raises the Gemini bill too.
-- **"This demo has started as many sessions today as it allows".** 200 sessions a day by default. Set `DEMO_DAILY_SESSIONS` in Render's Environment to change it.
+- **Start a session goes to a page headed "Recorded run, not live".** The day's new sessions are used up: 200 by default, for everyone together. It resets at 00:00 UTC. Set `DEMO_DAILY_SESSIONS` in Render's Environment to change it. You can open that page any time at `/demo/recorded` to see what visitors get.
 - **A restart.** Render can restart a free service at any time. Visitors' sessions are in memory, so they end and visitors start again. The ledger, the daily counts and every trace are in Neon and stay.

@@ -509,6 +509,13 @@ input.link {
   padding: var(--s2);
 }
 
+.recorded-run img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--hairline);
+}
+
 .recording figcaption {
   font-size: 0.92rem;
   margin-bottom: var(--s2);

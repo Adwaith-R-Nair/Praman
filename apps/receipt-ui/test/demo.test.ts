@@ -905,16 +905,31 @@ describe("the demo at its limits, and when what it depends on fails", () => {
     expect((await renderTracePage(second?.traceId ?? "")).html).toContain("Recorded model answer, not live.");
   });
 
-  it("the daily session cap answers with a plain page and starts nothing", async () => {
+  it("past the daily session cap, a visitor gets the labelled recorded run and nothing starts", async () => {
     usage = new MemoryDailyUsage({ session: 1, model_call: 1000 });
     deps = makeDeps();
     handler = createDemoHandler(deps);
     expect((await visitor().post("/demo/start")).status).toBe(303);
     const late = visitor();
     const res = await late.post("/demo/start");
-    expect(res.status).toBe(429);
-    expect(res.text).toContain("opens again at 00:00 UTC");
+    expect(res.status).toBe(303);
+    expect(res.location).toBe("/demo/recorded");
     expect(late.cookie).toBeNull();
+    expect(deps.sessions.size).toBe(1);
+
+    // The recorded run: labelled as one, the whole story in a screenshot, and when it opens again.
+    const page = await late.get("/demo/recorded");
+    expect(page.status).toBe(200);
+    expect(page.text).toContain("Recorded run, not live.");
+    expect(page.text).toContain("opens again at 00:00 UTC");
+    expect(page.text).toContain('<img src="/demo/recorded-run.png"');
+    expect(page.text).toMatch(/alt="[^"]{40,}"/);
+    expect(page.text).not.toMatch(/<form[^>]*action="\/demo\/start"/);
+    expect(late.cookie).toBeNull();
+    const shot = await fetch(`${base}/demo/recorded-run.png`);
+    expect(shot.status).toBe(200);
+    expect(shot.headers.get("content-type")).toBe("image/png");
+    expect(Buffer.from(await shot.arrayBuffer()).subarray(1, 4).toString("latin1")).toBe("PNG");
     expect(deps.sessions.size).toBe(1);
   });
 

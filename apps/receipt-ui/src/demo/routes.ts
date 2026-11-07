@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
-import { loadRecording, renderCheckoutReturnPage, renderDemoPage, renderErrorPage, renderStartPage } from "../pages/demo.js";
+import { loadRecording, renderCheckoutReturnPage, renderDemoPage, renderErrorPage, renderRecordedRunPage, renderStartPage } from "../pages/demo.js";
 import { SESSION_TTL_MS, type BeatId, type PurchaseBeat } from "./config.js";
 import { finishConnect, releaseSession, startConnect, type DemoDeps } from "./connect.js";
 import { LIMITS, RateLimiter } from "./limits.js";
@@ -12,13 +12,8 @@ export const COOKIE = "praman_demo";
 const CLIENT_JS = readFileSync(fileURLToPath(new URL("./client.js", import.meta.url)), "utf8");
 const DEMO_CSS = readFileSync(fileURLToPath(new URL("./demo.css", import.meta.url)), "utf8");
 
-const DAILY_SESSIONS_USED =
-  "This demo has started as many sessions today as it allows, to keep it within its free hosting and model limits. It opens again at 00:00 UTC. Nothing was started and nothing was charged.";
-
-function secondsToUtcMidnight(now: Date): number {
-  const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-  return Math.max(1, Math.ceil((midnight - now.getTime()) / 1000));
-}
+/** A screenshot of one complete session, served as the recorded run once the day's sessions are used up. */
+const RECORDED_RUN_PNG = readFileSync(fileURLToPath(new URL("../../../../docs/screenshots/demo-story-desktop.png", import.meta.url)));
 
 const STEPS: readonly BeatId[] = ["first", "second", "large", "injection", "fixture", "concurrency"];
 /** The steps that buy at the cafe. Any of them can need approval or become a checkout. */
@@ -104,6 +99,16 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
         return;
       }
 
+      if (path === "/demo/recorded" && method === "GET") {
+        send(res, 200, renderRecordedRunPage());
+        return;
+      }
+      if (path === "/demo/recorded-run.png" && method === "GET") {
+        res.writeHead(200, { "Content-Type": "image/png", ...SECURITY_HEADERS, "Cache-Control": "public, max-age=3600" });
+        res.end(RECORDED_RUN_PNG);
+        return;
+      }
+
       // A cross-site form can't act for a visitor. SameSite=Lax already withholds the
       // cookie; this refuses the request outright when a browser says where it came from.
       const from = req.headers.origin;
@@ -128,8 +133,9 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
 
       if (method === "POST" && path === "/demo/start") {
         // Shared by every visitor and kept in the database, so a restart doesn't refill it.
+        // Past the cap the visitor still sees the whole story, as a labelled recording (D-61).
         if (!(await deps.usage.take("session", now))) {
-          send(res, 429, renderStartPage(DAILY_SESSIONS_USED, configured), { "Retry-After": secondsToUtcMidnight(now).toString() });
+          redirect(res, "/demo/recorded");
           return;
         }
         if (session !== null) {
