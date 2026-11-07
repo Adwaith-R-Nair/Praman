@@ -3317,3 +3317,98 @@ links to the demo. No developer command appears on it. When there are traces to 
 **Tests.** Three new tests: the empty index has no `pnpm` command and leads with a link to the demo; `/` redirects to `/demo`
 when only demo traces exist; `/` shows the index when a non-demo trace exists. The first two failed before the fix. 750 in
 total. None weakened or removed.
+
+### Phase P13 · 2026-11-08 · hosted and hardened
+
+Plan Task 13 gets the demo ready to put on a public address that strangers, and judges, will use. You chose the setup: a free
+Render web service in Virginia, a free Neon Postgres in AWS us-east-1, and a ping every 10 minutes to keep Render awake (D-55).
+Nothing is deployed yet. That, the accounts, and the webhook registration are yours, and `docs/DEPLOY.md` walks through them
+click by click. `packages/policy` is untouched and `pnpm lint:policy-freeze` passes.
+
+**Why a free host shaped the code.** A free Render service sleeps after 15 minutes with no requests, may restart at any time, and
+forgets its disk. Neon Free suspends after 5 minutes idle and gives 100 compute hours a month. So the server keeps nothing on
+disk, and nothing in it may query the database on a timer while nobody is using the demo, or Neon never sleeps and the hours run
+out.
+
+**1. A strict content security policy (`6549ca7`, `e2fa25d`).** Every response now says: scripts and styles only from this
+server (plus Google's font stylesheet), no inline script at all, forms post only here or on to PayPal's sandbox, and no page may
+be put in a frame. To make that possible, the little scripts that were inline in the pages moved into files. So even if some
+merchant text ever slipped past the HTML escaping, the browser would refuse to run it. The routes moved from `server.ts` into
+`createApp` in `app.ts` so tests can call them directly. D-59.
+
+**2. `/healthz` (`e2fa25d`).** It answers `ok` from memory and touches nothing else. The outside ping hits it every 10 minutes:
+that keeps Render awake and leaves Neon asleep. A test runs it with no database at all.
+
+**3. Errors say nothing (`e2fa25d`).** The catch-all 500 shows a fixed sentence. The error's name and message go to the operator
+log only, because an error's text can carry a SQL query, a URL or something PayPal said. The front page also used to send its
+200 before rendering, so a database failure there came out as an empty page; it now renders first, so it fails as a 500.
+
+**4. The server refuses to start with the wrong keys (`ed17165`).** Before it listens, it checks: PayPal's base URL is the
+sandbox; PayPal's sandbox accepts the client id and secret (a live pair is refused there); a Razorpay key, if any, starts with
+`rzp_test_`; the demo's signing key is its own and not your local mandate key. In production it also refuses your developer
+keys, the local key being set at all, and a base URL that isn't `https://`. Each refusal names the variable, never its value.
+A warning would be easy to miss on a free host; refusing can't be missed. D-58.
+
+**5. The sweeps run inside the server (`8b6cc65`).** The demo page already promised that an unpaid checkout is released after
+10 minutes and that a payment with no answer gets settled. Locally that is `pnpm reconcile`. On the host nothing ran it, so the
+promise was false. Now the server runs both sweeps once when it starts, then every minute, but only while someone has used the
+demo in the last 30 minutes. One failed sweep is logged and the next minute tries again. Two tests drive it the way the real
+server is wired: an unpaid checkout is released after the clock passes 10 minutes and then refuses capture with
+`ORDER_RELEASED`; a charge whose answer was lost is settled once by the sweep and never charged again. D-56 has why it isn't
+every minute forever: that would use about 180 of Neon's 100 free hours a month.
+
+**6. Limits on the public demo (`29e221c`).** Per address: new sessions, page reads (trace, verify, dispute) and webhook
+deliveries are rate-limited. Per session: button presses. For everyone together, per UTC day: 200 new sessions and 400 model
+calls, counted in a new `demo_usage` table so a restart doesn't refill them. Once the day's model calls are used up, each step
+replays what Gemini answered to the same goal in a recorded run on 2026-11-07, and the page, the trace and the ledger's model id
+all say it is a recording. Praman still prices and decides every cart live. The numbers and the reasoning are in D-57, including
+one weakness: the per-address limits trust the first `X-Forwarded-For` address, which a script may be able to fake on Render.
+The daily caps hold regardless.
+
+**7. Two database addresses (`f37a577`).** On Neon, the running server uses the pooled address (`DATABASE_URL`) and migrations
+use the direct one (`DIRECT_DATABASE_URL`). Locally `DIRECT_DATABASE_URL` is empty and nothing changes.
+
+**8. The Render Blueprint (`898334a`).** `render.yaml` describes the service: plan free, region virginia, branch
+`paypal-hackathon`, the build (install, generate the Prisma client, run migrations over the direct address), the start command,
+and `/healthz` as its health check. Fixed values: `NODE_ENV=production`, the sandbox PayPal URL, `DEMO_DAILY_MODEL_CALLS=400`.
+Every secret is `sync: false`, so Render asks you for it and it never sits in the repo. No Langfuse. The migrations run in the
+build because Render's pre-deploy step isn't on the free plan.
+
+**9. A fresh demo key pair.** Made with `pnpm keygen` into `private/demo-mandate-keys.env`, which `.gitignore` covers. It was
+checked, without printing it, against the start-up rules: it is neither your local mandate key nor the demo key in your `.env`,
+and production accepts it.
+
+**10. The deploy guide (`e560505`) and the decision records (`fe6fcb6`).** `docs/DEPLOY.md` has the two Neon addresses, the
+Render Blueprint from the repo and branch, every environment value, registering the PayPal webhook on the live address for
+`PAYMENT.CAPTURE.COMPLETED` and `PAYMENT.CAPTURE.DECLINED`, the cron-job.org ping, and a smoke test. D-55 to D-59 record the
+choices, and D-51 gained a Status line.
+
+**Security review.** I ran the `security-review` skill over the public surface: `app.ts`, every `/demo` route, the trace, index
+and demo pages, the browser scripts, the webhook route, `/verify` and `/dispute`, and the start-up checks. It looked for
+injection, HTML escaping gaps, ways for one visitor to act on another's session, secrets in logs or pages, and anything that
+could reach live money. It found no vulnerability it was confident of, so no code changed. What it checked and found holding:
+every value a page shows goes through `escapeHtml` (amounts are built from digits and a fixed symbol); no route reads a request
+body, and the only query value read must equal the session's own PayPal token; session cookies are 32 random bytes, `HttpOnly`,
+`SameSite=Lax` and `Secure` on https, and a cross-site POST is refused; the dispute download's file name is cleaned; webhook
+bodies are verified with PayPal before they are read; PayPal and Razorpay calls go to fixed hosts; no raw SQL is built from
+strings. Demo traces are open to anyone with the id, which carries 48 random bits and is rate-limited; the index never lists
+them. The `X-Forwarded-For` point above is the one thing it would have raised if rate limits were in scope, and it is written up
+in D-57 and checked by the smoke test, not changed: which address to trust depends on how Render's proxy behaves, and guessing
+wrong would either keep the hole or lock out everyone behind one proxy.
+
+**Ran live.** The server started on a spare port with this repo's `.env`. `/healthz` answered `ok` with the policy and the other
+headers, `/` and `/demo` answered 200, an unknown trace 404, and a malformed trace id (`/r/%E0`) gave the plain 500 sentence
+while the log got `URIError: URI malformed`. The production start-up checks were run against the fresh key pair with no
+`MANDATE_PRIVATE_KEY` and an `https://` base URL, and returned no reasons. `prisma migrate status` on the local database: up to
+date, 8 migrations.
+
+**Not done, and yours.** Creating the Neon and Render accounts, deploying, registering the webhook, and the smoke test on the
+public address with a real sandbox purchase and webhook. Three things only the real deploy can show: that `corepack enable pnpm`
+works in Render's build (`docs/DEPLOY.md` has the fallback if not), whether Render passes a client's own `X-Forwarded-For`
+through, and that Neon's dashboard lets you pin the compute at 0.25 CU as the guide suggests. Screenshots are not regenerated;
+the final polish task redoes them.
+
+**Tests.** 750, all passing. Task 13's code commits took the count from 715 to 746, and the two P12 fixes since added the rest.
+The plan's seven Task 13 tests are all there (the daily model cap's labelled recording, the 429 page, PayPal unreachable, the
+model failing, both start-up refusals, the sweep surviving a failure). This session resumed an interrupted attempt, so I
+did not see those tests fail first myself; this session added no code and no tests. No test was weakened or removed. Every check ran with `TSX_DISABLE_CACHE=1`, and the eval wrote its report into this repo, not `praman-mcp`.
