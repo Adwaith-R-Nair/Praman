@@ -2945,6 +2945,8 @@ say that yet. That's your call; I haven't changed either.
 
 ### Phase P12 · 2026-11-08 · what PayPal did when real money moved in the sandbox
 
+Status: the reason given below for the number is wrong. Phase numbers follow plan task numbers, and this entry did no Task 12 work: it records sandbox runs made outside any task, as a follow-up to the Task 0 spike in P0. Read it as a P0 follow-up. The Task 12 work starts at "Phase P12 · the demo story". The heading stays as written, since entries are not rewritten.
+
 Docs only. Until today every capture in this repo had been tested against a stand-in, because no sandbox buyer approval had gone
 through. On 2026-11-08 approvals worked, and throwaway scripts outside the repo captured real sandbox orders. This entry records
 what they showed. It is numbered P12 because the demo work in Task 12 is the first thing that depends on it. D-49 has the full tables.
@@ -3145,6 +3147,8 @@ page failure tests, the token test, session expiry releasing the token, and the 
 
 ### Phase P12 · 2026-11-08 · review fix: a retry could charge twice, and the checkout advice kept the same session
 
+Status: the "different browser" advice in Fix 2 was itself too strong, and is replaced by "a window that is not logged in to PayPal" (`141d245`, see "review fix: the demo's open findings" below). The retry fix stands.
+
 **What reviewers found.** Two problems in the demo, both real.
 
 1. **A retry could make a second real charge.** A purchase step was saved on the session only after `runIntent` and the
@@ -3196,3 +3200,84 @@ random 12-hex-digit part from the visitor's session, and is only shown on that v
 **Tests.** A new file, `apps/receipt-ui/test/navigation.test.ts`, checks that a trace at each demo merchant links to `/demo`, that
 other traces keep their index link, that the index lists and counts no demo traces, and that the index links to the demo with or
 without traces to show. Six of its seven tests failed before the fix. 694 in total, up from 687. None weakened or removed.
+
+### Phase P12 · 2026-11-08 · review fix: the demo's open findings
+
+Reviewers left eleven findings on the demo after Tasks 12 and 14. All eleven are fixed below, one commit each where it was code.
+D-52, D-53 and D-54 have the reasoning. `packages/policy` is untouched and `pnpm lint:policy-freeze` passes.
+
+**1. A step could buy at the wrong shop (`f70d214`).** The intent took its shop from the model's cart. Your mandate allows two
+shops, so if the model named the market during a cafe step, Praman would have allowed a real purchase there. Each step now uses
+its own fixed shop. If the model's cart names another shop, or its items aren't real SKUs with whole quantities, the step stops
+with a plain sentence saying so, before Praman is asked. Nothing is charged and nothing goes on the ledger. A cart with `qty: 1.5`
+used to reach `runIntent` and fail there; now it never does. The page shows "Not sent" for these.
+
+**2. Step 3 could strand the story (`890b456`).** If the model asked for two bowls ($25.00) in step 3, Praman would send it
+through PayPal's checkout, since it is over $20.00, but only step 5 had a capture button. Steps 4 and 5 waited on step 3 forever. A
+refused or rejected step stuck the story the same way. Now every purchase step shows Approve, the PayPal link and Capture when it
+needs them, and a step that charged nothing can be asked again. A step that charged, or might have, is still never run twice.
+Step 4's "No person approved this payment" line now appears only when that is true; if step 4 needed approval, it doesn't.
+
+**3. The trace page didn't say how a no-buyer charge was paid, and a mismatch looked allowed (`9702a9a`, `6f6026f`).** A trace
+for a saved-account charge now has a "How it was paid" box: paid from the saved PayPal account, with no buyer present, and either
+"No person approved it" or who did. A rail mismatch now shows as "Payment mismatch", in the refusal colour, with what PayPal
+reported, instead of "Allowed (mismatch)". The dispute bundle now carries the same facts: `execution.paid_by`, `execution.failed`,
+the rail's code or reported money, and the approval. How the page knows there was no buyer is in D-53: on PayPal only a
+saved-account charge comes back captured on its first answer.
+
+**4. Disabled buttons said nothing (`c4ac7f4`).** Each greyed-out button now has a line beside it saying why: connect PayPal in
+step 2 first, finish the first purchase first, or what this server is missing. A screen reader reads it with the button.
+
+**5. Step 7's numbers were hard to follow (`9d8a9b4`).** It now reads as a sum, one line each: the budget is $30.00, the first
+purchase spent $5.00, five of the twenty paid $25.00, so $5.00 + $25.00 = $30.00. Refusals are in words next to their code: "15
+refused: This is over the mandate's total budget. `MANDATE_BUDGET_EXHAUSTED`".
+
+**6. The harness's approval was called a human review (`e00a8c2`).** Step 7 approves its own first purchase in code. Its trace now
+says "Test harness approved the step-up. No person reviewed it", the bundle says `approval.by: "test_harness"`, and the demo page
+says so in step 7's description. The page knows from the intent's model id, `harness/no-model`, which nothing else writes.
+
+**7. The recorded fooled-model panel showed rupees in a dollar demo (`1d9a616`).** A boxed line above the recorded listing now says
+"In rupees, not US dollars", works out one price (price_paise=12000 means ₹120.00), and says your mandate here spends only
+dollars. I didn't re-record it on the dollar catalog: that needs a model fooled again on demand, and the live model usually isn't
+fooled, which is the point of the panel.
+
+**8. The checkout window advice (`141d245`).** The earlier fix said "use a different browser". The real requirement, from the
+2026-11-08 sandbox runs, is a PayPal session that hasn't logged in, and step 2 logs the demo's window in. So the page now says to
+open the PayPal link in a window that is not logged in to PayPal: a private window if you opened the demo in a normal one,
+otherwise another browser. For a second checkout, close every private window first so the next one starts fresh.
+`docs/DEMO_INSTRUCTIONS.md` says the same, and also tells judges that steps 3 and 4 can become checkouts and that a refused step
+can be asked again.
+
+**9. Stale comments (`986dd06`).** Three comments in `paypal-exec` still said no sandbox approval had ever registered. They now say
+what D-49 recorded, and why the tests still use PayPal's documented shapes.
+
+**10. Saved PayPal accounts on shutdown (`a559c6d`).** Stopping the server with Ctrl-C or SIGTERM now asks PayPal to delete every
+saved payment token, waiting at most five seconds, and logs how many it deleted. Before, a restart lost them from memory while
+PayPal kept them. A crash still does that: the tokens are only in memory, and PayPal keeps them until someone deletes them in the
+sandbox dashboard (D-54).
+
+**11. P12's numbering.** The sandbox-results entry said it was numbered P12 because of Task 12. It now has a Status line: it was a
+P0 follow-up, not Task 12 work.
+
+**Ran live.** The injection step against Gemini through the new cart check: the model proposed the dosa and coffee at the market,
+the cart passed, Praman answered `STEP_UP_FIRST_MERCHANT`, and the step stopped there with no purchase (trace
+`trc_demo_6a7088bcafe7_injection_3`, 3 model calls). The server started on a spare port, took a request, and on SIGTERM printed
+"receipt-ui: SIGTERM, shutting down" and exited. No PayPal account was connected in that run, so no token deletion happened live;
+the deletion is covered by tests with the stand-in PayPal, including one where PayPal never answers.
+
+**Not done.** No new checkout was paid through the demo, so `captureOrder` after a real buyer approval is still unverified, and so
+is whether a private window avoids the decline in practice. Screenshots are not regenerated; the final polish task redoes them.
+
+**Something you should know about the done-check.** `tsx` caches compiled files by content, and it bakes `import.meta.url` into
+the cache. This repo and `praman-mcp` share files with the same content, so a cached file can carry the other folder's path. The
+first done-check in this session ran `pnpm eval` and wrote `eval/report.md`, `report.json` and `badge.json` into
+`../praman-mcp/eval/`, not this repo's. Their content matched what was already committed there (`git diff` in that folder was
+empty), so only the file times changed. Every later run set `TSX_DISABLE_CACHE=1` and checked that the eval wrote here. Any `tsx`
+script that finds files from `import.meta.url` can be affected the same way, in either folder, so a done-check run in one folder
+may have checked the other's files. Setting `TSX_DISABLE_CACHE=1` in both folders' scripts would close it.
+
+**Tests.** 715, up from 694. The new ones failed first, except the guard that a buyer's checkout isn't called a no-buyer payment,
+which passed from the start. Five existing assertions changed: two pinned the old "different browser" wording and now pin the new
+advice, still asserting the old "new private window" text is absent; three exact `execution` shapes in the bundle tests now
+include the new fields. None were weakened or removed.
+

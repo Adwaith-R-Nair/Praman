@@ -1981,6 +1981,8 @@ live keys stay out of scope for this repo.
 
 ### D-50 · Who decides whether the buyer is at PayPal · Accepted
 
+Status: the rule below is unchanged, but the table is only what happens when the model asks for what each goal says. Any of the three steps becomes a checkout when its cart reaches the threshold, and the demo now handles that on every step (D-52). On a graceful shutdown the saved payment tokens are now deleted at PayPal too; a crash still loses them in memory while PayPal keeps them (D-54).
+
 An implementer's decision for the builder to check, made in plan Tasks 12 and 14 on 2026-11-08. The builder's brief set the
 requirements: the rail stays server config, the choice must not come from the model or a request, the payment token is a secret,
 and a no-buyer charge goes through the outbox like any other.
@@ -2048,6 +2050,8 @@ at PayPal's login.
 
 Status: two parts below were wrong, and both are fixed (BUILD_LOG, P12 review fix). "A double click can't make a second purchase" did not hold when a step threw after its charge; a step is now recorded before Praman is asked (`8359a32`). The checkout link now goes to a different browser, not a new private window, since private windows of one browser share one PayPal session (`c2c5471`).
 
+Status: the checkout advice changed again (`141d245`). What matters is a PayPal session that hasn't logged in, so the page now says: a window that is not logged in to PayPal, which is a private window if the demo is in a normal one, otherwise another browser. "Each step runs once" now holds only for a step that charged or may have: a refused step can be asked again (D-52). The checkout return page now sends visitors back to their demo window, not their demo browser.
+
 An implementer's decision for the builder to check, made in plan Task 12 on 2026-11-08. The design said there is no public
 intent API and no free-text goal. This record says how the demo's routes make that hold.
 
@@ -2081,4 +2085,82 @@ approve. D-36 left that open for a public endpoint.
 
 **Rejected: storing sessions in Postgres.** It would survive restarts and needs a migration and a sweep for a demo that lasts an
 hour. Revisit if the host runs more than one instance.
+
+### D-52 · Each demo step buys at its own shop, and no step can strand the story · Accepted
+
+An implementer's decision for the builder to check, made on 2026-11-08 to fix review findings on plan Tasks 12 and 14. The
+builder set the rules: no LLM in the money path, the price from the catalog, and a story that never gets stuck.
+
+**What was wrong.** The intent's `merchant_id` came from the model's cart. The visitor's mandate allows two shops, the cafe and
+the market, so a cart the model pointed at the market in a cafe step would be a real purchase there, and Praman would allow it.
+And only step 5 could be approved or captured. If the model asked for two bowls in step 3, $25.00, that step became a checkout
+with no capture button, and steps 4 and 5 waited on it for good. A refused or rejected step ended the story the same way.
+
+**Decision 1: the server's merchant goes in the intent, and the cart must name it.** `GOALS` already fixes each step's merchant.
+`checkCart` in `story.ts` refuses a cart that names any other merchant, or whose line items aren't SKUs with whole positive
+quantities, before Praman is asked. The step says so in plain words and nothing is charged. Nothing goes on the ledger either:
+no intent was made, so there is nothing to record. The price is still the catalog's and the decision is still `evaluate()`'s.
+This only decides whether to ask.
+
+**Decision 2: every purchase step can be approved, can become a checkout, and can be captured.** The routes take
+`/demo/approve/{first,second,large}` and `/demo/capture/{first,second,large}`, each acting on this session's own step, and the
+page shows the PayPal link and the capture button on whichever step has a checkout waiting.
+
+**Decision 3: a step can be asked again only if nothing can have been charged for it.** That is a step the model proposed
+nothing for, or one that was refused: by Praman, by the visitor, or before Praman was asked. Asking again makes a new intent with
+a new key, which is only safe because the old one charged nothing. A step that paid, failed at the provider, or is pending is
+shown and never run again, as the retry fix in P12 requires.
+
+**Rejected: keeping step 3 below the threshold by its goal alone.** The goal already says "one". The model can still ask for two,
+and the page must not depend on it not doing so.
+
+**Rejected: sending the model's merchant to Praman and letting policy refuse it.** It wouldn't refuse: both shops are in the
+mandate's scope. The step is what is out of scope, and that is the demo's knowledge, not the mandate's.
+
+**Rejected: recording the refused cart on the ledger.** That needs an intent and a decision, and a new reason code for "the cart
+named the wrong shop" (invariant 8), with `packages/policy` frozen. The step's page says what happened.
+
+### D-53 · How a trace says who paid and who approved · Accepted
+
+An implementer's decision for the builder to check, made on 2026-11-08 to fix review findings on plan Tasks 12 and 14.
+
+**What was wrong.** A no-buyer charge read like any allowed order on its trace page, with nothing saying no buyer was at PayPal or
+whether anyone approved it. A rail mismatch showed as "Allowed (mismatch)". The concurrency harness approves its own first
+purchase in code, and its trace said "Human reviewed the step-up". The dispute bundle said none of this.
+
+**Decision: read all three from the ledger as it is, with no new fields.**
+
+- **No buyer present:** the order's first outcome is a PayPal `captured` with no capture key. Only a charge to a saved payment
+  method gives that, since a checkout order is always `created` first and captured later (D-49, D-50). The page then says it was
+  paid from the saved PayPal account with no buyer present, and either that no person approved it or who did. The bundle's
+  `execution.paid_by` says `saved_method_no_buyer`.
+- **Mismatch:** the latest outcome's status is `mismatch`. The page shows "Payment mismatch" in the refusal colour with what the
+  rail reported. The bundle keeps `authorisation.decision` as Praman's `ALLOW`, which is true, and sets `execution.failed` with
+  `rail_reported`. A plain `failed` now sets `execution.failed` and `execution.failure_code` too.
+- **Harness approval:** the intent's `model_id` starts with `harness/`. The harness writes `harness/no-model` and no model or
+  person ever does. The page calls that step-up resolution the harness's, and the bundle's `approval.by` says `test_harness`.
+
+**Rejected: writing how an order was paid onto the outcome row.** It would be exact by construction, but it changes the executor
+result shared by `exec-core`, `paypal-exec`, `razorpay-exec` and the control plane, to say something the existing rows already
+show. If a rail ever captures on create for another reason, such as PayPal's auto-capture, this reading would be wrong and the
+field would be worth adding.
+
+**Rejected: an approver field on `step_up_resolved`.** Same reason: `resolveApproval` would need a new parameter, for one caller
+that the intent already identifies.
+
+### D-54 · Saved payment tokens on shutdown · Accepted
+
+An implementer's decision for the builder to check, made on 2026-11-08 after a review finding on plan Task 14.
+
+D-50 keeps each visitor's PayPal payment token in server memory only. A session that ends or expires deletes its token at PayPal.
+A restart did not: the tokens were gone from memory and PayPal kept them, still usable with this app's credentials.
+
+**Decision: on SIGTERM or SIGINT the server stops taking requests, ends every session, and asks PayPal to delete every saved
+token at once, waiting at most five seconds, then exits.** `releaseAllSessions` in `demo/routes.ts` does it and logs how many were
+deleted and how many weren't confirmed. It never logs a token.
+
+**What this doesn't fix.** A crash, an out-of-memory kill or a SIGKILL skips it, and so does a deletion PayPal doesn't answer within
+five seconds. Those tokens stay at PayPal. In the sandbox they charge play money, and they can be removed from the sandbox
+dashboard. A token in a database would survive a crash and could be deleted after one; D-50 rejected that, and this doesn't
+revisit it.
 
