@@ -2942,3 +2942,90 @@ the test, not the code, but they are held-out cases that were changed after bein
 say that yet. That's your call; I haven't changed either.
 
 **Tests.** 639, up from 636. None weakened or removed. Nothing in `packages/policy` changed.
+
+### Phase P12 · 2026-11-08 · what PayPal did when real money moved in the sandbox
+
+Docs only. Until today every capture in this repo had been tested against a stand-in, because no sandbox buyer approval had gone
+through. On 2026-11-08 approvals worked, and throwaway scripts outside the repo captured real sandbox orders. This entry records
+what they showed. It is numbered P12 because the demo work in Task 12 is the first thing that depends on it. D-49 has the full tables.
+
+**What PayPal did, in plain terms.**
+
+- **Capturing an approved $15.00 order** gave 201 and a capture id. Money moved.
+- **Sending that capture again with the same key** gave 200 and the *same* capture id. No second charge. This is what the reconciler
+  relies on when it resends a capture whose answer was lost (D-41), and now it's seen, not assumed.
+- **Capturing again with a new key** gave 422 `ORDER_ALREADY_CAPTURED`. Reading the order then showed the one capture. This is the
+  case `paypal-exec` reads back instead of believing the 422 (D-38).
+- **A key refused with `ORDER_NOT_APPROVED` before the buyer approved** captured normally with the same key afterwards. PayPal
+  doesn't remember the refusal. P6 left this as an open question, because if PayPal had replayed the 422, that key could never work.
+- **A charge with no buyer present works.** After a buyer approved a setup token once, PayPal turned it into a saved payment token.
+  An order made with that token came back already captured ($4.00), with no checkout page and no capture call. That was plan Task
+  14's condition.
+- **The trap from D-26 is here too.** The same key with $9.00 instead of $4.00 gave 200 and the *old* $4.00 capture, no error. On a
+  checkout order that only misleads you about an order. Here the money has already moved. `acceptOutcome` already turns that into a
+  `mismatch` that holds budget, so Task 14 just has to use it like every other create.
+
+**I checked our own code against the real captures.** The scripts called PayPal directly, so they say nothing about whether
+`paypal-exec` reads a real capture correctly. So I found the order behind each of the four captures and ran `PayPalExecutor` on
+them. Real output:
+
+```
+capture 2YR718750N2644359: GET capture 200 COMPLETED order_id=8BC71769719470141
+  paypal-exec findOrder by id: captured 2YR718750N2644359 1500n
+  paypal-exec capture, new key: captured 2YR718750N2644359 1500n null
+capture 25V56026HN6569816: GET capture 200 COMPLETED order_id=7P102752GT801920K
+  paypal-exec findOrder by id: captured 25V56026HN6569816 400n
+  paypal-exec capture, new key: captured 25V56026HN6569816 400n null
+capture 1N5866559K7079023: GET capture 200 COMPLETED order_id=5G567655B0670121Y
+  paypal-exec findOrder by id: captured 1N5866559K7079023 300n
+  paypal-exec capture, new key: captured 1N5866559K7079023 300n null
+capture 68C05697TX7382946: GET capture 200 COMPLETED order_id=0G353546C23905239
+  paypal-exec findOrder by id: captured 68C05697TX7382946 200n
+  paypal-exec capture, new key: captured 68C05697TX7382946 200n null
+```
+
+In each block, the second line is the order read by id, and the third is a capture with a fresh key, which PayPal refused with
+`ORDER_ALREADY_CAPTURED`; `paypal-exec` read the order back and reported the capture that already happened, as designed. The
+second block is the no-buyer order. I also tried the order behind a checkout link in the raw notes (`53W68658P28489309`, $2.00). It
+reads as not yet approved, and a capture got a definite `ORDER_NOT_APPROVED`, so it is an order nobody finished paying, and no
+money moved.
+
+**Sandbox accounts, for the demo.**
+
+- Seller: an India Business sandbox account, which is the app's default. It takes USD.
+- An India Personal buyer is refused: "This seller doesn't accept payments in your currency" on a USD order, and "Things don't appear
+  to be working" on the saved-payment approval page. Don't use one.
+- A US Personal buyer works for both. That is the demo buyer.
+- A second checkout in the same browser session was sometimes declined before any click, with "To comply with international
+  regulations, this transaction has been declined". The same order went through in a fresh browser session. A control order with
+  no early capture attempt did the same, so it is PayPal's sandbox risk check, tied to the session, not something Praman caused.
+  For the demo: a fresh session or a private window per checkout, and the judge instructions should say so (Tasks 12 and 15).
+
+**What changed in the repo.**
+
+- `823d26e`: D-49, and the README's record count, 48 to 49. The count test fails if the two disagree.
+- `e5012db`: `Status:` pointers on D-26, D-37, D-38, D-39, D-40, D-41 and D-46, saying which of their "untested" claims are now
+  settled and which aren't. D-45 got none, because a real webhook still hasn't arrived.
+- `49e095a`: the README said "no capture has run against PayPal for real". That is no longer true, so it now says what ran, and that
+  the control plane's own capture still hasn't run after a live approval.
+- `ef08e18`: `Status:` pointers on the P0, P6, P7 and P11 entries.
+
+No code, test, schema or policy changed. Nothing contradicted what the code assumes.
+
+**Still unverified live, so don't claim it:**
+
+- A real webhook delivery. Nothing is hosted, so PayPal has nowhere to send one.
+- What reading an order shows while a capture is still completing, and how long that lasts. Every capture here finished in its
+  first answer.
+- Whether repeating a checkout order's create after capture shows it as captured. The reconciler doesn't depend on it.
+- `captureOrder` in the control plane, end to end, after a real approval. The demo will be its first live run.
+
+**Worth your look:**
+
+- The comment at the top of `packages/paypal-exec/test/live.test.ts` still says no sandbox approval has registered. I left code and
+  tests alone in this docs-only change. A live test reading the four captured orders back would run unattended, but it would depend
+  on sandbox data only this account has. D-49 leaves that to you.
+- Task 14 is now possible. The plan still lists it first to cut.
+
+**Checks.** The done-check passed before each of the four commits: 639 tests in 47 files, typecheck, boundary, policy freeze,
+corpus coverage, the casts lint, and Layer 1 at 88 of 88, with the regenerated `eval/` files restored each time.
