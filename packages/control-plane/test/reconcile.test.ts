@@ -5,7 +5,7 @@ import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
 import { routeAllTo, routeByRail, SimulatedExecutor, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
 import { minor, type Currency, type Rail } from "@praman/shared";
-import { runIntent, RECONCILE_MIN_AGE_MS } from "../src/run-intent.js";
+import { MANDATE_LOCK_NS, runIntent, RECONCILE_MIN_AGE_MS } from "../src/run-intent.js";
 import { reconcilePending } from "../src/reconcile.js";
 import { resolveApproval } from "../src/resolve-approval.js";
 
@@ -444,5 +444,98 @@ describe("crash recovery: runIntent survives, reconcile resolves", () => {
       const state = await prisma.$transaction((tx) => deriveState(tx, "mnd_crash_amount"));
       expect(state.spent_minor).toBe(6000n);
     });
+  });
+});
+
+describe("the reconciler and the mandate lock (Task 8)", () => {
+  async function crashWithOrder(mandateId: string, intentId: string, inner: Executor, now: Date) {
+    await seedPriorHistory(mandateId);
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const intent: PurchaseIntent = {
+      intent_id: intentId,
+      mandate_id: mandateId,
+      merchant_id: MERCHANT,
+      line_items: [{ sku: SKU, qty: 1 }],
+      requested_at: "2026-08-28T01:00:00.000Z",
+      agent_rationale: "test",
+    };
+    expect((await runIntent(intent, signed, publicKeyPem, routeAllTo(new CrashAfterSuccessExecutor(inner)), now, "test-model")).kind).toBe("IN_FLIGHT");
+    const traceId = `trc_${intentId}`;
+    await prisma.$executeRaw`UPDATE idempotency_record SET created_at = ${new Date(now.getTime() - RECONCILE_MIN_AGE_MS - 1000)} WHERE trace_id = ${traceId}`;
+    const record = await prisma.idempotencyRecord.findFirst({ where: { traceId } });
+    if (record === null) throw new Error("no pending record");
+    return { traceId, key: record.key };
+  }
+
+  it("waits for the mandate lock, and writes nothing if T2 settled the record meanwhile", async () => {
+    const mandateId = "mnd_reconcile_lock";
+    const inner = new SimulatedExecutor();
+    const now = new Date();
+    const { traceId, key } = await crashWithOrder(mandateId, "int_reconcile_lock", inner, now);
+
+    // Stands in for a late T2: it holds the mandate's lock, and while holding it
+    // settles the record and writes the outcome.
+    let letGo: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      letGo = resolve;
+    });
+    let lockTaken: () => void = () => {};
+    const taken = new Promise<void>((resolve) => {
+      lockTaken = resolve;
+    });
+    const lateT2 = prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${mandateId}))`;
+        lockTaken();
+        await held;
+        await append(tx, {
+          traceId,
+          ts: now,
+          actor: "praman",
+          eventType: "outcome",
+          payload: { mandate_id: mandateId, status: "captured", order_id: "order_SIM00000001", amount_minor: "5000", currency: "INR", merchant_id: MERCHANT, idempotency_key: key },
+        });
+        await tx.idempotencyRecord.update({ where: { key }, data: { status: "succeeded", outcome: { order_id: "order_SIM00000001", status: "captured", approve_url: null } } });
+      },
+      { timeout: 10_000 },
+    );
+    await taken;
+
+    const sweep = reconcilePending(routeAllTo(inner), now);
+    // Time for a sweep that ignores the lock to have written its outcome.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    letGo();
+    await lateT2;
+
+    expect(await sweep).toBe(0);
+    const outcomes = await prisma.ledgerEntry.findMany({ where: { traceId, eventType: "outcome" } });
+    expect(outcomes.map((r) => r.actor)).toEqual(["praman"]);
+  });
+
+  it("a pending record holds budget until the reconciler finds no order, then frees it", async () => {
+    const mandateId = "mnd_reconcile_frees";
+    // Times out before any order exists, so the rail has nothing to find.
+    const timesOut = new SimulatedExecutor("timeout");
+    const now = new Date();
+    await seedPriorHistory(mandateId);
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const intent: PurchaseIntent = {
+      intent_id: "int_reconcile_frees",
+      mandate_id: mandateId,
+      merchant_id: MERCHANT,
+      line_items: [{ sku: SKU, qty: 1 }],
+      requested_at: "2026-08-28T01:00:00.000Z",
+      agent_rationale: "test",
+    };
+    const spent = async () => (await prisma.$transaction((tx) => deriveState(tx, mandateId))).spent_minor;
+
+    expect((await runIntent(intent, signed, publicKeyPem, routeAllTo(timesOut), now, "test-model")).kind).toBe("IN_FLIGHT");
+    // 1000 seeded, and 5000 held for a call nobody knows the answer to.
+    expect(await spent()).toBe(6000n);
+
+    await prisma.$executeRaw`UPDATE idempotency_record SET created_at = ${new Date(now.getTime() - RECONCILE_MIN_AGE_MS - 1000)} WHERE trace_id = ${"trc_int_reconcile_frees"}`;
+    expect(await reconcilePending(routeAllTo(timesOut), now)).toBe(1);
+
+    expect(await spent()).toBe(1000n);
   });
 });

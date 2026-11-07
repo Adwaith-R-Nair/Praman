@@ -165,7 +165,13 @@ export async function reconcilePending(route: ExecutorRouter, now: Date): Promis
       });
       const found = rawFound === null ? null : acceptOutcome(rawFound, { amount_minor: authorised, currency });
 
-      await prisma.$transaction(async (tx) => {
+      // Under the mandate lock, like T1 and T2, and only if the record is still
+      // pending once the lock is held. A T2 that arrived late has already settled
+      // it, and a second outcome would be a second answer to one call (D-42).
+      const wrote = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${mandateId}))`;
+        const current = await tx.idempotencyRecord.findUnique({ where: { key: rec.key }, select: { status: true } });
+        if (current?.status !== "pending") return false;
         await append(tx, {
           traceId: rec.traceId,
           ts: now,
@@ -190,9 +196,10 @@ export async function reconcilePending(route: ExecutorRouter, now: Date): Promis
             updatedAt: now,
           },
         });
+        return true;
       });
 
-      resolved += 1;
+      if (wrote) resolved += 1;
     } catch (err) {
       // One unresolvable record must not block the rest of the batch — that's
       // the whole point of a reconciler. It stays pending; the next run tries again.
