@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@praman/db";
-import { append } from "../src/append.js";
+import { append, type EventType } from "../src/append.js";
 import { amountIfPresent, deriveState, readAmount, readCurrency } from "../src/derive.js";
 
 // Runs against TEST_DATABASE_URL (see vitest.config.ts), never the real one.
@@ -602,7 +602,7 @@ describe("deriveState reserving attempted calls (Task 8)", () => {
   const TS = new Date("2026-09-04T10:00:00.000Z");
   const LATER = new Date("2026-09-04T10:00:05.000Z");
 
-  async function row(eventType: string, traceId: string, payload: Record<string, unknown>, ts: Date = TS): Promise<void> {
+  async function row(eventType: EventType, traceId: string, payload: Record<string, unknown>, ts: Date = TS): Promise<void> {
     // A field passed as undefined is left out, the way an old row simply doesn't have it.
     const kept = Object.fromEntries(Object.entries({ mandate_id: MANDATE, ...payload }).filter(([, value]) => value !== undefined));
     await prisma.$transaction((tx) => append(tx, { traceId, ts, actor: "praman", eventType, payload: kept }));
