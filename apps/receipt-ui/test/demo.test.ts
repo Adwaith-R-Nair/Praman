@@ -455,6 +455,11 @@ describe("the demo story", () => {
     const page = await v.page();
     expect(page).toContain("Simulating a fooled model. No model is asked.");
     expect(page).toContain("Recorded run, not live.");
+    // The recording is in rupees inside a dollar demo. The page says so before the listing, not after.
+    const rupees = page.indexOf("In rupees, not US dollars.");
+    expect(rupees).toBeGreaterThan(-1);
+    expect(rupees).toBeLessThan(page.indexOf("price_paise=12000"));
+    expect(page).toContain('price_paise=12000 means <span class="rupee">₹</span>120.00');
     expect(model.calls).toBe(0);
     const intent = (await ledgerFor(fixture?.traceId ?? null)).find((r) => r.eventType === "intent");
     expect(intent?.payload).toMatchObject({ model_id: "fixture/simulated-fooled-model" });

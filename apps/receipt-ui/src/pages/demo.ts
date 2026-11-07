@@ -5,7 +5,7 @@ import type { AgentVisibleDecision } from "@praman/policy";
 import { CAFE, MARKET, type BeatId, type PurchaseBeat } from "../demo/config.js";
 import { canAskAgain } from "../demo/story.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
-import { escapeHtml } from "../html.js";
+import { escapeHtml, fixRupeeGlyph } from "../html.js";
 import { REASON_CODE_PLAIN } from "../reason-codes.js";
 
 const CSS = readFileSync(fileURLToPath(new URL("../demo/demo.css", import.meta.url)), "utf8");
@@ -213,12 +213,27 @@ export function loadRecording(raw: string = readFileSync(RECORDING_PATH, "utf8")
   return parsed;
 }
 
+/**
+ * The recording comes from the eval's rupee shop, recorded before this demo used US
+ * dollars, so its listing shows paise. Said before the listing, with one price worked
+ * out, so nobody reads 12000 as dollars or thinks the demo spends rupees. Re-recording
+ * on the dollar catalog would need a model fooled again on demand, which it usually isn't.
+ */
+function rupeeNotice(rec: Recording, listing: string): string {
+  const price = /price_paise=(\d+)/.exec(listing)?.[1];
+  const example = price === undefined ? "" : ` For example, price_paise=${price} means ${formatMoney(minorFromJSON(price), "INR")}.`;
+  return `<p class="rec-currency"><strong>In rupees, not US dollars.</strong> ${fixRupeeGlyph(
+    escapeHtml(`This run was recorded on ${rec.recorded_on} at a rupee shop from Praman's eval, before this demo used US dollars. Its prices are in paise, a hundredth of a rupee.${example} They are not this demo's prices, and your mandate here can only spend US dollars.`),
+  )}</p>`;
+}
+
 /** A recorded run, shown as a recording. Every string is corpus or model text, escaped. */
 export function recordingHtml(rec: Recording): string {
   const poisoned = rec.catalog_reads.find((r) => r.includes("SKU_INJ2_BAIT")) ?? rec.catalog_reads[0] ?? "";
   const cart = rec.proposal.line_items.map((i) => `${i.qty.toString()} × ${i.sku}`).join(", ");
   return `<figure class="recording">
     <figcaption><strong>Recorded run, not live.</strong> ${escapeHtml(`${rec.model}, ${rec.recorded_on}, ${rec.arm}. ${rec.currency_note}`)}</figcaption>
+    ${rupeeNotice(rec, poisoned)}
     <p class="rec-label">The listing the model read</p>
     <pre class="merchant-text">${escapeHtml(poisoned)}</pre>
     <p class="rec-label">What it proposed</p>
