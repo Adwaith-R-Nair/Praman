@@ -166,8 +166,14 @@ export class PayPalClient {
    * One PayPal API call. A 401 gets one new token and one repeat. PayPal didn't
    * run a call it refused to authenticate, and the repeat carries the same key.
    */
-  async call(method: "GET" | "POST", path: string, options: { readonly requestId?: string; readonly body?: unknown } = {}): Promise<PayPalResponse> {
-    const jsonBody = options.body === undefined ? undefined : JSON.stringify(options.body);
+  async call(
+    method: "GET" | "POST",
+    path: string,
+    options: { readonly requestId?: string; readonly body?: unknown; readonly jsonText?: string } = {},
+  ): Promise<PayPalResponse> {
+    // jsonText is a body already written as JSON, sent as it is. Webhook verification
+    // needs it, so the event PayPal checks is the exact bytes it signed.
+    const jsonBody = options.jsonText ?? (options.body === undefined ? undefined : JSON.stringify(options.body));
 
     const first = await this.#getToken();
     if (first.kind === "refused") return first;

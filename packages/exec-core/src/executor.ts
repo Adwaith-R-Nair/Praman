@@ -114,3 +114,23 @@ export function outcomeFields(outcome: AcceptedOutcome) {
       : {}),
   };
 }
+
+/**
+ * What a rail's verified webhook says happened to a capture, reduced to the fields
+ * Praman acts on. Every string has been checked against a narrow pattern by the rail
+ * package, and the provider's free text (summaries, notes, custom ids) is dropped
+ * there, so none of it reaches the ledger, a page or a prompt (invariant 7).
+ */
+export interface SettlementEvent {
+  readonly rail: Rail;
+  /** The provider's event id. Deliveries of one event share it, so it is what dedupes. */
+  readonly event_id: string;
+  readonly event_type: string;
+  readonly status: "captured" | "declined";
+  readonly order_id: string;
+  readonly payment_id: string;
+  readonly amount_minor: Minor;
+  readonly currency: Currency;
+  /** The invoice id the provider echoes back. Praman sets it to the order's receipt. */
+  readonly invoice_id: string | null;
+}

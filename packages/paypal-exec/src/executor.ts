@@ -20,7 +20,7 @@ const CAPTURE_MAY_HAVE_MOVED_MONEY: readonly string[] = ["ORDER_ALREADY_CAPTURED
 
 const fitsPayPal = (key: string): boolean => key.length > 0 && key.length <= MAX_REQUEST_ID_LENGTH;
 
-function requireSandbox(baseUrl: string): void {
+export function requireSandbox(baseUrl: string): void {
   let url: URL | null = null;
   try {
     url = new URL(baseUrl);

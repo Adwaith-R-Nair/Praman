@@ -1,0 +1,33 @@
+{
+  "id": "WH-SYNTHETIC-COMPLETED-0001",
+  "create_time": "2026-11-08T10:05:00.000Z",
+  "resource_type": "capture",
+  "event_type": "PAYMENT.CAPTURE.COMPLETED",
+  "summary": "Payment completed for $ 12.50 USD",
+  "resource": {
+    "id": "SYNTHCAPTURE00001",
+    "status": "COMPLETED",
+    "amount": { "currency_code": "USD", "value": "12.50" },
+    "final_capture": true,
+    "seller_protection": { "status": "ELIGIBLE", "dispute_categories": ["ITEM_NOT_RECEIVED", "UNAUTHORIZED_TRANSACTION"] },
+    "seller_receivable_breakdown": {
+      "gross_amount": { "currency_code": "USD", "value": "12.50" },
+      "paypal_fee": { "currency_code": "USD", "value": "0.92" },
+      "net_amount": { "currency_code": "USD", "value": "11.58" }
+    },
+    "invoice_id": "SYNTHETIC_INVOICE_ID",
+    "supplementary_data": { "related_ids": { "order_id": "SYNTHORDER0000001" } },
+    "create_time": "2026-11-08T10:04:59Z",
+    "update_time": "2026-11-08T10:04:59Z",
+    "links": [
+      { "href": "https://api.sandbox.paypal.com/v2/payments/captures/SYNTHCAPTURE00001", "rel": "self", "method": "GET" },
+      { "href": "https://api.sandbox.paypal.com/v2/checkout/orders/SYNTHORDER0000001", "rel": "up", "method": "GET" }
+    ]
+  },
+  "resource_version": "2.0",
+  "event_version": "1.0",
+  "links": [
+    { "href": "https://api.sandbox.paypal.com/v1/notifications/webhooks-events/WH-SYNTHETIC-COMPLETED-0001", "rel": "self", "method": "GET" },
+    { "href": "https://api.sandbox.paypal.com/v1/notifications/webhooks-events/WH-SYNTHETIC-COMPLETED-0001/resend", "rel": "resend", "method": "POST" }
+  ]
+}

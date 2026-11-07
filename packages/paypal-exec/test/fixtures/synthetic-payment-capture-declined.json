@@ -1,0 +1,25 @@
+{
+  "id": "WH-SYNTHETIC-DECLINED-0001",
+  "create_time": "2026-11-08T10:05:00.000Z",
+  "resource_type": "capture",
+  "event_type": "PAYMENT.CAPTURE.DECLINED",
+  "summary": "A payment capture for $ 12.50 USD was declined.",
+  "resource": {
+    "id": "SYNTHCAPTURE00002",
+    "status": "DECLINED",
+    "amount": { "currency_code": "USD", "value": "12.50" },
+    "final_capture": true,
+    "invoice_id": "SYNTHETIC_INVOICE_ID",
+    "supplementary_data": { "related_ids": { "order_id": "SYNTHORDER0000001" } },
+    "create_time": "2026-11-08T10:04:59Z",
+    "update_time": "2026-11-08T10:04:59Z",
+    "links": [
+      { "href": "https://api.sandbox.paypal.com/v2/payments/captures/SYNTHCAPTURE00002", "rel": "self", "method": "GET" }
+    ]
+  },
+  "resource_version": "2.0",
+  "event_version": "1.0",
+  "links": [
+    { "href": "https://api.sandbox.paypal.com/v1/notifications/webhooks-events/WH-SYNTHETIC-DECLINED-0001", "rel": "self", "method": "GET" }
+  ]
+}
