@@ -79,6 +79,9 @@ const DECISION_WORDS: Readonly<Record<string, { word: string; tone: string }>> =
 function decisionHtml(record: BeatRecord): string {
   const kind = record.agentView?.kind ?? (record.reasonCode === null ? null : "DENY");
   const finalRefusal = record.state === "refused" && record.reasonCode !== null && kind !== "DENY";
+  if (record.state === "refused" && kind === null && record.traceId === null) {
+    return `<div class="stamp stamp-deny">Not sent</div><p class="cell-body">The demo checks that the cart is for this step's shop and is a usable order before asking Praman. This one wasn't, so Praman was never asked and nothing went on the ledger.</p>`;
+  }
   const shown = finalRefusal ? DECISION_WORDS["DENY"] : kind === null ? null : DECISION_WORDS[kind];
   if (shown === undefined || shown === null) return `<p class="cell-body">No decision.</p>`;
   const plain = reasonPlain(record.reasonCode);

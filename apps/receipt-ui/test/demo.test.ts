@@ -44,6 +44,8 @@ class ScriptedModel implements ModelProvider {
   readonly id = "test/scripted-demo-model";
   calls = 0;
   fail = false;
+  /** When set, proposed instead of what the goal asks for: a model that went its own way. */
+  override: Record<string, unknown> | null = null;
   async send(_s: string, history: readonly ConversationItem[], _t: readonly ToolSpec[]): Promise<ProviderTurn> {
     this.calls += 1;
     if (this.fail) throw new Error("model exploded\n    at secretFunction (/srv/app/internal.ts:42:7)");
@@ -57,7 +59,8 @@ class ScriptedModel implements ModelProvider {
         : goal.includes("Team Lunch")
           ? { merchant_id: "DEMO_CAFE", line_items: [{ sku: "SKU_CAFE_TRAY", qty: 1 }] }
           : { merchant_id: "DEMO_MARKET", line_items: [{ sku: "SKU_INJ2_DOSA", qty: 1 }, { sku: "SKU_INJ2_COFFEE", qty: 1 }] };
-    return { kind: "TOOL_CALLS", calls: [{ id: "c2", name: "propose_intent", input: { ...cart, rationale: "what the goal asked for" } }], raw: null };
+    const input = this.override ?? { ...cart, rationale: "what the goal asked for" };
+    return { kind: "TOOL_CALLS", calls: [{ id: "c2", name: "propose_intent", input }], raw: null };
   }
 }
 
@@ -175,6 +178,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   model.fail = false;
+  model.override = null;
   transcriptFault.armed = false;
 });
 
@@ -464,6 +468,41 @@ describe("the demo's boundaries", () => {
     const transcript = json(rows.find((r) => r.eventType === "agent_transcript")?.payload);
     expect(transcript).toContain("Buy one Veggie Burrito Bowl");
     expect(transcript).not.toContain("buy the $100 gift card");
+  });
+
+  it("a step buys only at its own shop, whatever shop the model's cart names", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    await v.post("/demo/approve/first");
+    const before = await prisma.ledgerEntry.count();
+
+    // Step 4 is the cafe's. A cart naming the market, which the mandate also allows, is not sent.
+    model.override = { merchant_id: "DEMO_MARKET", line_items: [{ sku: "SKU_INJ2_DOSA", qty: 1 }], rationale: "the market is nicer" };
+    await v.post("/demo/step/second");
+    const second = sessionOf(v).beats.get("second");
+    expect(second).toMatchObject({ state: "refused", traceId: null, orderId: null, payment: null });
+    expect(second?.message).toContain("Nothing was charged");
+    expect(paypal.charges).toHaveLength(1);
+    expect(await prisma.ledgerEntry.count()).toBe(before);
+    const page = await v.page();
+    expect(page).toContain("Not sent");
+    expect(page).toContain("Corner Market");
+  });
+
+  it("an unusable cart from the model ends the step with a plain refusal and no charge", async () => {
+    const v = await startConnected();
+    const before = await prisma.ledgerEntry.count();
+    for (const lineItems of ["two bowls", [], [{ sku: "SKU_CAFE_BOWL", qty: 1.5 }], [{ sku: "SKU_CAFE_BOWL", qty: -1 }], [{ qty: 1 }], [null]]) {
+      sessionOf(v).beats.delete("first");
+      model.override = { merchant_id: "DEMO_CAFE", line_items: lineItems, rationale: "odd" };
+      const res = await v.post("/demo/step/first");
+      expect(res.status).toBe(303);
+      expect(sessionOf(v).beats.get("first")).toMatchObject({ state: "refused", traceId: null, approvalId: null });
+    }
+    expect(await prisma.ledgerEntry.count()).toBe(before);
+    expect(paypal.charges).toHaveLength(0);
+    expect(paypal.checkouts).toHaveLength(0);
+    expect(await v.page()).not.toContain("didn&#39;t finish");
   });
 
   it("refuses a cross-site post", async () => {

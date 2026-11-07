@@ -89,6 +89,54 @@ function proposalOf(cart: { readonly merchant_id: string; readonly line_items: r
   return { merchantId: cart.merchant_id, lineItems: cart.line_items.map((i) => ({ sku: String(i.sku), qty: Number(i.qty) })), rationale: cart.rationale };
 }
 
+/** More lines than any goal in the story needs. A cart longer than this is not a lunch order. */
+const MAX_CART_LINES = 10;
+
+type LineItem = { readonly sku: string; readonly qty: number };
+
+/** One line of the model's cart, if it is a SKU and a whole positive quantity. Anything else is null. */
+function lineItemOf(raw: unknown): LineItem | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const item: Record<string, unknown> = { ...raw };
+  const sku = item["sku"];
+  const qty = item["qty"];
+  if (typeof sku !== "string" || sku === "" || typeof qty !== "number" || !Number.isSafeInteger(qty) || qty < 1) return null;
+  return { sku, qty };
+}
+
+/**
+ * The model's cart, checked before Praman is asked. The step's merchant is the server's,
+ * fixed in GOALS, and the cart must name that merchant: the mandate allows two shops, so
+ * a cart the model pointed at the other one would otherwise be a real purchase there.
+ * The line items must be SKUs with whole positive quantities. The price is still the
+ * catalog's, and Praman still decides (invariant 1). This only refuses to ask.
+ */
+function checkCart(cart: { readonly merchant_id: unknown; readonly line_items: unknown }, merchant: string): { readonly ok: true; readonly lineItems: readonly LineItem[] } | { readonly ok: false; readonly message: string } {
+  if (cart.merchant_id !== merchant) {
+    return { ok: false, message: "The agent's cart named a different shop from the one this step is for, so it wasn't sent to Praman. Each step buys only at its own shop. Nothing was charged." };
+  }
+  const unusable: { readonly ok: false; readonly message: string } = {
+    ok: false,
+    message: "The agent's cart wasn't a usable order: it needs items from the catalog, each with a whole number of at least one. It wasn't sent to Praman. Nothing was charged.",
+  };
+  const items: unknown = cart.line_items;
+  if (!Array.isArray(items) || items.length === 0 || items.length > MAX_CART_LINES) return unusable;
+  const lineItems: LineItem[] = [];
+  for (const raw of items) {
+    const item = lineItemOf(raw);
+    if (item === null) return unusable;
+    lineItems.push(item);
+  }
+  return { ok: true, lineItems };
+}
+
+/** What the model proposed, for display only, keeping just the lines that read as items. */
+function shownProposal(cart: { readonly merchant_id: unknown; readonly line_items: unknown; readonly rationale: unknown }): NonNullable<BeatRecord["proposal"]> {
+  const items: unknown = cart.line_items;
+  const lineItems = Array.isArray(items) ? items.map(lineItemOf).filter((i) => i !== null).slice(0, MAX_CART_LINES) : [];
+  return { merchantId: String(cart.merchant_id), lineItems, rationale: String(cart.rationale) };
+}
+
 /**
  * Asks the model for a cart, then hands it to Praman. The goal and the merchant are the
  * server's. What the model proposes is an intent like any other: Praman prices it from
@@ -116,16 +164,19 @@ async function agentPurchase(session: DemoSession, deps: DemoDeps, step: Purchas
     return { ...empty, state: "no_proposal", message: "The agent didn't propose a purchase this time. No money moved. Try the step again." };
   }
 
+  const proposal = shownProposal(agent.cart);
+  const checked = checkCart(agent.cart, plan.merchant);
+  if (!checked.ok) return { ...empty, state: "refused", proposal, message: checked.message };
+
   const n = (session.beats.size + session.modelCalls).toString(36);
   const intent: PurchaseIntent = {
     intent_id: `demo_${session.ref}_${step}_${n}`,
     mandate_id: mandate.document.mandate_id,
-    merchant_id: agent.cart.merchant_id,
-    line_items: agent.cart.line_items,
+    merchant_id: plan.merchant,
+    line_items: checked.lineItems,
     requested_at: deps.now().toISOString(),
     agent_rationale: agent.cart.rationale,
   };
-  const proposal = proposalOf(agent.cart);
   // Recorded before Praman is asked, so the step is never offered again once an intent
   // has gone in. If anything below throws after a charge, a retry would ask the model
   // again and make a new intent with a new key: a second real charge.
@@ -191,7 +242,8 @@ export async function runBeat(session: DemoSession, beat: BeatId, deps: DemoDeps
     case "large":
     case "injection":
       record = await agentPurchase(session, deps, beat, session.mandate);
-      if (beat === "injection" && record.proposal !== null) record = describeInjection(record);
+      // A cart that never reached Praman has nothing to say about the poisoned line's effect on a decision.
+      if (beat === "injection" && record.proposal !== null && record.traceId !== null) record = describeInjection(record);
       break;
     case "fixture":
       record = await fooledFixture(session, deps);
