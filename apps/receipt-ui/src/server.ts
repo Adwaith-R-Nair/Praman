@@ -12,7 +12,7 @@ const { verifyTrace } = await import("./verify.js");
 const { buildBundleStandalone } = await import("@praman/dispute");
 const { handlePayPalWebhook, payPalWebhookDepsFromEnv, readRawBody } = await import("./webhooks.js");
 
-const { createDemoHandler, sweepExpiredSessions } = await import("./demo/routes.js");
+const { createDemoHandler, releaseAllSessions, sweepExpiredSessions } = await import("./demo/routes.js");
 const { demoDepsFromEnv } = await import("./demo/wiring.js");
 const { seedDemoCatalog } = await import("./demo/seed.js");
 
@@ -115,3 +115,22 @@ const server = createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`receipt-ui listening on http://localhost:${PORT.toString()}`);
 });
+
+// On SIGTERM or Ctrl-C, stop taking requests, then delete the demo's saved PayPal
+// methods at PayPal before exiting, waiting at most five seconds. A crash skips this,
+// and those tokens stay at PayPal (D-50).
+let stopping = false;
+async function shutdown(signal: string): Promise<void> {
+  if (stopping) return;
+  stopping = true;
+  console.log(`receipt-ui: ${signal}, shutting down`);
+  server.close();
+  if (demoWiring.ok) await releaseAllSessions(demoWiring.deps, 5_000);
+  process.exit(0);
+}
+const SIGNALS: readonly NodeJS.Signals[] = ["SIGTERM", "SIGINT"];
+for (const signal of SIGNALS) {
+  process.on(signal, () => {
+    void shutdown(signal);
+  });
+}

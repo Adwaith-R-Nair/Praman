@@ -12,7 +12,7 @@ import type { SavedMethodCharger, SetupToken, VaultResult } from "@praman/paypal
 import type { Minor } from "@praman/shared";
 import { HARNESS_LIMITS } from "../src/demo/config.js";
 import { routeFor, type DemoDeps, type VaultApi } from "../src/demo/connect.js";
-import { createDemoHandler, sweepExpiredSessions, COOKIE } from "../src/demo/routes.js";
+import { createDemoHandler, releaseAllSessions, sweepExpiredSessions, COOKIE } from "../src/demo/routes.js";
 import { seedDemoCatalog } from "../src/demo/seed.js";
 import { SavedMethods, SessionStore } from "../src/demo/session.js";
 import { loadRecording, recordingHtml } from "../src/pages/demo.js";
@@ -673,6 +673,31 @@ describe("the demo's boundaries", () => {
     expect(responses.join("\n")).not.toContain(PAYMENT_TOKEN);
     expect(logs.join("\n")).not.toContain(PAYMENT_TOKEN);
     expect(JSON.stringify(deps.savedMethods)).not.toContain(PAYMENT_TOKEN);
+  });
+
+  it("on shutdown, deletes every saved method at PayPal and ends every session", async () => {
+    const a = await startConnected();
+    const b = await startConnected();
+    const sa = sessionOf(a);
+    const sb = sessionOf(b);
+    const result = await releaseAllSessions(deps, 2000);
+    expect(result).toEqual({ sessions: 2, deleted: 2, notDeleted: 0 });
+    expect(paypal.deleted).toEqual([PAYMENT_TOKEN, PAYMENT_TOKEN]);
+    expect(deps.savedMethods.has(sa.id)).toBe(false);
+    expect(deps.savedMethods.has(sb.id)).toBe(false);
+    expect(deps.sessions.size).toBe(0);
+    expect(logs.join("\n")).not.toContain(PAYMENT_TOKEN);
+  });
+
+  it("on shutdown, gives up waiting for PayPal after the time allowed", async () => {
+    await startConnected();
+    paypal.deletePaymentToken = () => new Promise(() => {});
+    const started = Date.now();
+    const result = await releaseAllSessions(deps, 50);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(result).toEqual({ sessions: 1, deleted: 0, notDeleted: 1 });
+    expect(deps.savedMethods.toJSON()).toBe("[saved payment methods]");
+    expect(logs.join("\n")).not.toContain(PAYMENT_TOKEN);
   });
 
   it("releases the saved method when a session expires", async () => {

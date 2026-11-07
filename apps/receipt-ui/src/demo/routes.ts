@@ -203,3 +203,39 @@ export async function sweepExpiredSessions(deps: DemoDeps): Promise<number> {
   for (const session of expired) await releaseSession(session, deps);
   return expired.length;
 }
+
+/**
+ * For a graceful shutdown: ends every session and asks PayPal to delete every saved
+ * payment method, all at once, waiting at most `timeoutMs`. Best effort. Tokens live
+ * only in this process's memory (D-50), so a crash or a kill loses them here while
+ * PayPal keeps them, still usable with this app's credentials, until someone deletes
+ * them in the sandbox. Nothing here logs a token.
+ */
+export async function releaseAllSessions(deps: DemoDeps, timeoutMs: number): Promise<{ sessions: number; deleted: number; notDeleted: number }> {
+  const sessions = deps.sessions.endAll();
+  for (const session of sessions) session.connected = false;
+  const tokens = deps.savedMethods.takeAll();
+  if (tokens.length === 0) return { sessions: sessions.length, deleted: 0, notDeleted: 0 };
+  if (deps.paypal === null) {
+    deps.log(`demo: shutdown: ${tokens.length.toString()} saved PayPal methods dropped; no PayPal credentials to delete them with`);
+    return { sessions: sessions.length, deleted: 0, notDeleted: tokens.length };
+  }
+  const vault = deps.paypal.vault;
+  let deleted = 0;
+  const attempts = tokens.map(async (tokenId) => {
+    try {
+      if ((await vault.deletePaymentToken(tokenId)).ok) deleted += 1;
+    } catch {
+      // Counted below as not deleted. The error's text could come from PayPal, so it isn't logged.
+    }
+  });
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  await Promise.race([Promise.all(attempts), timeout]);
+  clearTimeout(timer);
+  const notDeleted = tokens.length - deleted;
+  deps.log(`demo: shutdown: deleted ${deleted.toString()} of ${tokens.length.toString()} saved PayPal methods at PayPal${notDeleted > 0 ? `; ${notDeleted.toString()} not confirmed and may still exist there` : ""}`);
+  return { sessions: sessions.length, deleted, notDeleted };
+}

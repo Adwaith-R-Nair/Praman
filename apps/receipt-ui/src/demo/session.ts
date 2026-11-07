@@ -153,6 +153,13 @@ export class SessionStore {
     return expired;
   }
 
+  /** Removes every session and returns them. For shutdown. */
+  endAll(): DemoSession[] {
+    const all = [...this.#sessions.values()];
+    this.#sessions.clear();
+    return all;
+  }
+
   get size(): number {
     return this.#sessions.size;
   }
@@ -183,6 +190,13 @@ export class SavedMethods {
     const entry = this.#tokens.get(sessionId);
     this.#tokens.delete(sessionId);
     return entry?.tokenId ?? null;
+  }
+
+  /** Removes every token and returns them, so each can be deleted at PayPal. For shutdown. */
+  takeAll(): string[] {
+    const all = [...this.#tokens.values()].map((e) => e.tokenId);
+    this.#tokens.clear();
+    return all;
   }
 
   has(sessionId: string): boolean {
