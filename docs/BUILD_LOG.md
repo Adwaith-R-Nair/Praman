@@ -3302,3 +3302,18 @@ the first approval row is the only one.
 **Tests.** A new test caps the day at two model calls, asks step 3 three times (live, then recorded twice), rejecting the first two,
 then approves. It checks that the three traces differ, and that the charged trace has one intent and one approval, the approve. It
 failed first (two distinct traces instead of three). 747 in total. None weakened or removed.
+
+### Phase P12 · 2026-11-08 · review fix: the hosted site's front page was always empty
+
+**What a reviewer found.** The index at `/` lists recent traces but leaves out every demo visitor's trace (so one visitor
+never sees another's). The hosted server runs on a fresh Neon database where every trace is a demo trace, so `/` would always
+say "No traces yet" and tell the visitor to run `pnpm demo`, a command they cannot run. A judge's first click on the public
+URL would land on a page that looks broken.
+
+**The fix (`e1e6170`).** When there is nothing to list, the server answers `/` with a redirect to `/demo`. The empty page
+itself, which is now only reached by rendering it directly, says plainly that there are no purchases outside the demo yet and
+links to the demo. No developer command appears on it. When there are traces to list, the index is unchanged.
+
+**Tests.** Three new tests: the empty index has no `pnpm` command and leads with a link to the demo; `/` redirects to `/demo`
+when only demo traces exist; `/` shows the index when a non-demo trace exists. The first two failed before the fix. 750 in
+total. None weakened or removed.
