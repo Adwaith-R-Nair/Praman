@@ -2583,3 +2583,34 @@ cases that were already right, like a failed outcome freeing nothing, and passed
 
 **Still open, worth your look:** nothing schedules `pnpm reconcile`, so a stuck attempt holds budget until someone runs it. T2 still
 doesn't check that its record is pending before writing. D-42 explains why that can't overspend.
+
+### Phase P8 · 2026-11-08 · review fix: a sweep could free budget for a call still running
+
+A review of P8 found that two lines I wrote claimed more than the code gives. D-42 and the README said a reservation "fails closed:
+the worst case is a refusal, never an overspend". D-42 also said a hung call lasts "up to 30 s". That 30 s was PayPal's timeout.
+Razorpay's executor had none, so a stuck create could run for about 300 s, Node's default.
+
+**Why that matters.** The reconcile sweep may act on a pending record once it is 60 s old. Picture a ₹5,000 mandate and ₹1,000
+items. Intent A's create hangs. At 60 s a sweep asks Razorpay for A's order, finds nothing yet, writes `failed`, and A's ₹1,000
+reservation is freed. Intents B to F use that room and create five orders. Then A's create returns, T2 writes `created`, and A's
+order counts too: ₹6,000 spent on a ₹5,000 mandate. The reviewer ran exactly this against the current code. My P8 entry said D-42
+explained why a late T2 "can't overspend". It can, through the intents allowed in between.
+
+**The fix.** Every Razorpay call now gives up after 30 s, reading the body included (`f532d2e`). The test was written first: a
+fetch that never answers, with fake timers moved forward 30 s. Before the fix both tests hung until vitest killed them. A timed-out
+call is an unknown outcome, so the record stays pending, as with any other failure. A second test (`0cf49a2`) checks that both
+rails give up within half of the sweep's 60 s, so neither can drift up later without a red test. That needed PayPal's timeout
+exported, which is the one change in `paypal-exec`.
+
+**What this doesn't close, written down in D-44.** Giving up on the client side doesn't stop Razorpay finishing the create, and
+its lookup by receipt can lag by over 15 s. A sweep can still miss an order that exists and free its budget, up to one order of
+overspend per such call. Webhooks (Task 9) are what would catch it. PayPal doesn't have this problem, because its sweep repeats the
+create with the same request id and gets back the existing order. The README now says this per rail instead of "never an overspend".
+
+**Decisions.** D-44, a sweep must not act while a call can still be running. D-42 gets a `Status:` pointer to it.
+
+**Tests.** 535, up from 531. The two Razorpay timeout tests failed before the fix. The two timeout-bound checks passed from the start, as a guard. No test was weakened or removed.
+
+**Worth your look:** I chose to fix the code and the wording, not only the wording. The reviewer's own reproduction uses a test
+double with no timeout, so it still overspends if the latch is held past 60 s. That's expected: the bound lives in each live
+executor, and D-44 says so.
