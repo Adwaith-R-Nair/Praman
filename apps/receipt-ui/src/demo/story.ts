@@ -125,9 +125,34 @@ async function agentPurchase(session: DemoSession, deps: DemoDeps, step: Purchas
     requested_at: deps.now().toISOString(),
     agent_rationale: agent.cart.rationale,
   };
-  const result = await runIntent(intent, mandate, deps.publicKeyPem, routeFor(session, deps), deps.now(), agent.modelId);
-  await recordAgentTranscript(result.trace_id, agent.transcript, agent.langfuseTraceId, agent.promptProvenance);
-  return fromRun(result, proposalOf(agent.cart), "saved_method");
+  const proposal = proposalOf(agent.cart);
+  // Recorded before Praman is asked, so the step is never offered again once an intent
+  // has gone in. If anything below throws after a charge, a retry would ask the model
+  // again and make a new intent with a new key: a second real charge.
+  const inFlight: BeatRecord = {
+    ...empty,
+    state: "pending",
+    traceId: `trc_${intent.intent_id}`,
+    proposal,
+    message: "Praman lost track of this step before it could show the result, so it will not run it again. The ledger trace shows what was recorded, and the reconcile sweep settles any payment call left open.",
+  };
+  session.beats.set(step, inFlight);
+  let result: RunResult;
+  try {
+    result = await runIntent(intent, mandate, deps.publicKeyPem, routeFor(session, deps), deps.now(), agent.modelId);
+  } catch (err) {
+    deps.log(`demo: step ${step} failed inside runIntent: ${err instanceof Error ? err.name : "unknown error"}`);
+    return inFlight;
+  }
+  const record = fromRun(result, proposal, "saved_method");
+  session.beats.set(step, record);
+  try {
+    await recordAgentTranscript(result.trace_id, agent.transcript, agent.langfuseTraceId, agent.promptProvenance);
+  } catch (err) {
+    // The purchase stands either way. Only the model's transcript is missing from the trace.
+    deps.log(`demo: step ${step} paid but its agent transcript was not saved: ${err instanceof Error ? err.name : "unknown error"}`);
+  }
+  return record;
 }
 
 const PRECONDITIONS: Readonly<Record<BeatId, (s: DemoSession) => string | null>> = {

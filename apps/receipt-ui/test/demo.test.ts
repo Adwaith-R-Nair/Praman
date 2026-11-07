@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationItem, ModelProvider, ProviderTurn, ToolSpec } from "@praman/agent-core";
 import { releaseStaleOrders } from "@praman/control-plane";
 import { prisma } from "@praman/db";
@@ -16,6 +16,22 @@ import { createDemoHandler, sweepExpiredSessions, COOKIE } from "../src/demo/rou
 import { seedDemoCatalog } from "../src/demo/seed.js";
 import { SavedMethods, SessionStore } from "../src/demo/session.js";
 import { loadRecording, recordingHtml } from "../src/pages/demo.js";
+
+// Lets one test make the transcript write fail once, after the payment has gone through.
+const transcriptFault = vi.hoisted(() => ({ armed: false }));
+vi.mock("@praman/buyer-agent", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@praman/buyer-agent")>();
+  return {
+    ...actual,
+    recordAgentTranscript: async (...args: Parameters<typeof actual.recordAgentTranscript>) => {
+      if (transcriptFault.armed) {
+        transcriptFault.armed = false;
+        throw new Error("transcript store unavailable");
+      }
+      return actual.recordAgentTranscript(...args);
+    },
+  };
+});
 
 // Plan Tasks 12 and 14, against the test database. The model is scripted and PayPal is a
 // stand-in that answers the way the sandbox did on 2026-11-08 (D-49). No network.
@@ -159,6 +175,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   model.fail = false;
+  transcriptFault.armed = false;
 });
 
 afterAll(async () => {
@@ -287,6 +304,29 @@ describe("the demo story", () => {
     await v.post("/demo/capture/large");
     expect(sessionOf(v).beats.get("large")).toMatchObject({ state: "done", orderStatus: "captured" });
     expect(paypal.charges).toHaveLength(1);
+  });
+
+  it("a step that fails after the charge is not offered again, so a retry can't charge twice", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    await v.post("/demo/approve/first");
+    expect(paypal.charges).toHaveLength(1);
+
+    transcriptFault.armed = true;
+    const failed = await v.post("/demo/step/second");
+    expect(failed.status).toBe(303);
+    expect(paypal.charges).toHaveLength(2);
+
+    const page = await v.page();
+    expect(page).not.toContain('action="/demo/step/second"');
+    const second = sessionOf(v).beats.get("second");
+    expect(second).toMatchObject({ state: "done", payment: "saved_method", orderStatus: "captured" });
+    const outcomes = (await ledgerFor(second?.traceId ?? null)).filter((r) => r.eventType === "outcome");
+    expect(outcomes).toHaveLength(1);
+    expect(logs.some((l) => l.includes("transcript"))).toBe(true);
+
+    await v.post("/demo/step/second");
+    expect(paypal.charges).toHaveLength(2);
   });
 
   it("capture after release shows the plain explanation, not an error page", async () => {
