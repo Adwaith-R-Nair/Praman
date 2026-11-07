@@ -36,6 +36,8 @@ export interface BeatRecord {
   readonly approvalId: string | null;
   /** For the concurrency step: what twenty intents at once came to. */
   readonly harness: HarnessSummary | null;
+  /** Set when the cart came from a recorded model answer, because the demo's daily model calls were used up. */
+  readonly recordedModel: { readonly model: string; readonly recordedAt: string } | null;
 }
 
 export interface HarnessSummary {

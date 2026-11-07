@@ -1,10 +1,13 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import type { IncomingMessage } from "node:http";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { prisma } from "@praman/db";
 import { generateKeypair } from "@praman/mandate";
 import { routeByRail } from "@praman/exec-core";
 import { checkEnv, checkStartup, keyFingerprint, DEVELOPER_KEY_FINGERPRINTS } from "../src/startup.js";
 import { DemoActivity, runSweeps, scheduleSweeps } from "../src/sweeps.js";
+import { capFromEnv, clientIp, DbDailyUsage, MemoryDailyUsage, RateLimiter } from "../src/demo/limits.js";
 
 // Plan Task 13: what the hosted server refuses, and what it does when it is pushed.
 
@@ -176,5 +179,64 @@ describe("the in-process sweeps", () => {
   it("one pass reports what each sweep did, and null for one that failed", async () => {
     const run = await runSweeps({ route: routeByRail([]), now: () => new Date(), log: () => {}, reconcile: async () => 2, release: async () => Promise.reject(new Error("x")) });
     expect(run).toEqual({ resolved: 2, released: null });
+  });
+});
+
+describe("the limits themselves", () => {
+  beforeEach(async () => {
+    await prisma.$executeRaw`TRUNCATE demo_usage`;
+  });
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("a daily cap in the database holds under concurrent takes and survives a new instance", async () => {
+    const now = new Date("2026-11-09T23:59:00Z");
+    const usage = new DbDailyUsage({ session: 5, model_call: 0 });
+    const results = await Promise.all(Array.from({ length: 12 }, () => usage.take("session", now)));
+    expect(results.filter(Boolean)).toHaveLength(5);
+    // A restart is a new instance over the same table: still full.
+    expect(await new DbDailyUsage({ session: 5, model_call: 0 }).take("session", now)).toBe(false);
+    // A cap of zero allows none, and the next UTC day starts again.
+    expect(await usage.take("model_call", now)).toBe(false);
+    expect(await usage.take("session", new Date("2026-11-10T00:00:01Z"))).toBe(true);
+    const rows = await prisma.demoUsage.findMany({ orderBy: { day: "asc" } });
+    expect(rows.map((r) => [r.day, r.kind, r.used])).toEqual([
+      ["2026-11-09", "session", 5],
+      ["2026-11-10", "session", 1],
+    ]);
+  });
+
+  it("the memory cap counts the same way", async () => {
+    const usage = new MemoryDailyUsage({ session: 2, model_call: 1 });
+    const now = new Date("2026-11-09T10:00:00Z");
+    expect([await usage.take("session", now), await usage.take("session", now), await usage.take("session", now)]).toEqual([true, true, false]);
+    expect([await usage.take("model_call", now), await usage.take("model_call", now)]).toEqual([true, false]);
+  });
+
+  it("a rate limit allows its count per window, per key, and stays bounded in memory", () => {
+    const limiter = new RateLimiter(2, 1_000, 3);
+    const t = new Date(0);
+    expect([limiter.take("a", t), limiter.take("a", t), limiter.take("a", t)]).toEqual([true, true, false]);
+    expect(limiter.take("b", t)).toBe(true);
+    expect(limiter.retryAfterSeconds("a", t)).toBe(1);
+    expect(limiter.take("a", new Date(1_000))).toBe(true);
+    // Many keys never grow the map past its bound; the oldest windows are dropped.
+    for (let i = 0; i < 50; i++) limiter.take(`k${i.toString()}`, new Date(5_000 + i * 2_000));
+    expect(limiter.take("k49", new Date(5_000 + 49 * 2_000))).toBe(true);
+  });
+
+  it("reads the client address from X-Forwarded-For only behind a trusted proxy", () => {
+    const req = (xff: string | undefined, remote: string) => ({ headers: xff === undefined ? {} : { "x-forwarded-for": xff }, socket: { remoteAddress: remote } }) as unknown as IncomingMessage;
+    expect(clientIp(req("203.0.113.7, 10.0.0.1", "10.0.0.2"), true)).toBe("203.0.113.7");
+    expect(clientIp(req("203.0.113.7", "10.0.0.2"), false)).toBe("10.0.0.2");
+    expect(clientIp(req(undefined, "10.0.0.2"), true)).toBe("10.0.0.2");
+  });
+
+  it("a cap from the environment must be a whole number", () => {
+    expect(capFromEnv({}, "DEMO_DAILY_MODEL_CALLS", 400)).toBe(400);
+    expect(capFromEnv({ DEMO_DAILY_MODEL_CALLS: "250" }, "DEMO_DAILY_MODEL_CALLS", 400)).toBe(250);
+    expect(() => capFromEnv({ DEMO_DAILY_MODEL_CALLS: "1e9" }, "DEMO_DAILY_MODEL_CALLS", 400)).toThrow();
+    expect(checkEnv({ DEMO_DAILY_MODEL_CALLS: "-1" }).join(" ")).toContain("whole number");
   });
 });

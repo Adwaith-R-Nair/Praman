@@ -6,6 +6,7 @@ import type { PurchaseIntent } from "@praman/policy";
 import { addMinor, minorFromJSON, minorToJSON, ZERO_MINOR, type Minor } from "@praman/shared";
 import { FOOLED_CART, GOALS, HARNESS, HARNESS_INTENTS, HARNESS_ITEMS, MODEL_CALLS_PER_SESSION, type BeatId, type PurchaseBeat } from "./config.js";
 import { routeFor, type DemoDeps } from "./connect.js";
+import { loadModelAnswers, RecordedProvider } from "./recorded-model.js";
 import type { BeatRecord, DemoSession, HarnessSummary } from "./session.js";
 
 const MODEL_ID_FIXTURE = "fixture/simulated-fooled-model";
@@ -16,17 +17,29 @@ class ModelCapReached extends Error {
   override readonly name = "ModelCapReached";
 }
 
-/** Counts this session's model calls and stops at the cap, so no visitor can run up the bill. */
+/** Every visitor together has used today's model calls. The step goes on with a recorded answer. */
+class DailyModelCapReached extends Error {
+  override readonly name = "DailyModelCapReached";
+}
+
+const MODEL_ANSWERS = loadModelAnswers();
+
+/**
+ * Counts model calls, for this session and for the whole demo today, and stops at
+ * either cap, so no visitor and no crowd of them can run up the bill.
+ */
 class CountedProvider implements ModelProvider {
   constructor(
     private readonly inner: ModelProvider,
     private readonly session: DemoSession,
+    private readonly deps: DemoDeps,
   ) {}
   get id(): string {
     return this.inner.id;
   }
-  send(system: string, history: readonly ConversationItem[], tools: readonly ToolSpec[]): Promise<ProviderTurn> {
+  async send(system: string, history: readonly ConversationItem[], tools: readonly ToolSpec[]): Promise<ProviderTurn> {
     if (this.session.modelCalls >= MODEL_CALLS_PER_SESSION) throw new ModelCapReached("model call cap reached for this session");
+    if (!(await this.deps.usage.take("model_call", this.deps.now()))) throw new DailyModelCapReached("the demo's daily model calls are used up");
     this.session.modelCalls += 1;
     return this.inner.send(system, history, tools);
   }
@@ -46,6 +59,7 @@ const empty = {
   approveUrl: null,
   approvalId: null,
   harness: null,
+  recordedModel: null,
 } satisfies Omit<BeatRecord, "state" | "message">;
 
 function amountOf(view: RunResult & { kind: "DECIDED" }): string | null {
@@ -146,10 +160,21 @@ function shownProposal(cart: { readonly merchant_id: unknown; readonly line_item
 async function agentPurchase(session: DemoSession, deps: DemoDeps, step: PurchaseBeat | "injection", mandate: DemoSession["mandate"]): Promise<BeatRecord> {
   if (deps.provider === null) return { ...empty, state: "no_proposal", message: "This server has no model configured, so the agent can't run. Nothing was proposed and no money moved." };
   const plan = GOALS[step];
-  const provider = new CountedProvider(deps.provider, session);
+  const provider = new CountedProvider(deps.provider, session, deps);
   let agent: Awaited<ReturnType<typeof runAgent>>;
+  let recordedModel: BeatRecord["recordedModel"] = null;
   try {
-    agent = await runAgent(provider, plan.goal, plan.merchant);
+    try {
+      agent = await runAgent(provider, plan.goal, plan.merchant);
+    } catch (err) {
+      if (!(err instanceof DailyModelCapReached)) throw err;
+      // Today's model calls are used up. The story goes on with what the live model
+      // answered to this same goal in a recorded run, labelled as such everywhere.
+      const recorded = MODEL_ANSWERS.answers[step];
+      deps.log(`demo: daily model cap reached; step ${step} replays the recorded answer from ${recorded.traceId}`);
+      recordedModel = { model: MODEL_ANSWERS.model, recordedAt: recorded.recordedAt };
+      agent = await runAgent(new RecordedProvider(MODEL_ANSWERS.model, recorded), plan.goal, plan.merchant);
+    }
   } catch (err) {
     deps.log(`demo: the model failed on step ${step}: ${err instanceof Error ? err.name : "unknown error"}`);
     const capped = err instanceof ModelCapReached;
@@ -162,12 +187,12 @@ async function agentPurchase(session: DemoSession, deps: DemoDeps, step: Purchas
     };
   }
   if (agent.kind !== "PROPOSED") {
-    return { ...empty, state: "no_proposal", message: "The agent didn't propose a purchase this time. No money moved. Try the step again." };
+    return { ...empty, recordedModel, state: "no_proposal", message: "The agent didn't propose a purchase this time. No money moved. Try the step again." };
   }
 
   const proposal = shownProposal(agent.cart);
   const checked = checkCart(agent.cart, plan.merchant);
-  if (!checked.ok) return { ...empty, state: "refused", proposal, message: checked.message };
+  if (!checked.ok) return { ...empty, recordedModel, state: "refused", proposal, message: checked.message };
 
   const n = (session.beats.size + session.modelCalls).toString(36);
   const intent: PurchaseIntent = {
@@ -183,6 +208,7 @@ async function agentPurchase(session: DemoSession, deps: DemoDeps, step: Purchas
   // again and make a new intent with a new key: a second real charge.
   const inFlight: BeatRecord = {
     ...empty,
+    recordedModel,
     state: "pending",
     traceId: `trc_${intent.intent_id}`,
     proposal,
@@ -196,7 +222,7 @@ async function agentPurchase(session: DemoSession, deps: DemoDeps, step: Purchas
     deps.log(`demo: step ${step} failed inside runIntent: ${err instanceof Error ? err.name : "unknown error"}`);
     return inFlight;
   }
-  const record = fromRun(result, proposal, "saved_method");
+  const record: BeatRecord = { ...fromRun(result, proposal, "saved_method"), recordedModel };
   session.beats.set(step, record);
   try {
     await recordAgentTranscript(result.trace_id, agent.transcript, agent.langfuseTraceId, agent.promptProvenance);

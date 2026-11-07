@@ -15,6 +15,7 @@ import { routeFor, type DemoDeps, type VaultApi } from "../src/demo/connect.js";
 import { createDemoHandler, releaseAllSessions, sweepExpiredSessions, COOKIE } from "../src/demo/routes.js";
 import { seedDemoCatalog } from "../src/demo/seed.js";
 import { createApp } from "../src/app.js";
+import { MemoryDailyUsage } from "../src/demo/limits.js";
 import { DemoActivity, scheduleSweeps } from "../src/sweeps.js";
 import { routeByRail } from "@praman/exec-core";
 import { SavedMethods, SessionStore } from "../src/demo/session.js";
@@ -150,12 +151,16 @@ let clock: number;
 const logs: string[] = [];
 const responses: string[] = [];
 
+/** Today's allowance. Generous by default; a test that needs the cap sets its own. */
+let usage: MemoryDailyUsage;
+
 function makeDeps(): DemoDeps {
   const { privateKeyPem, publicKeyPem } = generateKeypair();
   return {
     sessions: new SessionStore({ privateKeyPem, publicKeyPem, keyId: "test_demo_k1" }),
     savedMethods: new SavedMethods(),
     publicKeyPem,
+    usage,
     paypal: { executor: paypal, vault: paypal },
     provider: model,
     baseUrl: base,
@@ -181,6 +186,7 @@ beforeEach(async () => {
   responses.length = 0;
   paypal = new FakePayPal();
   model = new ScriptedModel();
+  usage = new MemoryDailyUsage({ session: 1000, model_call: 1000 });
   deps = makeDeps();
   handler = createDemoHandler(deps);
 });
@@ -748,6 +754,7 @@ describe("the sweeps, through the running server", () => {
       demo: createDemoHandler(deps),
       webhooks: { webhookId: null, verify: async () => false, apply: async () => "unmatched", now: () => new Date(clock) },
       hsts: false,
+      trustProxy: false,
       onDemoRequest: () => activity.touch(new Date(clock)),
       log: (line) => logs.push(line),
     });
@@ -840,5 +847,100 @@ describe("the sweeps, through the running server", () => {
     } finally {
       sweeps.stop();
     }
+  });
+});
+
+describe("the demo at its limits, and when what it depends on fails", () => {
+  it("after the daily model cap the story serves a labelled recording", async () => {
+    usage = new MemoryDailyUsage({ session: 1000, model_call: 2 });
+    deps = makeDeps();
+    handler = createDemoHandler(deps);
+    const v = await startConnected();
+    // The first step uses today's two live calls: one to read the catalog, one to propose.
+    await v.post("/demo/step/first");
+    expect(model.calls).toBe(2);
+    expect(sessionOf(v).beats.get("first")?.recordedModel).toBeNull();
+    await v.post("/demo/approve/first");
+
+    // Now the cap is reached. The step goes on with the live model's recorded answer, labelled.
+    await v.post("/demo/step/second");
+    expect(model.calls).toBe(2);
+    const second = sessionOf(v).beats.get("second");
+    expect(second).toMatchObject({ state: "done", payment: "saved_method", recordedModel: { model: "google/gemini-3.1-flash-lite" } });
+    expect(second?.proposal?.lineItems).toEqual([{ sku: "SKU_CAFE_COFFEE", qty: 1 }]);
+    const page = await v.page();
+    expect(page).toContain("Recorded model answer, not live.");
+    expect(page).toContain("google/gemini-3.1-flash-lite");
+
+    // The ledger says so too, and Praman still priced and decided it.
+    const rows = await ledgerFor(second?.traceId ?? null);
+    expect(rows.find((r) => r.eventType === "intent")?.payload).toMatchObject({ model_id: "recorded/google/gemini-3.1-flash-lite" });
+    expect(rows.find((r) => r.eventType === "decision")?.payload).toMatchObject({ kind: "ALLOW", amount_minor: "450" });
+    const { renderTracePage } = await import("../src/pages/trace.js");
+    expect((await renderTracePage(second?.traceId ?? "")).html).toContain("Recorded model answer, not live.");
+  });
+
+  it("the daily session cap answers with a plain page and starts nothing", async () => {
+    usage = new MemoryDailyUsage({ session: 1, model_call: 1000 });
+    deps = makeDeps();
+    handler = createDemoHandler(deps);
+    expect((await visitor().post("/demo/start")).status).toBe(303);
+    const late = visitor();
+    const res = await late.post("/demo/start");
+    expect(res.status).toBe(429);
+    expect(res.text).toContain("opens again at 00:00 UTC");
+    expect(late.cookie).toBeNull();
+    expect(deps.sessions.size).toBe(1);
+  });
+
+  it("a session over its rate limit gets a plain 429 page", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    const statuses: number[] = [];
+    for (let i = 0; i < 31; i++) statuses.push((await v.post("/demo/step/fixture")).status);
+    expect(statuses.slice(0, 30).every((s) => s === 303)).toBe(true);
+    const over = await v.post("/demo/step/fixture");
+    expect(over.status).toBe(429);
+    expect(over.text).toContain("Too many presses");
+    expect(over.text).not.toContain("<");
+    // The fixture ran once, whatever was pressed.
+    expect((await ledgerFor(sessionOf(v).beats.get("fixture")?.traceId ?? null)).filter((r) => r.eventType === "intent")).toHaveLength(1);
+    // Another visitor is unaffected.
+    const other = visitor();
+    await other.post("/demo/start");
+    expect((await other.post("/demo/step/fixture")).status).toBe(303);
+  });
+
+  it("paypal being unreachable leaves records pending and shows a plain message", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    paypal.failNextCharge = true;
+    const res = await v.post("/demo/approve/first");
+    expect(res.status).toBe(303);
+    const first = sessionOf(v).beats.get("first");
+    expect(first?.state).toBe("pending");
+    const records = await prisma.idempotencyRecord.findMany({ where: { traceId: first?.traceId ?? "" } });
+    expect(records.map((r) => r.status)).toEqual(["pending"]);
+    expect((await ledgerFor(first?.traceId ?? null)).filter((r) => r.eventType === "outcome")).toHaveLength(0);
+    const page = await v.page();
+    expect(page).toContain("The payment call has no answer yet");
+    expect(page).not.toContain("ETIMEDOUT");
+    expect(page).not.toMatch(/at \S+ \(/);
+    // It isn't offered again, so a press can't make a second charge.
+    expect(page).not.toContain('action="/demo/approve/first"');
+  });
+
+  it("the model provider failing shows a plain message and moves no money", async () => {
+    const v = await startConnected();
+    model.fail = true;
+    await v.post("/demo/step/first");
+    expect(sessionOf(v).beats.get("first")).toMatchObject({ state: "no_proposal", traceId: null });
+    const page = await v.page();
+    expect(page).toContain("The model didn&#39;t answer. Nothing was proposed and no money moved.");
+    expect(page).not.toContain("secretFunction");
+    expect(page).not.toContain("exploded");
+    expect(paypal.charges).toHaveLength(0);
+    expect(paypal.checkouts).toHaveLength(0);
+    expect(await prisma.ledgerEntry.count()).toBe(0);
   });
 });

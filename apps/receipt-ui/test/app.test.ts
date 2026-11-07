@@ -27,6 +27,7 @@ beforeAll(async () => {
     demo: null,
     webhooks: { webhookId: null, verify: async () => false, apply: async () => ({ kind: "ignored", reason: "test" }) as never, now: () => new Date() },
     hsts: true,
+    trustProxy: false,
     onDemoRequest: () => {},
     log: (line) => logs.push(line),
   });
@@ -91,5 +92,28 @@ describe("the public server", () => {
   it("refuses a method a read-only route doesn't take", async () => {
     const res = await fetch(`${base}/r/trc_x`, { method: "POST" });
     expect(res.status).toBe(405);
+  });
+});
+
+describe("per-address limits", () => {
+  it("rate-limits the public trace, verify and dispute routes per address", async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 62; i++) statuses.push((await fetch(`${base}/${["r", "verify", "dispute"][i % 3] ?? "r"}/trc_x${i.toString()}`)).status);
+    expect(statuses.filter((s) => s === 429).length).toBeGreaterThan(0);
+    // The ones before the limit got through to the routes (which fail here, with the database gone).
+    expect(statuses.indexOf(429)).toBeGreaterThanOrEqual(55);
+    const over = await fetch(`${base}/dispute/trc_y`);
+    expect(over.status).toBe(429);
+    expect(over.headers.get("retry-after")).toMatch(/^\d+$/);
+    expect(await over.text()).toContain("Wait a minute");
+    // The health check is never limited.
+    expect((await fetch(`${base}/healthz`)).status).toBe(200);
+  });
+
+  it("rate-limits new demo sessions per address", async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++) statuses.push((await fetch(`${base}/demo/start`, { method: "POST" })).status);
+    expect(statuses.slice(0, 5)).toEqual([503, 503, 503, 503, 503]);
+    expect(statuses[5]).toBe(429);
   });
 });

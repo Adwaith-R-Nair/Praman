@@ -6,6 +6,7 @@ import { CAFE, HARNESS, MARKET, SESSION_TTL_MS } from "../src/demo/config.js";
 import { finishConnect, releaseSession, savedMethodChoice, startConnect, type DemoDeps } from "../src/demo/connect.js";
 import { marketItems } from "../src/demo/seed.js";
 import { createDemoSession, SavedMethods, SessionStore } from "../src/demo/session.js";
+import { MemoryDailyUsage } from "../src/demo/limits.js";
 
 const keys = generateKeypair();
 const signer = { ...keys, keyId: "test_demo_k1" };
@@ -21,6 +22,7 @@ function fakeDeps(sessions: SessionStore, savedMethods = new SavedMethods()) {
     sessions,
     savedMethods,
     publicKeyPem: keys.publicKeyPem,
+    usage: new MemoryDailyUsage({ session: 1000, model_call: 1000 }),
     paypal: {
       executor: {
         rail: "paypal",

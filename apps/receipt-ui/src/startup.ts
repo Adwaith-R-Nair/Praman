@@ -51,6 +51,11 @@ export function checkEnv(env: NodeJS.ProcessEnv): string[] {
     reasons.push("RAZORPAY_BASE_URL is set. This server only calls https://api.razorpay.com with a test-mode key, and takes no other base URL.");
   }
 
+  for (const name of ["DEMO_DAILY_MODEL_CALLS", "DEMO_DAILY_SESSIONS"]) {
+    const value = env[name];
+    if (value !== undefined && value !== "" && !/^\d{1,7}$/.test(value)) reasons.push(`${name} must be a whole number.`);
+  }
+
   const demoPrivate = env["DEMO_MANDATE_PRIVATE_KEY"];
   const demoPublic = env["DEMO_MANDATE_PUBLIC_KEY"];
   if (demoPrivate || demoPublic) {

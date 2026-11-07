@@ -35,6 +35,8 @@ export interface TraceView {
   readonly goal: string | null;
   readonly merchantId: string | null;
   readonly rationale: string | null;
+  /** The model whose recorded answer was replayed for this cart, or null for a live model or none. */
+  readonly recordedModel: string | null;
   readonly merchantReads: readonly MerchantItemRead[];
   readonly orderId: string | null;
   readonly orderStatus: string | null;
@@ -141,6 +143,8 @@ function standingCaptureRefusal(entries: readonly LedgerEntryRecord[], lastOutco
 
 /** Intents the test harness made, with no model, carry a model id with this prefix. */
 export const HARNESS_MODEL_PREFIX = "harness/";
+/** A model id with this prefix means the cart came from a recorded model answer, replayed (apps/receipt-ui/src/demo/recorded-model.ts). */
+export const RECORDED_MODEL_PREFIX = "recorded/";
 
 /** What a rail said in a mismatch, in words: its amount and status, when they are on the row. */
 function railReported(outcome: Record<string, unknown>): string {
@@ -158,6 +162,10 @@ function paymentOf(first: Record<string, unknown> | null, last: Record<string, u
   if (firstStatus === "captured" && !("capture_key" in first)) return "saved_method";
   if (firstStatus === "created" && asString(last["status"]) === "captured") return "checkout";
   return null;
+}
+
+function recordedModelOf(modelId: string | null): string | null {
+  return modelId !== null && modelId.startsWith(RECORDED_MODEL_PREFIX) ? modelId.slice(RECORDED_MODEL_PREFIX.length) : null;
 }
 
 export async function loadTrace(traceId: string): Promise<TraceView | null> {
@@ -255,6 +263,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     goal,
     merchantId: asString(intent?.["merchant_id"]),
     rationale: asString(intent?.["agent_rationale"]),
+    recordedModel: recordedModelOf(asString(intent?.["model_id"])),
     merchantReads: parseMerchantReads(merchantReads),
     orderId: asString(latestOutcome?.["order_id"]) ?? asString(outcome?.["order_id"]),
     orderStatus: asString(latestOutcome?.["status"]),

@@ -4,12 +4,21 @@ import { fileURLToPath } from "node:url";
 import { loadRecording, renderCheckoutReturnPage, renderDemoPage, renderErrorPage, renderStartPage } from "../pages/demo.js";
 import { SESSION_TTL_MS, type BeatId, type PurchaseBeat } from "./config.js";
 import { finishConnect, releaseSession, startConnect, type DemoDeps } from "./connect.js";
+import { LIMITS, RateLimiter } from "./limits.js";
 import type { DemoSession } from "./session.js";
 import { captureCheckout, decideApproval, runBeat } from "./story.js";
 
 export const COOKIE = "praman_demo";
 const CLIENT_JS = readFileSync(fileURLToPath(new URL("./client.js", import.meta.url)), "utf8");
 const DEMO_CSS = readFileSync(fileURLToPath(new URL("./demo.css", import.meta.url)), "utf8");
+
+const DAILY_SESSIONS_USED =
+  "This demo has started as many sessions today as it allows, to keep it within its free hosting and model limits. It opens again at 00:00 UTC. Nothing was started and nothing was charged.";
+
+function secondsToUtcMidnight(now: Date): number {
+  const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return Math.max(1, Math.ceil((midnight - now.getTime()) / 1000));
+}
 
 const STEPS: readonly BeatId[] = ["first", "second", "large", "injection", "fixture", "concurrency"];
 /** The steps that buy at the cafe. Any of them can need approval or become a checkout. */
@@ -50,6 +59,7 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
   const secure = deps.baseUrl.startsWith("https://");
   const origin = new URL(deps.baseUrl).origin;
   const recording = loadRecording();
+  const presses = new RateLimiter(LIMITS.postsPerSession.limit, LIMITS.postsPerSession.windowMs);
 
   const send = (res: ServerResponse, status: number, html: string, extra: Record<string, string> = {}) => {
     res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", ...SECURITY_HEADERS, ...extra });
@@ -117,6 +127,11 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       }
 
       if (method === "POST" && path === "/demo/start") {
+        // Shared by every visitor and kept in the database, so a restart doesn't refill it.
+        if (!(await deps.usage.take("session", now))) {
+          send(res, 429, renderStartPage(DAILY_SESSIONS_USED, configured), { "Retry-After": secondsToUtcMidnight(now).toString() });
+          return;
+        }
         if (session !== null) {
           deps.sessions.end(session.id);
           await releaseSession(session, deps);
@@ -137,6 +152,13 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
         }
         // Nothing to act on. A stale cookie gets the start page, not an error.
         redirect(res, "/demo");
+        return;
+      }
+
+      // Button presses per session. A person clicking through the story never gets near it.
+      if (method === "POST" && !presses.take(session.ref, now)) {
+        res.writeHead(429, { "Content-Type": "text/plain; charset=utf-8", "Retry-After": presses.retryAfterSeconds(session.ref, now).toString(), ...SECURITY_HEADERS });
+        res.end("Too many presses in this session in the last minute. Wait a minute, then go back to /demo. Nothing you pressed was run twice.");
         return;
       }
 

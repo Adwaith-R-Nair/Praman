@@ -3,6 +3,7 @@ import type { ModelProvider } from "@praman/agent-core";
 import { routeByRail, SimulatedExecutor, type Executor, type ExecutorRouter } from "@praman/exec-core";
 import { SavedMethodExecutor, type SavedMethodCharger, type SavedMethodChoice, type SetupToken, type VaultResult } from "@praman/paypal-exec";
 import { minorFromJSON, ZERO_MINOR } from "@praman/shared";
+import type { DailyUsage } from "./limits.js";
 import type { DemoSession, SavedMethods, SessionStore } from "./session.js";
 
 /** The parts of PayPal's vault the demo uses. PayPalVault in production, a stand-in in tests. */
@@ -21,6 +22,8 @@ export interface DemoDeps {
   readonly paypal: { readonly executor: SavedMethodCharger; readonly vault: VaultApi } | null;
   /** Null when this server has no model configured. */
   readonly provider: ModelProvider | null;
+  /** Today's allowance of new sessions and model calls, shared by every visitor. */
+  readonly usage: DailyUsage;
   /** Where PayPal sends the visitor back to. Server config, never the request's Host header. */
   readonly baseUrl: string;
   readonly now: () => Date;

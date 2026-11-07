@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { buildBundleStandalone } from "@praman/dispute";
 import { ASSETS } from "./assets.js";
+import { clientIp, LIMITS, RateLimiter } from "./demo/limits.js";
 import { renderIndexPage } from "./pages/index.js";
 import { renderTracePage } from "./pages/trace.js";
 import { verifyTrace } from "./verify.js";
@@ -41,6 +42,9 @@ export interface AppDeps {
   readonly webhooks: PayPalWebhookDeps;
   /** Sent on every response when the server is reached over HTTPS. */
   readonly hsts: boolean;
+  /** Behind a proxy that sets X-Forwarded-For (Render), per-IP limits read the address from it. */
+  readonly trustProxy: boolean;
+  readonly now?: () => Date;
   /** Told about every request to /demo, so the sweeps know the demo is in use. */
   readonly onDemoRequest: () => void;
   readonly log: (line: string) => void;
@@ -59,6 +63,21 @@ const fileNameOf = (traceId: string): string => traceId.replace(/[^A-Za-z0-9_-]/
  * answers from memory, so an uptime ping never wakes the database.
  */
 export function createApp(deps: AppDeps): Handler {
+  const now = deps.now ?? (() => new Date());
+  const starts = new RateLimiter(LIMITS.startPerIp.limit, LIMITS.startPerIp.windowMs);
+  const reads = new RateLimiter(LIMITS.publicPerIp.limit, LIMITS.publicPerIp.windowMs);
+  const deliveries = new RateLimiter(LIMITS.webhookPerIp.limit, LIMITS.webhookPerIp.windowMs);
+
+  /** True if the request may go on. Otherwise it has been answered with a plain 429. */
+  const within = (limiter: RateLimiter, req: IncomingMessage, res: ServerResponse, message: string): boolean => {
+    const ip = clientIp(req, deps.trustProxy);
+    const at = now();
+    if (limiter.take(ip, at)) return true;
+    text(res, 429, message, { "Retry-After": limiter.retryAfterSeconds(ip, at).toString(), "Cache-Control": "no-store" });
+    return false;
+  };
+  const TOO_MANY_READS = "Too many requests from your address in the last minute. Wait a minute and try again.";
+
   return async (req, res) => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     if (deps.hsts) res.setHeader("Strict-Transport-Security", "max-age=31536000");
@@ -84,6 +103,7 @@ export function createApp(deps: AppDeps): Handler {
 
       if (url.pathname === "/demo" || url.pathname.startsWith("/demo/")) {
         deps.onDemoRequest();
+        if (method === "POST" && url.pathname.replace(/\/+$/, "") === "/demo/start" && !within(starts, req, res, "Too many new demo sessions from your address. Wait ten minutes, or carry on with the session you have at /demo.")) return;
         if (deps.demo === null) {
           text(res, 503, "The demo isn't configured on this server.");
           return;
@@ -97,6 +117,7 @@ export function createApp(deps: AppDeps): Handler {
           text(res, 405, "Method not allowed", { Allow: "POST" });
           return;
         }
+        if (!within(deliveries, req, res, "Too many deliveries from this address.")) return;
         const rawBody = await readRawBody(req);
         const reply = rawBody === null ? { status: 413, body: "too large" } : await handlePayPalWebhook(rawBody, req.headers, deps.webhooks);
         text(res, reply.status, reply.body);
@@ -107,6 +128,9 @@ export function createApp(deps: AppDeps): Handler {
         text(res, 405, "Method not allowed", { Allow: "GET, HEAD" });
         return;
       }
+
+      // Each of these reads the database, and they are open to anyone with a trace id.
+      if ((traceMatch?.[1] || verifyMatch?.[1] || disputeMatch?.[1] || url.pathname === "/") && !within(reads, req, res, TOO_MANY_READS)) return;
 
       if (traceMatch?.[1]) {
         const { status, html } = await renderTracePage(decodeURIComponent(traceMatch[1]));

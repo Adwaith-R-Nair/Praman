@@ -131,10 +131,23 @@ function moneyHtml(record: BeatRecord): string {
   return `<p class="cell-body money-${tone}">${escapeHtml(what)}</p>${ids.length > 0 ? `<p class="ids">${escapeHtml(ids.join(", "))}</p>` : ""}`;
 }
 
+/**
+ * Said before the cart whenever it came from a recorded answer: the demo's daily model
+ * calls were used up, so the model's answer is a recording, while Praman's decision and
+ * the money are live.
+ */
+function recordedModelHtml(record: BeatRecord): string {
+  const r = record.recordedModel;
+  if (r === null) return "";
+  return `<p class="label-sim"><strong>Recorded model answer, not live.</strong> ${escapeHtml(
+    `Today's model calls for this demo are used up, so this is what ${r.model} answered to the same goal on ${r.recordedAt.slice(0, 10)}. Praman priced it from the catalog and decided it live.`,
+  )}</p>`;
+}
+
 /** The three hands a purchase passes through. The middle one is the only one that can say yes. */
 function gate(record: BeatRecord, moneyLabel: string): string {
   return `<div class="gate">
-    <div class="cell cell-agent"><h4>Agent proposed</h4>${proposalHtml(record)}</div>
+    <div class="cell cell-agent"><h4>Agent proposed</h4>${recordedModelHtml(record)}${proposalHtml(record)}</div>
     <div class="cell cell-praman"><h4>Praman decided</h4>${decisionHtml(record)}</div>
     <div class="cell cell-money"><h4>${escapeHtml(moneyLabel)}</h4>${moneyHtml(record)}</div>
   </div>`;

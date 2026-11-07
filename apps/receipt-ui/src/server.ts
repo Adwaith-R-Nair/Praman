@@ -61,6 +61,7 @@ const app = createApp({
   demo,
   webhooks: payPalWebhookDepsFromEnv(process.env),
   hsts: (process.env["DEMO_BASE_URL"] ?? "").startsWith("https://"),
+  trustProxy: process.env["TRUST_PROXY"] === "1",
   onDemoRequest: () => activity.touch(new Date()),
   log: (line) => console.error(line),
 });

@@ -1,6 +1,7 @@
 import { GeminiProvider } from "@praman/agent-core";
 import { PayPalExecutor, PayPalVault, PAYPAL_SANDBOX_BASE_URL } from "@praman/paypal-exec";
 import type { DemoDeps } from "./connect.js";
+import { capFromEnv, DbDailyUsage, DEFAULT_DAILY_MODEL_CALLS, DEFAULT_DAILY_SESSIONS } from "./limits.js";
 import { SavedMethods, SessionStore } from "./session.js";
 
 export type DemoWiring = { readonly ok: true; readonly deps: DemoDeps } | { readonly ok: false; readonly reason: string };
@@ -30,6 +31,10 @@ export function demoDepsFromEnv(env: NodeJS.ProcessEnv, port: number): DemoWirin
     deps: {
       sessions: new SessionStore({ privateKeyPem: pem(privateB64), publicKeyPem: pem(publicB64), keyId: "praman_demo_k1" }),
       savedMethods: new SavedMethods(),
+      usage: new DbDailyUsage({
+        session: capFromEnv(env, "DEMO_DAILY_SESSIONS", DEFAULT_DAILY_SESSIONS),
+        model_call: capFromEnv(env, "DEMO_DAILY_MODEL_CALLS", DEFAULT_DAILY_MODEL_CALLS),
+      }),
       publicKeyPem: pem(publicB64),
       paypal:
         paypalConfig === null

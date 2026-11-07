@@ -174,7 +174,11 @@ ${settlementHtml(trace.settlement)}
 
 ${
   trace.rationale
-    ? `<section><h2>Agent's rationale</h2><p class="rationale">${escFreeText(trace.rationale)}</p></section>`
+    ? `<section><h2>Agent's rationale</h2>${
+        trace.recordedModel === null
+          ? ""
+          : `<p class="reason-plain">${escapeHtml(`Recorded model answer, not live. The demo's daily model calls were used up, so this cart is a recorded answer from ${trace.recordedModel}, replayed. Praman priced and decided it live.`)}</p>`
+      }<p class="rationale">${escFreeText(trace.rationale)}</p></section>`
     : ""
 }
 
