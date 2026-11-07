@@ -1,0 +1,69 @@
+# Render Blueprint for the hosted Praman demo. docs/DEPLOY.md walks through using it.
+#
+# One free web service. The database is Neon's free Postgres, not Render's: Render's
+# free Postgres expires, and Neon's suspends when idle and wakes on the next query.
+# A free Render service sleeps after 15 minutes without traffic, so an outside ping
+# hits /healthz every 10 minutes; /healthz never touches the database, so Neon can
+# still suspend.
+#
+# Migrations run in the build, over Neon's direct address (DIRECT_DATABASE_URL).
+# Render's pre-deploy command isn't available on the free plan. The running server
+# uses the pooled address (DATABASE_URL).
+services:
+  - type: web
+    name: praman-demo
+    runtime: node
+    plan: free
+    region: virginia
+    branch: paypal-hackathon
+    # NODE_ENV=development for the install only, so tsx, prisma and the other dev
+    # tools are installed: the server runs its TypeScript through tsx.
+    buildCommand: >-
+      corepack enable pnpm &&
+      NODE_ENV=development pnpm install --frozen-lockfile &&
+      pnpm --filter @praman/db run generate &&
+      pnpm --filter @praman/db run migrate:deploy
+    startCommand: node --import tsx apps/receipt-ui/src/server.ts
+    healthCheckPath: /healthz
+    envVars:
+      # Fixed values.
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "24"
+      # The only PayPal host this server talks to. Any other value stops it at start.
+      - key: PAYPAL_BASE_URL
+        value: https://api-m.sandbox.paypal.com
+      # Model calls per UTC day for every visitor together. Past it, steps replay a
+      # recorded model answer, labelled as one.
+      - key: DEMO_DAILY_MODEL_CALLS
+        value: "400"
+      # Render's proxy sets X-Forwarded-For; per-address limits read it.
+      - key: TRUST_PROXY
+        value: "1"
+
+      # Secrets: Render asks for each when the Blueprint is created. Never in this file.
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_DATABASE_URL
+        sync: false
+      - key: DEMO_BASE_URL
+        sync: false
+      - key: DEMO_MANDATE_PRIVATE_KEY
+        sync: false
+      - key: DEMO_MANDATE_PUBLIC_KEY
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      # Optional. Unset, the server has no Razorpay rail: the demo uses PayPal and the
+      # simulated rail, and a Razorpay record would be left for `pnpm reconcile`.
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
