@@ -2706,3 +2706,37 @@ lock the way a second delivery would, as P8's reconciler test does. It fails wit
   only reaches the catch-all if reading the request itself fails. The trace and dispute routes reach it on any error.
 - Verification needs PayPal up. If it's down the delivery gets 503 and PayPal retries, but PayPal stops retrying after a few days,
   and the sweep then has to settle it.
+
+### Phase P9 · 2026-11-08 · review fix: an old decline could close a new capture
+
+A review of P9 found that a declined webhook could mark the wrong capture attempt as failed, and hide a capture that really
+happened.
+
+**Why that matters.** P9 let a `PAYMENT.CAPTURE.DECLINED` webhook close whichever capture record was pending on the order. But
+an order can be captured again after a refusal (D-40), and a decline doesn't say which attempt it is about. Picture this: the
+buyer's card is declined on attempt 1, and the ledger says `failed`. The agent retries, and attempt 2's call is on its way to
+PayPal. Now PayPal redelivers attempt 1's decline, say because our endpoint answered 503 the first time. The webhook closes
+attempt 2 as failed. Attempt 2 then succeeds at PayPal, and its T2 sees the record already closed and writes nothing. PayPal has
+the $12.50, the ledger says `created, failed, failed`, and the sweep never looks at a closed record. The reviewer reproduced it,
+and I wrote the same case as a test before changing anything. It failed with `FAILED` where the capture had gone through.
+
+**The fix (`eedaf27`).** A declined webhook now writes its `settlement` row and nothing else. The pending record waits for its own
+T2, or for the sweep, which sends that same attempt again under its own key and gets PayPal's answer for that attempt. No money
+moves on a decline, and a failed capture keeps the order's hold anyway, so waiting costs no budget. A completed webhook still
+closes a pending record, because an order is captured at most once.
+
+| What happens | Ledger rows added | Capture record | Budget held |
+|---|---|---|---|
+| Old decline arrives while a retry is out, then the retry captures | `settlement`; then `captured` by T2 | succeeded, by T2 | $12.50 |
+| Capture call lost, PayPal sends a decline | `settlement` only | still pending | $12.50 |
+| Then the sweep runs | `failed`, `INSTRUMENT_DECLINED`, by the reconciler | failed | $12.50 still held |
+
+**Tests changed.** P9's test "a declined capture resolves a pending record as failed" pinned the behaviour that was the bug, so it
+now pins the new one: the decline leaves the record pending, then the sweep closes it as failed and the hold stays. Its fixture
+also had the fake rail showing the order captured while the webhook said declined, which can't both be true, so the call now
+simply drops. The new test is the reviewer's case. Both failed before the fix. 595 tests, up from 594. None weakened or removed.
+
+**Decisions.** D-46, a declined webhook can't close a capture attempt. D-45 gets a `Status:` pointer to it.
+
+**Worth your look:** a capture whose call was lost and then declined now reads `IN_FLIGHT` until `pnpm reconcile` runs, where P9
+closed it as soon as the webhook came. Nothing schedules the sweep yet.
