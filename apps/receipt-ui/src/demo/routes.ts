@@ -9,6 +9,7 @@ import { captureCheckout, decideApproval, runBeat } from "./story.js";
 
 export const COOKIE = "praman_demo";
 const CLIENT_JS = readFileSync(fileURLToPath(new URL("./client.js", import.meta.url)), "utf8");
+const DEMO_CSS = readFileSync(fileURLToPath(new URL("./demo.css", import.meta.url)), "utf8");
 
 const STEPS: readonly BeatId[] = ["first", "second", "large", "injection", "fixture", "concurrency"];
 /** The steps that buy at the cafe. Any of them can need approval or become a checkout. */
@@ -85,6 +86,11 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       if (path === "/demo/client.js" && method === "GET") {
         res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8", ...SECURITY_HEADERS });
         res.end(CLIENT_JS);
+        return;
+      }
+      if (path === "/demo/demo.css" && method === "GET") {
+        res.writeHead(200, { "Content-Type": "text/css; charset=utf-8", ...SECURITY_HEADERS });
+        res.end(DEMO_CSS);
         return;
       }
 

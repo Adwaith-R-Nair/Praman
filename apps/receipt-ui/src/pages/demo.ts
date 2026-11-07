@@ -8,8 +8,6 @@ import type { BeatRecord, DemoSession } from "../demo/session.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
 import { REASON_CODE_PLAIN } from "../reason-codes.js";
 
-const CSS = readFileSync(fileURLToPath(new URL("../demo/demo.css", import.meta.url)), "utf8");
-
 const usd = (minorText: string): string => formatMoney(minorFromJSON(minorText), "USD");
 
 function isReasonCode(code: string): code is ReasonCode {
@@ -26,7 +24,7 @@ const NO_MODEL = "This server has no model configured, so the agent can't run he
 
 const MERCHANT_NAMES: Readonly<Record<string, string>> = { [CAFE]: "Praman Demo Cafe", [MARKET]: "Corner Market" };
 
-/** The demo's own frame: no inline script, one stylesheet, nothing from the receipt layout's print chrome. */
+/** The demo's own frame: no inline script or style, one stylesheet, nothing from the receipt layout's print chrome. */
 export function demoLayout(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -37,7 +35,7 @@ export function demoLayout(title: string, body: string): string {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<style>${CSS}</style>
+<link rel="stylesheet" href="/demo/demo.css">
 </head>
 <body>
 <main class="demo">

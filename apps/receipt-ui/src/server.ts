@@ -15,6 +15,7 @@ const { handlePayPalWebhook, payPalWebhookDepsFromEnv, readRawBody } = await imp
 const { createDemoHandler, releaseAllSessions, sweepExpiredSessions } = await import("./demo/routes.js");
 const { demoDepsFromEnv } = await import("./demo/wiring.js");
 const { seedDemoCatalog } = await import("./demo/seed.js");
+const { ASSETS } = await import("./assets.js");
 
 const payPalWebhooks = payPalWebhookDepsFromEnv(process.env);
 
@@ -42,6 +43,13 @@ const server = createServer((req, res) => {
     const disputeMatch = /^\/dispute\/([^/]+)\/?$/.exec(url.pathname);
 
     try {
+      const asset = req.method === "GET" ? ASSETS.get(url.pathname) : undefined;
+      if (asset !== undefined) {
+        res.writeHead(200, { "Content-Type": asset.contentType, "Cache-Control": "public, max-age=300" });
+        res.end(asset.body);
+        return;
+      }
+
       if (url.pathname === "/demo" || url.pathname.startsWith("/demo/")) {
         if (demo === null) {
           res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" });
