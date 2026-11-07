@@ -814,6 +814,8 @@ sum of paise and cents means nothing. Its JSON shape changed from a string to an
 
 Status: the fold is corrected by D-34. A key groups rows, and two order ids under one key count as two orders.
 
+Status: a repeat of a released intent got a cached `ALLOW` for the dead order, not `DUPLICATE_INTENT`, until D-40 fixed it.
+
 Decided by the builder on 2026-11-04. On PayPal an order is created, the buyer goes off
 to approve it, and only then does Praman capture. That can take minutes, or never finish,
 and PayPal's order can't be cancelled by API (D-26). So what does an order at checkout do
@@ -1235,6 +1237,8 @@ out of scope.
 
 Status: the row saying a named 4xx is `failed`, and the claim that a `failed` capture took no money, were false for two capture codes when written. D-39 corrects them.
 
+Status: the reconciler now reads a capture record's order by id, and a capture retry uses a fresh derived key. See D-40.
+
 An implementer's decisions for the builder to check. The `Executor` contract gives a rail three ways to answer, and getting one
 wrong has a price in money. A false `failed` frees budget for an order that exists. A false "created" sends a buyer to pay
 something Praman can't vouch for. So each answer from PayPal is sorted once, in `client.ts`.
@@ -1313,6 +1317,8 @@ get `DUPLICATE_INVOICE_ID` at capture, which is the safe side.
 
 Status: "the capture has often finished by the time PayPal answers" is a guess, since PayPal doesn't say how long this takes and nothing has been captured live. The case for reading first is only that it can report a finished capture sooner. The table also leaves out a `VOIDED` order, which is reported as `failed`, `PAYPAL_ORDER_VOIDED`.
 
+Status: the order is now read back after every capture refusal except `ORDER_NOT_APPROVED`, in `captureOrder`. See D-40.
+
 An implementer's decision for the builder to check, after a review found the bug in D-38. D-38 treated every named refusal on a
 capture as "this capture took no money", with one exception, `ORDER_ALREADY_CAPTURED`. PayPal's Orders v2 error reference lists two
 more 422s under capture that don't fit that reading:
@@ -1352,3 +1358,111 @@ way. `PREVIOUS_REQUEST_IN_PROGRESS` is the nearest. It is listed as a `RESOURCE_
   at the cost of an extra call on each refusal or a long list to keep. Not done here, and the builder may want it.
 - The capture retry waits on Task 7. A record left pending this way needs the look-up by order id noted in D-38, or the reconciler
   will repeat the create instead of checking the capture.
+
+### D-40 · Capturing and releasing a checkout order · Accepted
+
+Plan Task 7. An implementer's decisions for the builder to check. Two of them, what a failed capture leaves behind and reading
+the order back after a refusal, were set as requirements in the Task 7 brief, and are recorded here so the reasoning sits next to
+the code. None of this has run against a live PayPal capture yet. The last section says exactly what is unverified.
+
+**1. A capture is its own outbox phase.** `idempotency_record` gains `kind` (`order` or `capture`), and on a capture record,
+`order_key` and `order_id`. A check constraint refuses a capture record that names no order. `captureOrder` follows `runIntent`'s
+shape (D-22): T1 takes the mandate lock, decides, and commits a pending capture record, a `capture_decision` and an `api_call`; the
+rail call runs outside any transaction; T2 appends the outcome and settles the record.
+
+**2. Every ledger row carries the order's key and order id.** The capture record has its own key, but the ledger never sees it as
+`idempotency_key`. A capture outcome under its own key would fold as a second order and count the budget twice (D-30). It is kept
+as `capture_key` instead. `order_id` is on every capture and release row, because one key can hold two orders (D-34).
+
+**3. Capture decides from the record and the ledger, not from what the caller says.** `evaluateCapture` is frozen and trusts the
+held amount it is given. So `captureOrder` finds the order through the intent rows this mandate wrote on the trace, requires a
+settled order record and a `created` outcome for that order id, and takes the held amount from the ledger. If the ledger holds
+two amounts for one order, it refuses rather than pick one. A repeat after a capture returns that capture and calls nothing.
+
+**4. A `mismatch` order is never captured.** Even if the rail now quotes the authorised amount, it once answered with other money
+(D-33). The refusal is `AMOUNT_CHANGED_SINCE_APPROVAL`, or `CURRENCY_MISMATCH` when the mismatch was in currency. No new code.
+
+**5. Policy answers first.** `evaluateCapture` runs before the control plane's own checks (mismatch, the rail's currency, a rail
+with no executor), so a revoked mandate says `MANDATE_REVOKED` whatever else is wrong. Refusals are `capture_decision` rows and
+don't count toward the denial-rate cap (D-31). A caller with a bad signature changes nothing and is recorded as a claim (D-25).
+
+**6. A definite capture failure moves no money, and the order stays live.**
+
+| After a capture the rail definitely refused | |
+|---|---|
+| Budget | still held: the order exists and the buyer may still approve it |
+| A retry | allowed, under a new capture record |
+| The release sweep | may free it once 10 minutes pass, no capture is pending, and the rail confirms it isn't captured |
+
+A failed outcome row changes nothing in `deriveState`, which already ignores `failed`. Releasing it straight away was rejected: the
+commonest failure is a buyer who hasn't approved yet, and releasing would cancel a checkout that is still in progress.
+
+**7. Each capture attempt gets a fresh derived key.** `captureRecordKey(orderKey, attempt)` is `sha256("capture|" + orderKey)` for
+the first attempt and `sha256("capture|" + orderKey + "|" + n)` after that, where `n` counts the order key's earlier capture
+records, read under the mandate lock. It stays derived and deterministic. It answers two problems at once: a retry can't collide
+with the failed record's primary key (the P2002 shape fixed earlier for `runIntent`), and a retry doesn't reuse a `PayPal-Request-Id`
+that PayPal may answer with the old 422 (D-38's open question).
+
+The cost is that the key no longer dedupes a capture across attempts. That is acceptable because an order created with intent
+`CAPTURE` can only be captured once: a second capture gets `ORDER_ALREADY_CAPTURED`, which `paypal-exec` reads back and reports
+as the capture that happened (D-38). Within one attempt, the record and the mandate lock already stop a second call.
+
+**8. Any refusal other than `ORDER_NOT_APPROVED` is read back before it is believed.** `ORDER_NOT_APPROVED` was seen live (D-26) and
+is taken at its word. For every other refusal, `captureOrder` reads the order by id. If it shows a capture, that capture is
+recorded. If the read throws, the record stays pending. This closes the gap D-39 left open, a code PayPal adds later that means
+"under way", for one extra call on each refusal. The code is a constant in the control plane, so the control plane doesn't depend
+on a rail, and a test pins it to `paypal-exec`'s.
+
+**9. A capture record is reconciled by order id.** `reconcilePending` used to pass `order_id: null`, which on PayPal repeats the
+create and says nothing about the capture. A capture record now reads its order by id:
+
+| The order, read by id | Recorded |
+|---|---|
+| captured | the capture, under the order's key |
+| failed, such as a declined capture | failed, with the rail's code |
+| not captured | failed, `RECONCILE_NOT_CAPTURED`, hold kept |
+| unknown to the rail | failed, `RECONCILE_ORDER_NOT_FOUND`, hold kept |
+| the read throws | nothing, still pending |
+
+It re-reads the record under the mandate lock, so a late T2 and the reconciler can't both write.
+
+**10. The release sweep.** `releaseStaleOrders` only looks at rails in `CHECKOUT_RAILS`, which is `paypal`. Razorpay orders count
+from creation (D-17) and are never released. An order is released when ten minutes have passed since its first outcome row, by
+Praman's own clock, it has no capture, release or mismatch on the ledger, no capture of it is pending, and the rail says it isn't
+captured. The ledger checks run again under the mandate lock before the row is written, so a capture that starts in between wins.
+A rail that can't be asked, or doesn't know the order, leaves it held.
+
+**11. A repeat of a released intent is `DUPLICATE_INTENT`.** D-30 said so, but `runIntent`'s idempotency short-circuit runs before
+`evaluate()`, and it answered from the outbox record: a cached `ALLOW` with the dead order's checkout link. It now reads the
+ledger for that order first. Released gives `DUPLICATE_INTENT`, written as a `decision` row like any other, so it counts toward the
+denial-rate cap. Captured gives `captured` with no checkout link. `resolveApproval`'s repeat had the same bug and gets the same fix,
+with no ledger row, as with its other refusals (D-36). The outbox record isn't changed: the ledger is the evidence, and one source
+of truth is easier to reason about than two kept in step.
+
+**12. The trace page and the dispute bundle read the last outcome.** Both read only the first outcome and reported `ALLOW`/`OK`
+whenever one existed. Now the first outcome is the order and its amount, the last is where it stands, and a capture refused after
+the last outcome is the answer, with its own reason code. A refusal recorded against an unproven claim changes nothing. A trace with
+one outcome, which is every trace from before this task, reads the same as before.
+
+**Rejected: refusing a capture of an order whose rail read says it is already captured.** Not done, and it is a limit: if the
+ledger has no capture but the rail says captured, and the mandate has since been revoked, `evaluateCapture` refuses and the
+capture that happened stays unrecorded. That can only come from a capture Praman didn't make. The release sweep logs it, and
+PayPal webhooks (Task 9) are the place to record it.
+
+**Unverified live.** No sandbox buyer approval has registered on PayPal's side, so no capture has ever run for real. Everything
+above is tested against a stand-in rail in `packages/control-plane/test/support/checkout.ts`. Still unknown:
+
+- whether a capture key that got a 422 before approval replays that 422 afterwards. Decision 7 means it doesn't matter to Praman.
+- what reading an order by id returns while PayPal is still completing a capture. If it shows the order as not captured, the
+  reconciler's 60 second gate would record a capture that is under way as failed. The hold is kept, a retry would get
+  `ORDER_ALREADY_CAPTURED` and record it, and the sweep confirms with the rail before releasing. The window that remains is a
+  release confirmed while PayPal is still completing, which webhooks (Task 9) close.
+- how long `ORDER_COMPLETION_IN_PROGRESS` lasts.
+
+**Limits.**
+
+- The sweep re-reads every settled PayPal order record on each run, released ones included, since the record isn't changed. Fine
+  at demo scale. A column marking settled orders would fix it.
+- `api_call` rows for a capture carry the order's key, with `operation: "orders.capture"`. Task 8 pairs attempted calls with
+  outcomes by key to reserve budget, and needs to tell a capture call from a create call by `operation`.
+- Ten minutes is a judgement, as D-30 says. It is a constant, `ORDER_HOLD_TTL_MS`.
