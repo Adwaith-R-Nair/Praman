@@ -44,6 +44,14 @@ model CatalogItem {
   priceMinor  BigInt @map("price_minor")
   currency    String
   stockQty    Int    @map("stock_qty")
+  /// Where the price was fetched from, for an imported item. Null for a hand-seeded one.
+  source         String?
+  /// The product's id at the source.
+  sourceRef      String?   @map("source_ref")
+  /// The product page at the source. Untrusted text, like the title.
+  sourceUrl      String?   @map("source_url")
+  /// When the price was pinned. Decisions use the stored price, never a fresh fetch.
+  priceFetchedAt DateTime? @map("price_fetched_at") @db.Timestamptz(3)
 
   @@id([merchantId, sku])
   @@map("catalog_item")

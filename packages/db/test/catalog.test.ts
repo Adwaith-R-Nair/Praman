@@ -60,3 +60,29 @@ describe("loadMerchantConfig", () => {
     await expect(prisma.merchant.create({ data: { merchantId: USD_MERCHANT, rail: "cash", currency: "USD" } })).rejects.toThrow();
   });
 });
+
+describe("catalog provenance", () => {
+  const FETCHED = new Date("2026-11-08T10:00:00.000Z");
+
+  it("keeps where a price came from and when it was pinned", async () => {
+    await prisma.catalogItem.create({
+      data: { ...ITEM, currency: "USD", source: "channel3", sourceRef: "abc123", sourceUrl: "https://example.com/p/abc123", priceFetchedAt: FETCHED },
+    });
+    const [item] = await listCatalogForAgent(prisma, USD_MERCHANT);
+    expect(item?.price_source).toEqual({ source: "channel3", fetched_at: FETCHED.toISOString() });
+  });
+
+  it("an item seeded by hand has no source", async () => {
+    await prisma.catalogItem.create({ data: { ...ITEM, currency: "USD" } });
+    const [item] = await listCatalogForAgent(prisma, USD_MERCHANT);
+    expect(item?.price_source).toBeNull();
+  });
+
+  it("the database refuses a source without the time its price was fetched", async () => {
+    await expect(prisma.catalogItem.create({ data: { ...ITEM, currency: "USD", source: "channel3" } })).rejects.toThrow();
+  });
+
+  it("the database refuses a fetch time without a source", async () => {
+    await expect(prisma.catalogItem.create({ data: { ...ITEM, currency: "USD", priceFetchedAt: FETCHED } })).rejects.toThrow();
+  });
+});

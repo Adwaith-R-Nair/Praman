@@ -65,6 +65,9 @@ export async function listCatalogForAgent(tx: PrismaTx, merchantId: string) {
     price_minor: minorFromDb(r.priceMinor),
     currency: currencyFromDb(r.currency),
     in_stock: r.stockQty > 0,
+    // Where an imported price came from and when it was pinned. Trusted: written by
+    // the import, not by the merchant. Null for a hand-seeded item.
+    price_source: r.source !== null && r.priceFetchedAt !== null ? { source: r.source, fetched_at: r.priceFetchedAt.toISOString() } : null,
   }));
 }
 
