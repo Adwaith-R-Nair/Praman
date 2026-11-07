@@ -335,6 +335,8 @@ one transaction boundary, not a separate connection working around it.
 
 ### D-22 · Two-phase execution with an outbox record, not a single transaction · Accepted
 
+Status: residuals 2 and 4 are closed by D-42. Residual 2's "one API call wide" understated the window. D-42 has what was measured.
+
 **Supersedes** the single-transaction execution described in earlier
 revisions of `HLD.md` and `INVARIANTS.md` invariant 5, which is unachievable
 as stated.
@@ -1510,3 +1512,69 @@ until a person steps in.
 
 **Still unverified live.** As with D-40, nothing has been captured on the sandbox. What a capture still completing looks like, and
 how long it lasts, is from PayPal's documentation. Webhooks (Task 9) remain the backstop for a capture Praman didn't see finish.
+
+### D-42 · Attempted calls reserve budget · Accepted
+
+An implementer's decision for the builder to check. It follows the approved design's Concurrency section and `ROADMAP_PHASE2.md`
+Phase 13, which set the direction. The details below were settled while building it.
+
+**The gap, measured.** D-22 residual 2 said that between T1 and T2 a concurrent intent "can evaluate against a slightly understated
+budget", and that "the window is one API call wide". `concurrent-spend.test.ts` was committed failing first (5bd6d7b) to see how big
+it was. Twenty intents of 1,000 INR each, under one 5,000 INR mandate, were started at once with every rail call held until all
+twenty had been decided. All twenty got `ALLOW` and all twenty orders were created: 20,000 INR against a 5,000 INR budget, four
+times over. The same run also passed a velocity limit of 8 with 20 orders. Budget wasn't slightly understated. It wasn't counted at all
+for anything in flight.
+
+The window is also wider than one call:
+
+| Case | How long an attempt went uncounted |
+|---|---|
+| The rail answers | one call. 8 PayPal sandbox creates on 2026-11-08 took 732 to 2036 ms, median 771 ms. The slowest was the first, which also fetched the OAuth token. |
+| The call hangs | up to 30 s, `paypal-exec`'s request timeout, and then the case below |
+| The call throws or the process dies before T2 | until a reconcile sweep settles the record. The sweep won't touch a record younger than 60 s, and only runs when someone runs `pnpm reconcile` |
+
+So the last row had no upper bound at all.
+
+**Decision.** `deriveState` counts an `api_call` with `status: "attempted"` and no outcome yet as reserved spend:
+
+- It adds its `amount_minor` (or `amount_paise` on an old row) to `spent_minor`, and its time to `txn_timestamps`.
+- It does **not** add the merchant to `merchants_transacted`. An attempt may not have made an order, so it shouldn't satisfy the
+  first-merchant step-up.
+- **Any outcome answers it,** `failed` included. A failed create made no order, so it frees the reservation, and a reconciled
+  not-found is written as `failed` too. A `created`, `captured` or `mismatch` outcome takes over, and the order is then counted the
+  way D-30, D-33 and D-34 already count it, once.
+- **Pairing.** An `api_call` with an `idempotency_key` pairs only with outcomes carrying that key. Rows from before 2026-11-05 have no
+  key on the `api_call` (F14), so they pair with any outcome on their `trace_id`. A key, when there is one, wins over the trace,
+  because a trace comes from the intent id and two carts under one intent id share it. Old rows can't be rewritten, so the reader
+  handles both shapes for good (D-28).
+- **A capture's `api_call` reserves nothing.** It has `operation: "orders.capture"` and carries the order's key, and the order already
+  holds its budget. Any other `operation`, including one this code doesn't know, reserves. An unknown kind of call might have made an
+  order, so that fails closed.
+- An unanswered attempt with a missing or malformed amount throws, the same as an outcome does. An answered one isn't read.
+
+**Why fold it into `spent_minor` and not a new `reserved_minor` field.** It leaves `evaluate()` as it is, and the budget check is
+meant to cover money that is committed or may be committed. D-17 already counts a created order on that principle. A separate field
+would show the two apart, which is nicer to read, but needs `evaluate()` to add them, and `packages/policy` is frozen (D-31). The
+cost is that `spent_minor` now means "spent or possibly spent". D-43 covers what this does to the freeze claim.
+
+**Velocity moves once the outcome lands.** While reserved, the attempt's velocity timestamp is the `api_call` time. Once an outcome
+arrives, the order's timestamp is the outcome's time, as before. For T2 those are the same moment. For a reconciled outcome it is the
+sweep's time, which can be minutes later and holds the rate limit for slightly longer. That errs toward refusing.
+
+**The reconciler takes the mandate lock (D-22 residual 4).** It reads `mandate_id` from the `intent` event, as it already did,
+then takes the same advisory lock T1 and T2 take, re-reads the record, and writes only if it is still pending. Without that, a late
+T2 and a sweep could both write an outcome for one call. Capture records already worked this way (D-41).
+
+**Consequence, named.** A pending record nobody reconciles holds its budget and a velocity slot until a sweep settles it. That fails
+closed: the worst case is a refusal, never an overspend. In production something has to schedule `pnpm reconcile`. Webhooks
+(Task 9) can shorten the wait but don't replace the sweep, because a create that never reached the rail sends no webhook.
+
+**After.** The same test passes: 5 orders created, the other 15 refused with `MANDATE_BUDGET_EXHAUSTED`. A second case with
+budget for all twenty creates exactly 8, the velocity limit, and refuses 12 with `VELOCITY_EXCEEDED`.
+
+**Rejected: a reservation table.** A stored counter is what D-03 avoids, and the ledger already has the attempt.
+
+**Still open.** T2 doesn't check that its record is still pending before writing. If the sweep settled it first, T2 adds a second
+outcome. With the same order id that counts once (D-34). If the sweep found nothing and T2 then reports an order, the order is counted,
+which is right, because it exists.
+
