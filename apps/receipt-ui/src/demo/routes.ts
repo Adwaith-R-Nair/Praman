@@ -100,7 +100,7 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       const configured = { paypal: deps.paypal !== null, model: deps.provider !== null };
 
       if (method === "GET" && (path === "/demo/checkout/return" || path === "/demo/checkout/cancel")) {
-        // Often opened in a private window with no session, so it says what to do and does nothing.
+        // Usually opened in a private window or another browser, with no session, so it says what to do and does nothing.
         if (session !== null) {
           session.notice = path.endsWith("cancel") ? "You cancelled at PayPal. Nothing was charged." : "PayPal has your approval. Press Capture the payment to finish.";
           redirect(res, "/demo");
