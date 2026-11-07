@@ -15,7 +15,7 @@ The gateway is a local stdio MCP server, `apps/mcp-gateway`. It holds one signed
 | `complete_checkout` | `trace_id` | After the buyer has paid at PayPal, asks Praman to capture. Praman re-checks the mandate first. |
 | `get_receipt` | `trace_id` | Where a purchase stands, its ledger events, and links to the trace page and the dispute bundle. |
 
-No tool has a field for a price, an amount, a currency, a rail or a mandate, and every input schema refuses extra fields. A call that adds `price_minor` is rejected before anything reaches the ledger, and a test checks it.
+No tool has a field for a price, an amount, a currency, a rail or a mandate, and every input schema refuses extra fields. A call that adds `price_minor` is rejected before anything reaches the ledger, and a test checks it. An id or query with a control character, such as a NUL byte, is rejected the same way, since Postgres can't store it.
 
 - **Price** comes from the catalog snapshot.
 - **Currency** comes from the signed mandate.
@@ -31,6 +31,7 @@ No tool has a field for a price, an amount, a currency, a rail or a mandate, and
 | `DENIED` | `reason_code` from the closed enum, and a line of plain words saying what to do next. Limits are never stated (D-08). |
 | `REJECTED` | A person rejected the step-up, or nobody answered within 15 minutes. |
 | `PENDING`, `FAILED`, `RELEASED` | The rail hasn't answered yet, refused the order, or the buyer didn't pay within 10 minutes. No success is claimed. |
+| `ERROR` | Something inside Praman failed, such as the database. No decision is claimed. The agent gets one plain line; the details go to the server's stderr, never to the agent. |
 
 An identical proposal (same merchant, SKU and quantity) within two minutes is treated as a retry, and gets the first answer back with `retry_of`. So an MCP client that resends a call after a timeout doesn't buy twice.
 

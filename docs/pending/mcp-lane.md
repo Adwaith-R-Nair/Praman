@@ -126,6 +126,23 @@ itself, in the same text format the buyer agent uses.** It is written in its own
 `record-transcript.ts` does, and a failure is logged to stderr without changing the purchase. Checked live: the trace page
 for a gateway purchase lists the three mugs the agent read, and the dispute bundle names the client and both calls.
 
+## Decision: Control characters are refused at the schema, and internal errors reach the agent as a typed ERROR
+
+A review found that a NUL byte in `sku`, `merchant_id`, `trace_id` or `approval_id` made Postgres reject the query
+(`22021`, `22P05`). Nothing caught it, so the MCP SDK sent the raw Prisma error to the agent: absolute source paths, a
+frame of source lines and the database code. Reproduced with an in-process client before the fix.
+
+**Decision: every identifier field refuses control characters in its input schema, and the search query refuses them
+except tab and line breaks. Every tool body runs inside one wrapper that turns a thrown error into `status: "ERROR"` with
+one plain line, and writes the error itself to stderr.** The schema rejection is the same kind of answer as a proposal that
+carries `price_minor`: the call never reaches `runIntent`, so there is no intent, no decision and no ledger row. It is not
+a `DENY`, because `evaluate()` never saw it, and adding a reason code would mean touching the closed enum and the frozen
+policy for an input no merchant id or SKU can contain. The denial-rate cap counts decisions, and this is not one.
+
+The `ERROR` text for `propose_purchase` does not say nothing was bought. `runIntent` can throw in T2, after the rail took
+the order, and then the pending outbox record is what `pnpm reconcile` settles. So the agent is told there is no decision
+and not to propose again. For `complete_checkout` the agent is told the capture outcome is unknown.
+
 ## Build log: the MCP gateway and the Channel3 catalog
 
 **What changed, in commit order.**
@@ -180,3 +197,9 @@ and `lint:casts` passed, `pnpm eval --layer1 --dev` 88/88 with `eval/` restored 
 
 **For the README, when it is next edited.** A line under the demo: any MCP agent can shop through Praman locally, with
 `docs/MCP.md` linked, and that the catalog behind it is real products from Channel3 with prices pinned at import.
+
+**Review fix, `6367dad`.** A NUL byte in a gateway id leaked a Prisma error with source paths to the agent. Identifier
+fields now refuse control characters, and any thrown error comes back as `status: "ERROR"` with the details on stderr.
+Eight new tests cover each tool with a NUL byte and a fault inside `runIntent`. Done-check after it, with
+`set -euo pipefail`: `pnpm test` 55 files and 758 tests passed, typecheck, `lint:boundary`, `lint:policy-freeze`,
+`eval:check-coverage` and `lint:casts` clean, `pnpm eval --layer1 --dev` 88/88 with `eval/` restored.
