@@ -419,6 +419,9 @@ importers:
         specifier: workspace:*
         version: link:../shared
     devDependencies:
+      '@praman/paypal-exec':
+        specifier: workspace:*
+        version: link:../paypal-exec
       '@praman/razorpay-exec':
         specifier: workspace:*
         version: link:../razorpay-exec
