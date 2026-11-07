@@ -1,1 +1,615 @@
-body { font-family: Georgia, serif; }
+/* Praman demo. Same security-paper base as the receipt viewer, so a visitor who
+   follows a ledger link lands somewhere that looks like the same product. One new
+   ink, the seal blue, belongs to the signed mandate and nothing else. The decision
+   colours mean what they mean on the trace page: allowed, asked, refused. */
+
+:root {
+  --paper: #edf1ee;
+  --paper-raised: #f6f8f6;
+  --ink: #172420;
+  --ink-muted: #4b5b55;
+  --hairline: #c7d0c9;
+  --seal: #24496b;
+  --allow: #2e6b4c;
+  --step-up: #8a5f22;
+  --deny: #9e3b2e;
+  --allow-wash: #e1ece5;
+  --step-up-wash: #f1e9db;
+  --deny-wash: #f2e3df;
+
+  --serif: "PT Serif", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  --s1: 0.5rem;
+  --s2: 1rem;
+  --s3: 1.75rem;
+  --s4: 2.75rem;
+  --rail: 2.25rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--paper);
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+
+.demo {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: var(--s4) 1rem var(--s4);
+}
+
+a {
+  color: var(--ink);
+  text-underline-offset: 0.18em;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: 2px;
+}
+
+code,
+.amount,
+.ids,
+.trace-id,
+input.link {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+code {
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
+}
+
+/* ── Masthead ─────────────────────────────────────────────────── */
+
+.masthead {
+  margin-bottom: var(--s4);
+}
+
+.masthead h1 {
+  font-size: clamp(2rem, 6vw, 3rem);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+  font-weight: 700;
+  margin: 0 0 var(--s2);
+  max-width: 18ch;
+}
+
+.lede {
+  font-size: 1.2rem;
+  line-height: 1.55;
+  color: var(--ink-muted);
+  max-width: 38rem;
+  margin: 0;
+}
+
+.notice {
+  border-left: 3px solid var(--seal);
+  background: var(--paper-raised);
+  padding: var(--s1) var(--s2);
+  margin: 0 0 var(--s3);
+}
+
+/* ── Steps: a numbered path down the page ─────────────────────── */
+
+.step {
+  position: relative;
+  padding-left: calc(var(--rail) + var(--s2));
+  padding-bottom: var(--s4);
+}
+
+/* The path joining one step's number to the next. */
+.step::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--rail) / 2 - 1px);
+  top: var(--rail);
+  bottom: 0;
+  width: 2px;
+  background: var(--hairline);
+}
+
+.step:last-of-type::before {
+  display: none;
+}
+
+.step h2 {
+  font-size: 1.55rem;
+  line-height: 1.2;
+  margin: 0.2rem 0 var(--s2);
+}
+
+.step-n {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--rail);
+  height: var(--rail);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  font-weight: 600;
+  background: var(--paper);
+}
+
+.step-done .step-n {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.step-done::before {
+  background: var(--ink);
+}
+
+.step h3 {
+  font-size: 1.15rem;
+  margin: var(--s3) 0 var(--s1);
+}
+
+.step-body > p {
+  max-width: 38rem;
+}
+
+/* ── The signed mandate ───────────────────────────────────────── */
+
+.mandate {
+  border: 1px solid var(--seal);
+  outline: 1px solid var(--seal);
+  outline-offset: 3px;
+  background: var(--paper-raised);
+  padding: var(--s2) var(--s3);
+  margin: var(--s2) 4px;
+  color: var(--seal);
+}
+
+.terms {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--ink);
+}
+
+.terms li {
+  margin: 0.35rem 0;
+}
+
+.terms strong {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--seal);
+}
+
+.seal {
+  margin: var(--s2) 0 0;
+  padding-top: var(--s1);
+  border-top: 1px solid var(--hairline);
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────── */
+
+.act {
+  display: inline-block;
+  margin: var(--s1) var(--s1) var(--s1) 0;
+}
+
+.btn {
+  font: inherit;
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 0.6rem 1.15rem;
+  border-radius: 3px;
+  border: 2px solid var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  line-height: 1.3;
+}
+
+.btn-primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--seal);
+  border-color: var(--seal);
+}
+
+.btn-quiet {
+  background: transparent;
+  color: var(--ink);
+}
+
+.btn-quiet:hover:not(:disabled) {
+  background: var(--paper-raised);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn[aria-busy="true"] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.actions {
+  margin-top: var(--s2);
+}
+
+/* ── The gate: agent, Praman, money. Only the middle one can say yes. ── */
+
+.result {
+  margin-top: var(--s2);
+}
+
+.gate {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr;
+  align-items: stretch;
+  gap: 0;
+  margin: var(--s2) 0;
+}
+
+.cell {
+  padding: var(--s2);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  min-width: 0;
+}
+
+.cell h4 {
+  margin: 0 0 var(--s1);
+  font-size: 0.95rem;
+  font-weight: 400;
+  font-style: italic;
+  color: var(--ink-muted);
+}
+
+.cell-body {
+  margin: 0.25rem 0;
+  font-size: 0.97rem;
+}
+
+/* Raised over the two quiet cells beside it, in the colour of what it decided. */
+.cell-praman {
+  background: var(--paper-raised);
+  border: 2px solid var(--ink);
+  margin: -0.5rem 0;
+  padding: calc(var(--s2) + 0.5rem) var(--s2);
+  box-shadow: 0 2px 0 var(--ink);
+  position: relative;
+  z-index: 1;
+}
+
+.cell-praman:has(.stamp-allow) {
+  border-color: var(--allow);
+  box-shadow: 0 2px 0 var(--allow);
+}
+
+.cell-praman:has(.stamp-step-up) {
+  border-color: var(--step-up);
+  box-shadow: 0 2px 0 var(--step-up);
+}
+
+.cell-praman:has(.stamp-deny) {
+  border-color: var(--deny);
+  box-shadow: 0 2px 0 var(--deny);
+}
+
+.stamp {
+  display: inline-block;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.15;
+  padding: 0.15rem 0.55rem;
+  border: 2px solid currentColor;
+  border-radius: 2px;
+  margin-bottom: var(--s1);
+  transform: rotate(-1.5deg);
+}
+
+.stamp-allow {
+  color: var(--allow);
+  background: var(--allow-wash);
+}
+
+.stamp-step-up {
+  color: var(--step-up);
+  background: var(--step-up-wash);
+}
+
+.stamp-deny {
+  color: var(--deny);
+  background: var(--deny-wash);
+}
+
+.amount {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.code {
+  display: inline-block;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  margin-top: 0.25rem;
+}
+
+.cart {
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0;
+}
+
+.rationale {
+  font-style: italic;
+  color: var(--ink-muted);
+  font-size: 0.93rem;
+  margin: var(--s1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.money-moved {
+  color: var(--allow);
+  font-weight: 700;
+}
+
+.money-waiting {
+  color: var(--step-up);
+}
+
+.money-none {
+  color: var(--ink-muted);
+}
+
+.ids {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+  margin: var(--s1) 0 0;
+}
+
+.message {
+  margin: var(--s2) 0 var(--s1);
+}
+
+.agent-view {
+  font-size: 0.92rem;
+  color: var(--ink-muted);
+}
+
+.agent-view code {
+  color: var(--ink);
+  background: var(--paper-raised);
+  padding: 0.05rem 0.35rem;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  align-items: baseline;
+  margin: var(--s1) 0 0;
+  font-size: 0.95rem;
+}
+
+.trace-id {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Step 4's point, said once, in the colour of the decision that let it through. */
+.spotlight {
+  border-left: 4px solid var(--allow);
+  padding: 0.35rem 0 0.35rem var(--s2);
+  font-size: 1.2rem;
+  line-height: 1.4;
+  font-weight: 700;
+  color: var(--allow);
+  margin: var(--s2) 0;
+}
+
+.ok {
+  border-left: 3px solid var(--allow);
+  padding-left: var(--s2);
+}
+
+.note {
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+/* ── Checkout ─────────────────────────────────────────────────── */
+
+.checkout {
+  border: 1px dashed var(--step-up);
+  padding: var(--s2);
+  margin-top: var(--s2);
+  background: var(--paper-raised);
+}
+
+.checkout p {
+  margin: 0 0 var(--s1);
+}
+
+.link-row {
+  display: flex;
+  gap: var(--s1);
+  flex-wrap: wrap;
+}
+
+input.link {
+  flex: 1 1 16rem;
+  min-width: 0;
+  font-size: 0.8rem;
+  padding: 0.55rem;
+  border: 1px solid var(--hairline);
+  background: #fff;
+  color: var(--ink);
+}
+
+/* ── Injection: simulated and recorded are marked as such ─────── */
+
+.label-sim {
+  border-left: 3px solid var(--step-up);
+  padding-left: var(--s2);
+  font-style: italic;
+}
+
+.recording {
+  margin: var(--s1) 0 0;
+  border: 1px solid var(--hairline);
+  background: var(--paper-raised);
+  padding: var(--s2);
+}
+
+.recording figcaption {
+  font-size: 0.92rem;
+  margin-bottom: var(--s2);
+}
+
+.rec-label {
+  font-style: italic;
+  color: var(--ink-muted);
+  margin: var(--s2) 0 0.25rem;
+  font-size: 0.92rem;
+}
+
+.merchant-text {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-left: 3px solid var(--step-up);
+  padding: var(--s1) var(--s2);
+  margin: 0;
+  background: var(--paper);
+}
+
+/* ── Concurrency ──────────────────────────────────────────────── */
+
+.harness-line {
+  font-size: 1.1rem;
+  margin: 0 0 var(--s1);
+}
+
+.big {
+  font-family: var(--mono);
+  font-size: 2.6rem;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: -0.2em;
+  margin-right: 0.15em;
+  color: var(--allow);
+}
+
+.refusals {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.refusals li {
+  color: var(--deny);
+}
+
+details {
+  margin: var(--s1) 0;
+}
+
+summary {
+  cursor: pointer;
+}
+
+.harness-traces {
+  columns: 2;
+  font-size: 0.9rem;
+}
+
+/* ── Start, end ───────────────────────────────────────────────── */
+
+.start p {
+  max-width: 38rem;
+}
+
+.small {
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+}
+
+.end {
+  border-top: 1px solid var(--hairline);
+  padding-top: var(--s2);
+  color: var(--ink-muted);
+}
+
+/* ── Phone width: the gate stacks, Praman still the one raised ─── */
+
+@media (max-width: 40rem) {
+  .demo {
+    padding-top: var(--s3);
+  }
+
+  .step {
+    padding-left: 0;
+  }
+
+  .step::before {
+    display: none;
+  }
+
+  .step h2 {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .step-n {
+    position: static;
+    flex: none;
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .mandate {
+    padding: var(--s2);
+  }
+
+  .gate {
+    grid-template-columns: 1fr;
+  }
+
+  .cell-praman {
+    margin: 0;
+  }
+
+  .harness-traces {
+    columns: 1;
+  }
+}

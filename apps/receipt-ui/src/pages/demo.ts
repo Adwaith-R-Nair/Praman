@@ -86,7 +86,8 @@ function decisionHtml(record: BeatRecord): string {
   return `<div class="stamp stamp-${shown.tone}">${escapeHtml(shown.word)}</div>${amount}
     ${plain === null ? "" : `<p class="cell-body">${escapeHtml(plain)}</p>`}
     ${record.reasonCode === null ? "" : `<code class="code">${escapeHtml(record.reasonCode)}</code>`}
-    ${record.approvalId === null ? "" : `<p class="cell-body">Waiting for you.</p>`}`;
+    ${record.approvalId === null ? "" : `<p class="cell-body">Waiting for you.</p>`}
+    ${kind === "STEP_UP" && (record.state === "done" || record.state === "awaiting_checkout") ? `<p class="cell-body"><strong>You approved.</strong> Praman checked the mandate again before paying.</p>` : ""}`;
 }
 
 function moneyHtml(record: BeatRecord): string {
