@@ -880,6 +880,8 @@ separate derived key. An outcome under the capture key would look like a second 
 
 ### D-31 · Capture re-checks the mandate · Accepted
 
+Status: the last sentence, that adding the rail itself took no policy change, claims more than the freeze check proves. D-43 says what it does and doesn't prove.
+
 Decided by the builder on 2026-11-04, following D-24. D-17 says a gate at capture would
 "re-evaluate identical facts". On Razorpay that's true. On PayPal it isn't: while the buyer is at
 checkout, a mandate can be revoked or can expire, and the order's hold can be released. So
@@ -1578,3 +1580,36 @@ budget for all twenty creates exactly 8, the velocity limit, and refuses 12 with
 outcome. With the same order id that counts once (D-34). If the sweep found nothing and T2 then reports an order, the order is counted,
 which is right, because it exists.
 
+### D-43 · What the policy freeze proves, and what it doesn't · Accepted
+
+An implementer's decision for the builder to check, correcting D-31's wording.
+
+D-31 ends with: "adding a currency took a small policy change, preparing for a checkout took another, and adding the rail itself
+took none". `pnpm lint:policy-freeze` is the evidence offered for the last part. Here is what that check actually establishes.
+
+**What it proves.** No file under `packages/policy` differs from commit `df81b87`, in what is committed or in the working tree, and
+no untracked file has been added there. So the source of `evaluate()` and `evaluateCapture()` is byte for byte what it was before
+`paypal-exec` existed. Since that package has no I/O and no LLM import (`pnpm lint:boundary`), the same inputs still give the same
+decision.
+
+**What it doesn't prove.** That `evaluate()` decides the same things for the same purchase. Its decisions depend on inputs built
+outside the package:
+
+- `LedgerDerivedState`, the type is in `@praman/shared` and the values come from `deriveState` in `packages/ledger`. Since the
+  freeze, `deriveState` has changed in four commits under three decisions: holding budget for an order the rail misreports (D-33,
+  `adf7519` and `19a5ee2`), counting two orders on one key as two (D-34, `c8fbc86`), and now counting attempted calls as spend (D-42,
+  `4b34300`). Each one changes what `state.spent_minor`, `txn_timestamps` or `merchants_transacted`
+  hold, and so which purchases `evaluate()` allows, with no line of `packages/policy` changing. D-42's change is deliberate: it is how
+  concurrent intents stop overspending without touching `evaluate()`.
+- `@praman/shared`, for the money helpers, `isCurrency` and the reason codes. It hasn't changed since the freeze (checked with
+  `git diff df81b87 HEAD -- packages/shared`), but the freeze doesn't cover it, so nothing stops it changing.
+- The catalog snapshot and the verified mandate, which the control plane builds.
+- What happens after. `gateOnRail` in the control plane can turn an `ALLOW` into a denial (D-32). It can only narrow, never widen,
+  but it is a policy-shaped decision outside the frozen package.
+
+**The honest wording.** Adding the rail took no change to the policy engine's code. It did change the facts the engine is given:
+how spend is counted from the ledger, and which merchants can be paid at all. Each of those changes has its own decision record and
+tests, and none of them can widen what a signed mandate allows, but "policy unchanged" would claim more than that.
+
+**Rejected: widening the freeze to `packages/ledger` and `packages/shared`.** It would have blocked D-33, D-34 and D-42, each of which
+fixed a way to spend past a budget. Freezing the inputs would protect the claim and leave the bugs in.
