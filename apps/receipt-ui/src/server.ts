@@ -61,7 +61,8 @@ const app = createApp({
   demo,
   webhooks: payPalWebhookDepsFromEnv(process.env),
   hsts: (process.env["DEMO_BASE_URL"] ?? "").startsWith("https://"),
-  trustProxy: process.env["TRUST_PROXY"] === "1",
+  // checkStartup has already refused anything but a small whole number here.
+  proxyHops: Number(process.env["TRUST_PROXY"] || "0"),
   onDemoRequest: () => activity.touch(new Date()),
   log: (line) => console.error(line),
 });

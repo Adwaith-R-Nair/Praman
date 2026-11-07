@@ -27,7 +27,7 @@ beforeAll(async () => {
     demo: null,
     webhooks: { webhookId: null, verify: async () => false, apply: async () => ({ kind: "ignored", reason: "test" }) as never, now: () => new Date() },
     hsts: true,
-    trustProxy: false,
+    proxyHops: 0,
     onDemoRequest: () => {},
     log: (line) => logs.push(line),
   });
@@ -141,5 +141,37 @@ describe("per-address limits", () => {
     for (let i = 0; i < 6; i++) statuses.push((await fetch(`${base}/demo/start`, { method: "POST" })).status);
     expect(statuses.slice(0, 5)).toEqual([503, 503, 503, 503, 503]);
     expect(statuses[5]).toBe(429);
+  });
+});
+
+describe("per-address limits behind a proxy", () => {
+  it("a made-up X-Forwarded-For in front doesn't reset the limit on new demo sessions", async () => {
+    const app = createApp({
+      demo: null,
+      webhooks: { webhookId: null, verify: async () => false, apply: async () => ({ kind: "ignored", reason: "test" }) as never, now: () => new Date() },
+      hsts: false,
+      proxyHops: 1,
+      onDemoRequest: () => {},
+      log: () => {},
+    });
+    const proxied = createServer((req, res) => {
+      void app(req, res);
+    });
+    proxied.listen(0);
+    await once(proxied, "listening");
+    const url = `http://127.0.0.1:${String((proxied.address() as AddressInfo).port)}/demo/start`;
+    try {
+      const statuses: number[] = [];
+      // One visitor at 203.0.113.7, as the proxy saw it, writing a new address in front each time.
+      for (let i = 0; i < 8; i++) {
+        statuses.push((await fetch(url, { method: "POST", headers: { "X-Forwarded-For": `10.0.0.${i.toString()}, 203.0.113.7` } })).status);
+      }
+      expect(statuses.slice(0, 5)).toEqual([503, 503, 503, 503, 503]);
+      expect(statuses.slice(5)).toEqual([429, 429, 429]);
+      // A different visitor, as the proxy saw them, still gets in.
+      expect((await fetch(url, { method: "POST", headers: { "X-Forwarded-For": "203.0.113.7, 198.51.100.4" } })).status).toBe(503);
+    } finally {
+      proxied.close();
+    }
   });
 });

@@ -228,9 +228,27 @@ describe("the limits themselves", () => {
 
   it("reads the client address from X-Forwarded-For only behind a trusted proxy", () => {
     const req = (xff: string | undefined, remote: string) => ({ headers: xff === undefined ? {} : { "x-forwarded-for": xff }, socket: { remoteAddress: remote } }) as unknown as IncomingMessage;
-    expect(clientIp(req("203.0.113.7, 10.0.0.1", "10.0.0.2"), true)).toBe("203.0.113.7");
-    expect(clientIp(req("203.0.113.7", "10.0.0.2"), false)).toBe("10.0.0.2");
-    expect(clientIp(req(undefined, "10.0.0.2"), true)).toBe("10.0.0.2");
+    expect(clientIp(req("203.0.113.7", "10.0.0.2"), 1)).toBe("203.0.113.7");
+    expect(clientIp(req("203.0.113.7", "10.0.0.2"), 0)).toBe("10.0.0.2");
+    expect(clientIp(req(undefined, "10.0.0.2"), 1)).toBe("10.0.0.2");
+  });
+
+  it("takes the address the trusted proxy appended, never one the client wrote in front", () => {
+    const req = (xff: string) => ({ headers: { "x-forwarded-for": xff }, socket: { remoteAddress: "10.0.0.2" } }) as unknown as IncomingMessage;
+    // A client sends "X-Forwarded-For: 10.0.0.9"; the proxy appends the address it saw.
+    expect(clientIp(req("10.0.0.9, 203.0.113.7"), 1)).toBe("203.0.113.7");
+    expect(clientIp(req("10.0.0.9,10.0.0.8 , 203.0.113.7"), 1)).toBe("203.0.113.7");
+    // Two proxies that each append: the visitor is second from the right.
+    expect(clientIp(req("10.0.0.9, 203.0.113.7, 172.16.0.5"), 2)).toBe("203.0.113.7");
+    // Fewer entries than proxies: the leftmost is the best there is.
+    expect(clientIp(req("203.0.113.7"), 2)).toBe("203.0.113.7");
+  });
+
+  it("the number of trusted proxies must be a small whole number", () => {
+    expect(checkEnv({ TRUST_PROXY: "1" })).toEqual([]);
+    expect(checkEnv({ TRUST_PROXY: "" })).toEqual([]);
+    expect(checkEnv({ TRUST_PROXY: "yes" }).join(" ")).toContain("TRUST_PROXY");
+    expect(checkEnv({ TRUST_PROXY: "12" }).join(" ")).toContain("TRUST_PROXY");
   });
 
   it("a cap from the environment must be a whole number", () => {

@@ -44,17 +44,22 @@ export class RateLimiter {
 }
 
 /**
- * Who a request is from, for per-IP limits. Behind Render's proxy (trustProxy) that is
- * the first address in X-Forwarded-For; otherwise the socket's own. A client can put
- * its own X-Forwarded-For in front, so a per-IP limit slows a casual visitor and a
- * script, not a determined one. The daily caps and per-session limits are the bounds
- * nothing in a request can get around.
+ * Who a request is from, for per-IP limits. `proxyHops` is how many proxies in front of
+ * this server append the address they saw to X-Forwarded-For (TRUST_PROXY). Each one
+ * appends on the right, and a client can write anything it likes on the left, so the
+ * visitor is the entry `proxyHops` from the right: the one the outermost trusted proxy
+ * wrote. Never the leftmost, which the client chose. With no trusted proxy (0), the
+ * socket's own address.
  */
-export function clientIp(req: IncomingMessage, trustProxy: boolean): string {
-  if (trustProxy) {
+export function clientIp(req: IncomingMessage, proxyHops: number): string {
+  if (proxyHops > 0) {
     const header = req.headers["x-forwarded-for"];
-    const first = (Array.isArray(header) ? header[0] : header)?.split(",")[0]?.trim();
-    if (first) return first.slice(0, 64);
+    const entries = (Array.isArray(header) ? header.join(",") : (header ?? ""))
+      .split(",")
+      .map((e) => e.trim())
+      .filter((e) => e !== "");
+    const chosen = entries[Math.max(0, entries.length - proxyHops)];
+    if (chosen !== undefined) return chosen.slice(0, 64);
   }
   return req.socket.remoteAddress ?? "unknown";
 }

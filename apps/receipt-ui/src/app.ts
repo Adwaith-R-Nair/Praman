@@ -43,8 +43,8 @@ export interface AppDeps {
   readonly webhooks: PayPalWebhookDeps;
   /** Sent on every response when the server is reached over HTTPS. */
   readonly hsts: boolean;
-  /** Behind a proxy that sets X-Forwarded-For (Render), per-IP limits read the address from it. */
-  readonly trustProxy: boolean;
+  /** How many proxies in front append to X-Forwarded-For (Render: 1). 0 reads the socket's address. */
+  readonly proxyHops: number;
   readonly now?: () => Date;
   /** Told about every request to /demo, so the sweeps know the demo is in use. */
   readonly onDemoRequest: () => void;
@@ -71,7 +71,7 @@ export function createApp(deps: AppDeps): Handler {
 
   /** True if the request may go on. Otherwise it has been answered with a plain 429. */
   const within = (limiter: RateLimiter, req: IncomingMessage, res: ServerResponse, message: string): boolean => {
-    const ip = clientIp(req, deps.trustProxy);
+    const ip = clientIp(req, deps.proxyHops);
     const at = now();
     if (limiter.take(ip, at)) return true;
     text(res, 429, message, { "Retry-After": limiter.retryAfterSeconds(ip, at).toString(), "Cache-Control": "no-store" });

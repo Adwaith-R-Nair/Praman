@@ -56,6 +56,11 @@ export function checkEnv(env: NodeJS.ProcessEnv): string[] {
     if (value !== undefined && value !== "" && !/^\d{1,7}$/.test(value)) reasons.push(`${name} must be a whole number.`);
   }
 
+  const proxyHops = env["TRUST_PROXY"];
+  if (proxyHops !== undefined && proxyHops !== "" && !/^\d$/.test(proxyHops)) {
+    reasons.push("TRUST_PROXY must be the number of proxies in front of this server, 0 to 9 (Render: 1).");
+  }
+
   const demoPrivate = env["DEMO_MANDATE_PRIVATE_KEY"];
   const demoPublic = env["DEMO_MANDATE_PUBLIC_KEY"];
   if (demoPrivate || demoPublic) {

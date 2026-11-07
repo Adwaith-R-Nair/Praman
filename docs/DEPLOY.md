@@ -58,7 +58,7 @@ These are set by `render.yaml` and you don't touch them:
 | `NODE_VERSION` | `24` | The Node version the repo is tested on. |
 | `PAYPAL_BASE_URL` | `https://api-m.sandbox.paypal.com` | Any other value stops the server at start. |
 | `DEMO_DAILY_MODEL_CALLS` | `400` | Model calls per UTC day for all visitors together. After that, steps replay a recorded model answer, labelled as one. |
-| `TRUST_PROXY` | `1` | Render's proxy sets `X-Forwarded-For`, and the per-address limits read it. |
+| `TRUST_PROXY` | `1` | How many proxies in front of the server add the visitor's address to the right of `X-Forwarded-For`. The per-address limits read the entry that many places from the right, never the leftmost, which a visitor can write themselves. |
 
 These Render asks you for:
 
@@ -132,13 +132,16 @@ Do this in a normal browser window, with a private window or a second browser re
 9. In the Render log, look for `receipt-ui listening`, and no `refusing to start` lines. No secret should appear anywhere in the log.
 10. Leave a checkout unpaid: on a fresh session, get step 5 to its PayPal link and don't pay. After 11 minutes, reload the demo and press **Capture the payment**. It says the order wasn't approved in time, `ORDER_RELEASED`, and nothing is charged.
 
-Optional check of the per-address limit, from a terminal:
+Check the per-address limit, from a terminal. This also checks that `TRUST_PROXY` is right for Render:
 
 ```sh
-for i in 1 2 3 4 5 6; do curl -s -o /dev/null -w "%{http_code} " -X POST https://<your address>/demo/start; done
+for i in 1 2 3 4 5 6 7 8; do curl -s -o /dev/null -w "%{http_code} " -X POST -H "X-Forwarded-For: 198.51.100.$i" https://<your address>/demo/start; done
 ```
 
-The first five answer `303` and the sixth `429`. Then try it again with a made-up header, `-H "X-Forwarded-For: 198.51.100.$i"`. If those six all answer `303`, Render passes on the address a client claims, and the per-address limit only slows casual use. The daily caps still hold either way (D-57).
+The first five answer `303` and the rest `429`, even though each request claims a different address. Then, within ten minutes, open the demo on your phone over mobile data (not your Wi-Fi) and press **Start a session**. It must start.
+
+- If all eight answer `303`, Render passed the made-up header on without adding the address it saw, and no `TRUST_PROXY` value can fix that. Leave it at `1`. The per-address limit then only slows casual use, and the daily caps still hold (D-57).
+- If the phone also gets "Too many new demo sessions", the entry being read belongs to a Render proxy, shared by everyone. Set `TRUST_PROXY` to `2` in Render's Environment, let it redeploy, and run both checks again.
 
 ## When something goes wrong
 

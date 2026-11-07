@@ -779,7 +779,7 @@ describe("the sweeps, through the running server", () => {
       demo: createDemoHandler(deps),
       webhooks: { webhookId: null, verify: async () => false, apply: async () => "unmatched", now: () => new Date(clock) },
       hsts: false,
-      trustProxy: false,
+      proxyHops: 0,
       onDemoRequest: () => activity.touch(new Date(clock)),
       log: (line) => logs.push(line),
     });

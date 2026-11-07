@@ -82,7 +82,7 @@ describe("the site root", () => {
       demo: null,
       webhooks: { webhookId: null, verify: async () => false, apply: async () => ({ kind: "ignored", reason: "test" }) as never, now: () => new Date() },
       hsts: false,
-      trustProxy: false,
+      proxyHops: 0,
       onDemoRequest: () => {},
       log: () => {},
     });
