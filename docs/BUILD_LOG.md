@@ -1783,6 +1783,8 @@ independent of everything after it.
 
 ### Phase P0 · 2026-11-04 · testing PayPal before trusting it
 
+Status: capture after approval was tested live on 2026-11-08 and works (D-49, Phase P12). Webhook delivery is still untested.
+
 The project is now entered in the PayPal AI Hackathon, from this same repo. The
 design and the plan are in `docs/superpowers/`. Before writing any rail code I
 ran throwaway scripts against the PayPal sandbox, the same habit that found
@@ -2261,6 +2263,8 @@ touched.
 
 ### Phase P6 · 2026-11-05 · the PayPal rail, and what it can't claim yet
 
+Status: live capture, payment token creation and a no-buyer charge all ran in the sandbox on 2026-11-08, and the open question for Task 7 is answered: a key refused with 422 before approval captured normally after it. See D-49 and Phase P12.
+
 `packages/paypal-exec` now exists. It creates real orders in the sandbox, repeats them, reads them back, and gets a real refusal
 when it captures too early. **Live capture is unverified.** The buyer approval step hasn't succeeded on PayPal's side, so no capture
 has ever run for real. The capture code is tested against the sample in PayPal's published API schema, in a file named
@@ -2387,6 +2391,8 @@ two codes when I wrote it. Those entries stay as written, and D-38 now has a poi
 order id, as the earlier note says, or the reconciler repeats the create and learns nothing about the capture.
 
 ### Phase P7 · 2026-11-08 · capture, release, and the reconciler
+
+Status: captures have now run against the sandbox (D-49, Phase P12), though not through `captureOrder`. Of the three questions D-40 lists, the 422 replay one is answered: it isn't replayed.
 
 A PayPal order can now be captured, released, and reconciled. **No capture has run against PayPal for real.** The sandbox buyer
 approval still hasn't registered, so everything here is tested against a stand-in rail, `test/support/checkout.ts` in the control
@@ -2824,6 +2830,8 @@ purchase. Which system do you open, and why not the other? Name three properties
 Langfuse gives you that should never go into the ledger.
 
 ### Phase P11 · 2026-11-08 · honest numbers
+
+Status: the README's "no real PayPal capture" was outdated by the live runs in D-49 and is fixed in `49e095a`.
 
 The eval report now says how sure each number is, runs every Layer 1 case on both rails, and stops saying things that had gone
 stale. Nothing in `packages/policy` changed, and `pnpm lint:policy-freeze` passes. No model was called: Layer 2 costs money, so
