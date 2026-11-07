@@ -373,15 +373,24 @@ importers:
       '@praman/agent-core':
         specifier: workspace:*
         version: link:../../packages/agent-core
+      '@praman/control-plane':
+        specifier: workspace:*
+        version: link:../../packages/control-plane
       '@praman/db':
         specifier: workspace:*
         version: link:../../packages/db
       '@praman/dispute':
         specifier: workspace:*
         version: link:../../packages/dispute
+      '@praman/exec-core':
+        specifier: workspace:*
+        version: link:../../packages/exec-core
       '@praman/ledger':
         specifier: workspace:*
         version: link:../../packages/ledger
+      '@praman/paypal-exec':
+        specifier: workspace:*
+        version: link:../../packages/paypal-exec
       '@praman/shared':
         specifier: workspace:*
         version: link:../../packages/shared

@@ -10,6 +10,9 @@ const { renderTracePage } = await import("./pages/trace.js");
 const { renderIndexPage } = await import("./pages/index.js");
 const { verifyTrace } = await import("./verify.js");
 const { buildBundleStandalone } = await import("@praman/dispute");
+const { handlePayPalWebhook, payPalWebhookDepsFromEnv, readRawBody } = await import("./webhooks.js");
+
+const payPalWebhooks = payPalWebhookDepsFromEnv(process.env);
 
 const PORT = Number(process.env["RECEIPT_UI_PORT"] ?? 4100);
 
@@ -21,6 +24,19 @@ const server = createServer((req, res) => {
     const disputeMatch = /^\/dispute\/([^/]+)\/?$/.exec(url.pathname);
 
     try {
+      if (url.pathname === "/webhooks/paypal") {
+        if (req.method !== "POST") {
+          res.writeHead(405, { Allow: "POST", "Content-Type": "text/plain; charset=utf-8" });
+          res.end("Method not allowed");
+          return;
+        }
+        const rawBody = await readRawBody(req);
+        const reply = rawBody === null ? { status: 413, body: "too large" } : await handlePayPalWebhook(rawBody, req.headers, payPalWebhooks);
+        res.writeHead(reply.status, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end(reply.body);
+        return;
+      }
+
       if (traceMatch?.[1]) {
         const { status, html } = await renderTracePage(decodeURIComponent(traceMatch[1]));
         res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });

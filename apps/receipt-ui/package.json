@@ -7,9 +7,12 @@
   "exports": { ".": "./src/server.ts" },
   "dependencies": {
     "@praman/agent-core": "workspace:*",
+    "@praman/control-plane": "workspace:*",
     "@praman/db": "workspace:*",
     "@praman/dispute": "workspace:*",
+    "@praman/exec-core": "workspace:*",
     "@praman/ledger": "workspace:*",
+    "@praman/paypal-exec": "workspace:*",
     "@praman/shared": "workspace:*",
     "dotenv": "^17.4.2"
   }
