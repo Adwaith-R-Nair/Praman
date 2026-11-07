@@ -205,7 +205,7 @@ Three that changed the architecture:
 
 ## Decision records
 
-54 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
+59 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
 
 ## Documentation
 

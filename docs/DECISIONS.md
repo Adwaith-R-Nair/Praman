@@ -2052,6 +2052,8 @@ Status: two parts below were wrong, and both are fixed (BUILD_LOG, P12 review fi
 
 Status: the checkout advice changed again (`141d245`). What matters is a PayPal session that hasn't logged in, so the page now says: a window that is not logged in to PayPal, which is a private window if the demo is in a normal one, otherwise another browser. "Each step runs once" now holds only for a step that charged or may have: a refused step can be asked again (D-52). The checkout return page now sends visitors back to their demo window, not their demo browser.
 
+Status: Task 13 added the daily caps and the recorded fallback that the "model calls are capped per session" line promised, and a per-session limit on button presses (D-57). On the hosted server a restart can come at any time, not only on a deploy, and it ends every session as this record says (D-55).
+
 An implementer's decision for the builder to check, made in plan Task 12 on 2026-11-08. The design said there is no public
 intent API and no free-text goal. This record says how the demo's routes make that hold.
 
@@ -2164,3 +2166,172 @@ five seconds. Those tokens stay at PayPal. In the sandbox they charge play money
 dashboard. A token in a database would survive a crash and could be deleted after one; D-50 rejected that, and this doesn't
 revisit it.
 
+### D-55 · The hosted demo runs on Render Free with Neon Free Postgres · Accepted
+
+The builder's decision, made for plan Task 13 on 2026-11-08. The design said Render with its own managed Postgres. This record
+says what was chosen instead and what follows from it. `docs/DEPLOY.md` has the steps.
+
+**Decision: one Render Free web service in Virginia, a Neon Free Postgres in AWS us-east-1, and an outside ping to `/healthz`
+every 10 minutes from cron-job.org.** Razorpay keys are optional on the host; the demo's shops use PayPal and the simulated rail.
+
+The facts it is built around:
+
+- A free Render service sleeps after 15 minutes with no requests, can restart at any time, and loses its disk on a restart.
+- Neon Free gives 100 compute hours a month, and suspends the database after 5 minutes idle. The next query wakes it.
+- Render's free Postgres is not used: it expires a month after it is made, and the demo has to outlive judging.
+
+What follows:
+
+- **`/healthz` answers from memory.** The ping keeps Render awake and never wakes Neon. A test checks it runs with no database.
+- **Nothing is kept on disk.** Visitors' sessions are in memory, so a restart ends them (D-51). The ledger, the daily usage
+  counts (D-57) and every trace are in Neon.
+- **Two Neon addresses.** The server uses the pooled one, `DATABASE_URL`. Migrations use the direct one,
+  `DIRECT_DATABASE_URL`, because `prisma migrate deploy` takes a lock a pooled connection can't hold. They run in the Render
+  build, since Render's pre-deploy command isn't on the free plan. Local dev leaves `DIRECT_DATABASE_URL` empty and nothing
+  changes there (`f37a577`).
+- **Anything that queries on a timer has to stop when nobody is here,** or Neon never suspends. D-56 is how the sweeps do that.
+
+**Rejected: a paid Render instance.** It doesn't sleep, but it costs money for a demo that is idle most of the day, and the ping
+does the same job for free.
+
+**Rejected: Render's free Postgres.** Its expiry would delete the ledger, and with it every trace a judge might open.
+
+### D-56 · The sweeps run inside the server, only while the demo is in use · Accepted
+
+An implementer's decision for the builder to check, made in plan Task 13 on 2026-11-08 (`8b6cc65`).
+
+The demo page promises two things: a PayPal checkout nobody pays is released after 10 minutes, and a payment call left with no
+answer gets settled. Locally, `pnpm reconcile` does both. On the host, nothing ran it, so neither promise held.
+
+**Decision: the server runs `reconcilePending` then `releaseStaleOrders` once when it starts, and then every minute, but only
+while someone has used `/demo` in the last 30 minutes.** `apps/receipt-ui/src/sweeps.ts` does it.
+
+- **Each sweep has its own `try`.** A failed reconcile still lets release run, and a failed pass is logged by error name and
+  tried again next minute. A pass still running when the next minute comes is skipped, not run twice at once.
+- **The rails it asks are the ones this server has keys for:** PayPal, and Razorpay only if its test keys are set. Not the
+  simulator: asked about a real PayPal order, it would answer "not found".
+- **A checkout is released between 10 and 11 minutes** after it was made: the 10-minute rule in `releaseStaleOrders`, checked
+  every minute.
+- **Tests go through the running server's path,** not just the sweep functions: the app built as `server.ts` builds it, a
+  checkout left unpaid, the clock moved past 10 minutes, then capture refused with `ORDER_RELEASED` in plain words; and a charge
+  whose answer was lost, settled once by the sweep and not charged again.
+
+**What this leaves.** A payment left pending when nobody visits for 30 minutes stays pending until the next visit or the next
+restart. Its budget stays held in the meantime (D-42), which is the safe direction: nothing can be spent twice while it waits. A
+capture PayPal completes is also settled by the webhook (D-45), which doesn't wait for the sweep.
+
+**Why 30 minutes.** It covers the 10-minute release with room to spare. Neon then stays awake about 35 minutes after the last
+visit, and suspends after that.
+
+**Rejected: running every minute, always.** It would keep Neon awake all month: 720 hours at the smallest size, 0.25 CU, is 180
+compute hours, nearly twice the free 100.
+
+**Rejected: a Render cron job.** Render's cron jobs are not free, and would be a second service to deploy and keep in step.
+
+### D-57 · How the public demo is limited · Accepted
+
+An implementer's decision for the builder to check, made in plan Task 13 on 2026-11-08 (`29e221c`). The builder set the goal:
+anyone can use the demo, and nobody can run up the model bill or fill the database.
+
+**Decision: per-address and per-session limits in memory, and two daily caps for everyone together in Postgres.**
+
+| Limit | Per | Kept in | Over it |
+|---|---|---|---|
+| 5 new sessions in 10 minutes | address | memory | plain 429 |
+| 60 trace, verify, dispute and index requests a minute | address | memory | plain 429 |
+| 120 webhook deliveries a minute | address | memory | 429, PayPal retries |
+| 30 button presses a minute | session | memory | plain 429, nothing run twice |
+| 40 model calls | session | memory | the step stops, nothing moves (D-51) |
+| 200 new sessions a day (`DEMO_DAILY_SESSIONS`) | everyone | `demo_usage` | plain page until 00:00 UTC |
+| 400 model calls a day (`DEMO_DAILY_MODEL_CALLS`) | everyone | `demo_usage` | recorded model answer, labelled |
+
+- **The daily caps are in Postgres** so a restart doesn't refill them. One statement adds one only while the count is under the
+  cap, so two requests at once can't both take the last one. `demo_usage` is a plain counter, not the ledger, and is updated in
+  place; invariant 4 is about the ledger and is untouched.
+- **Past the model cap, the story goes on with a recording.** Each step replays what `google/gemini-3.1-flash-lite` answered to
+  the same goal in a run on 2026-11-07, read back from that run's ledger traces. The page says "Recorded model answer, not live",
+  and the intent's model id starts with `recorded/`, so the trace and the dispute bundle say it too. The tools still run live,
+  Praman still prices the cart from the catalog and decides it, and the sandbox money is real. A judge who arrives late still
+  sees every step work.
+- **Per-address limits read the first `X-Forwarded-For` entry** behind Render's proxy (`TRUST_PROXY=1`). If Render passes on
+  what a client puts there, a script can claim a new address each time, so these limits slow casual use, not a determined
+  script. The daily caps and per-session limits are the bounds nothing in a request can get around. `docs/DEPLOY.md` has a
+  check for which it is.
+- **The per-address limits are in memory,** so a restart resets a window of a few minutes, which costs nothing.
+
+**Rejected: per-address limits in Postgres.** Every page view would write to the database, and keep Neon awake.
+
+**Rejected: a CAPTCHA.** It means a third party's script on every page, against the CSP (D-59), and one more thing between a
+judge and the demo.
+
+**Rejected: stopping the demo at the model cap.** A judge arriving that evening would see nothing work. A labelled recording
+shows the same thing Praman does, with the model's part marked as replayed.
+
+### D-58 · The server refuses to start rather than run with the wrong keys · Accepted
+
+An implementer's decision for the builder to check, made in plan Task 13 on 2026-11-08 (`ed17165`).
+
+**Decision: `apps/receipt-ui/src/startup.ts` checks the environment before the server listens, prints each reason naming the
+variable but never its value, and exits.** It refuses when:
+
+- `PAYPAL_BASE_URL` is set to anything but `https://api-m.sandbox.paypal.com`. The PayPal client is built with the sandbox
+  constant anyway; this catches a deploy that thinks otherwise.
+- PayPal's sandbox token endpoint answers 401 or 403 to `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`. Live and sandbox
+  credentials are separate sets, so ones the sandbox refuses aren't sandbox ones. If the sandbox can't be reached, the server
+  starts anyway with a note, since every call it makes goes to the sandbox host.
+- `RAZORPAY_KEY_ID` doesn't start with `rzp_test_`, or `RAZORPAY_BASE_URL` is set at all (the executor only calls
+  `api.razorpay.com`).
+- Only one of a pair is set: PayPal id and secret, Razorpay id and secret, or the demo's private and public key.
+- The demo key isn't a key, its halves don't match, or it is the local `MANDATE_PRIVATE_KEY`.
+
+In production (`NODE_ENV=production`) it also refuses when:
+
+- the demo key is one of the developer keys whose public fingerprints are listed in `startup.ts`: the local mandate key and
+  the demo key used for local runs. A fingerprint of a public key is not a secret.
+- `MANDATE_PRIVATE_KEY` is set at all,
+- the demo key is missing, or `DEMO_BASE_URL` isn't `https://`.
+
+The hosted key pair is fresh from `pnpm keygen`, kept in the gitignored `private/demo-mandate-keys.env`, and passes every check
+above. A test starts the real server process with a bad setting and sees it exit before it listens.
+
+**Rejected: a warning in the log.** Nobody reads the log of a free host until something has gone wrong, and the thing that went
+wrong would be a live key or a stranger's mandate signed with the developer's key.
+
+**Rejected: checking Razorpay keys with a call.** The `rzp_test_` prefix already tells test from live, and the demo doesn't use
+Razorpay.
+
+### D-59 · A strict content security policy, and errors that say nothing · Accepted
+
+An implementer's decision for the builder to check, made in plan Task 13 on 2026-11-08 (`6549ca7`, `e2fa25d`).
+
+Every page escapes what it shows: merchant text, model rationale, ids and codes. The policy is the second line, for anything
+that ever slips past.
+
+**Decision: every response carries this policy and these headers.**
+
+```
+default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com;
+font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';
+form-action 'self' https://www.sandbox.paypal.com; frame-ancestors 'none'; base-uri 'none'
+```
+
+plus `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`,
+`Cross-Origin-Opener-Policy: same-origin`, a `Permissions-Policy` that turns off camera, microphone, location and payment, and
+`Strict-Transport-Security` when the server's address is `https://`.
+
+- **No inline script or style anywhere.** The page scripts and styles moved into files served from this origin, so the policy
+  needs no `'unsafe-inline'` and no nonces. The trace page reads its trace id from a data attribute and builds its chain-break
+  note as text, not HTML.
+- **`form-action` names PayPal's sandbox** because Connect PayPal posts here and is redirected on to PayPal, and a browser
+  checks the redirect against `form-action` too.
+- **Error pages say nothing about the error.** The catch-all 500, in the main server and in the demo, shows a fixed sentence.
+  The operator log gets the error's name and message. An error's text can carry a query, a URL or a provider's reply, so the
+  visitor never sees it. The index page is rendered before its status goes out, so a database failure there is a 500 page, not
+  an empty 200.
+- **`/healthz` answers before anything else** and touches nothing (D-55).
+
+**Rejected: nonces on inline blocks.** Every page would need a per-request nonce passed through its renderer, for a handful of
+scripts that work as well as files.
+
+**Rejected: loading the fonts from this origin.** It would let `style-src` and `font-src` be `'self'` alone, at the cost of
+committing font files. Google's two hosts serve only CSS and fonts, which can't run script under this policy.
