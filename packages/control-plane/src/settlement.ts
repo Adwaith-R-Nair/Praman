@@ -7,9 +7,6 @@ import { MANDATE_LOCK_NS } from "./run-intent.js";
 
 export type SettlementResult = "applied" | "duplicate" | "unmatched";
 
-/** A declined capture took no money. The same code paypal-exec gives a DECLINED capture it reads itself. */
-const CAPTURE_DECLINED = "PAYPAL_CAPTURE_DECLINED";
-
 interface MatchedOrder {
   readonly key: string;
   readonly traceId: string;
@@ -64,19 +61,20 @@ function authorised(view: OrderView, recordAmount: bigint | null): Minor | null 
  * on the payment and status, under the mandate lock so two deliveries at once
  * can't both write. The settlement row moves nothing on its own (D-31).
  *
- * An outcome is appended as well when the webhook tells the ledger something it
- * doesn't know yet:
+ * An outcome is appended as well when a completed capture isn't on the ledger yet:
+ * a captured outcome, or a mismatch if the money differs. This covers a capture whose
+ * call is still out, one whose answer was lost, and one on an order Praman has since
+ * released. A pending capture record is resolved, and a T2 or a sweep that arrives
+ * later sees it resolved and writes nothing. An order is captured once, so a completed
+ * capture answers every attempt on it.
  *
- *   completed, no capture on the ledger   a captured outcome, or a mismatch if the money
- *                                         differs. This covers a capture whose call is
- *                                         still out, one whose answer was lost, and one
- *                                         on an order Praman has since released.
- *   declined, a capture record pending    a failed outcome. No money moved and the order
- *                                         keeps its hold, as with ORDER_NOT_APPROVED.
- *
- * Either way a pending capture record is resolved, and a T2 or a sweep that arrives
- * later sees it resolved and writes nothing. The sweep stays as the backstop for any
- * webhook that never arrives.
+ * A declined capture is a settlement row only (D-46). It names a capture id, never the
+ * attempt it answers, and an order can be retried after a refusal (D-40). A late or
+ * redelivered decline of an earlier attempt would otherwise close a retry whose capture
+ * then succeeds, leaving money moved with a failed outcome. The pending record is left
+ * to its own T2, or to the sweep, which sends that attempt again under its own key and
+ * so gets PayPal's answer for that attempt. No money moved on a decline, so the hold
+ * stays either way. The sweep stays as the backstop for any webhook that never arrives.
  */
 export async function applySettlement(event: SettlementEvent, now: Date): Promise<SettlementResult> {
   const matched = await matchOrder(event);
@@ -139,18 +137,6 @@ export async function applySettlement(event: SettlementEvent, now: Date): Promis
         outcome = acceptOutcome(reported, { amount_minor: amount, currency: view.currency });
       }
     }
-    if (event.status === "declined" && record !== null && amount !== null) {
-      outcome = {
-        rail: event.rail,
-        order_id: event.order_id,
-        status: "failed",
-        amount_minor: amount,
-        currency: view.currency,
-        payment_id: null,
-        approve_url: null,
-        failure_code: CAPTURE_DECLINED,
-      };
-    }
     if (event.status === "declined" && view.captured !== null) {
       console.warn(`settlement: order ${event.order_id} is captured on the ledger, and ${event.rail} now reports a declined capture ${event.payment_id}`);
     }
@@ -172,7 +158,7 @@ export async function applySettlement(event: SettlementEvent, now: Date): Promis
         await tx.idempotencyRecord.update({
           where: { key: record.key },
           data: {
-            status: outcome.status === "failed" ? "failed" : "succeeded",
+            status: "succeeded",
             outcome: { order_id: outcome.order_id, status: outcome.status, payment_id: outcome.payment_id, failure_code: outcome.failure_code },
             updatedAt: now,
           },

@@ -203,16 +203,54 @@ describe("applySettlement", () => {
     expect((await captureOrder(order.traceId, ctx.signed, ctx.publicKeyPem, route, LATER)).kind).toBe("CAPTURED");
   });
 
-  it("a declined capture resolves a pending record as failed, and the order keeps its hold", async () => {
-    const { ctx, order, captureKey } = await strandedCapture("mnd_set_declined");
+  it("a declined capture leaves a pending record for its own call or the sweep, and the order keeps its hold", async () => {
+    const { executor, ctx, order, route } = await setup("mnd_set_declined");
+    executor.captureAnswer = "throw";
+    expect((await captureOrder(order.traceId, ctx.signed, ctx.publicKeyPem, route, LATER)).kind).toBe("IN_FLIGHT");
+    const captureKey = captureRecordKey(order.key);
 
     const declined = event(order.orderId, { event_id: "WH-SYNTHETIC-DECLINED", event_type: "PAYMENT.CAPTURE.DECLINED", status: "declined" });
     expect(await applySettlement(declined, WEBHOOK_TIME)).toBe("applied");
 
+    // A decline names no capture attempt, so it can't close this one (D-46). The settlement row records the news.
+    expect(await settlements()).toEqual([expect.objectContaining({ status: "declined", event_id: "WH-SYNTHETIC-DECLINED" })]);
+    expect((await outcomesFor(order.key)).map((p) => p["status"])).toEqual(["created"]);
+    expect(await prisma.idempotencyRecord.findUniqueOrThrow({ where: { key: captureKey } })).toMatchObject({ status: "pending" });
+    expect(await spent(ctx.mandateId)).toBe(minor(1000n + 1250n));
+
+    // The sweep sends the attempt again under its own key, and PayPal answers for that attempt.
+    executor.captureAnswer = "refuse";
+    executor.refuseCode = "INSTRUMENT_DECLINED";
+    expect(await reconcilePending(route, new Date(Date.now() + RECONCILE_MIN_AGE_MS + 60_000))).toBe(1);
+
     const rows = await outcomesFor(order.key);
     expect(rows.map((p) => p["status"])).toEqual(["created", "failed"]);
-    expect(rows[1]).toMatchObject({ failure_code: "PAYPAL_CAPTURE_DECLINED", payment_id: null, capture_key: captureKey });
+    expect(rows[1]).toMatchObject({ failure_code: "INSTRUMENT_DECLINED", capture_key: captureKey });
     expect(await prisma.idempotencyRecord.findUniqueOrThrow({ where: { key: captureKey } })).toMatchObject({ status: "failed" });
+    expect(await spent(ctx.mandateId)).toBe(minor(1000n + 1250n));
+  });
+
+  it("a late decline from an earlier attempt doesn't close a retry that then captures", async () => {
+    const { executor, ctx, order } = await setup("mnd_set_old_decline");
+    executor.captureAnswer = "refuse";
+    executor.refuseCode = "INSTRUMENT_DECLINED";
+    expect((await captureOrder(order.traceId, ctx.signed, ctx.publicKeyPem, routeByRail([executor]), LATER)).kind).toBe("FAILED");
+
+    // D-40 allows a retry. It is held between T1 and T2.
+    executor.captureAnswer = "capture";
+    const held = new HeldCapture(executor);
+    const retry = captureOrder(order.traceId, ctx.signed, ctx.publicKeyPem, routeByRail([held]), LATER);
+    await held.untilHeld();
+
+    // PayPal redelivers the first attempt's decline, say after an earlier 503.
+    const old = event(order.orderId, { event_id: "WH-OLD-DECLINE", event_type: "PAYMENT.CAPTURE.DECLINED", status: "declined", payment_id: "CAPOLD1" });
+    expect(await applySettlement(old, WEBHOOK_TIME)).toBe("applied");
+    held.open();
+
+    expect(await retry).toMatchObject({ kind: "CAPTURED", order_id: order.orderId });
+    expect(executor.order(order.orderId).captured).toBe(true);
+    expect((await outcomesFor(order.key)).map((p) => p["status"])).toEqual(["created", "failed", "captured"]);
+    expect(await prisma.idempotencyRecord.findUniqueOrThrow({ where: { key: captureRecordKey(order.key, 1) } })).toMatchObject({ status: "succeeded" });
     expect(await spent(ctx.mandateId)).toBe(minor(1000n + 1250n));
   });
 
