@@ -3281,3 +3281,24 @@ which passed from the start. Five existing assertions changed: two pinned the ol
 advice, still asserting the old "new private window" text is absent; three exact `execution` shapes in the bundle tests now
 include the new fields. None were weakened or removed.
 
+
+### Phase P12 · 2026-11-08 · review fix: two attempts of a step could share one trace
+
+**What a reviewer found.** Fix 2 above (`890b456`) lets a refused step be asked again. The new intent's id ended in a number made
+from how many steps had run plus how many model calls the session had used. Once the demo's daily model calls are used up, a step
+replays a recorded answer, which uses no model call, and asking a step that already ran doesn't add a step. So the third ask got the
+same number as the second: the same intent id, and the same trace id. The reviewer showed it: step 3 rejected twice, then approved
+and charged $12.50, all on one trace. The trace page and the dispute bundle read the first approval row on a trace, so the charge
+was shown with the rejection, and the page said no person approved it when the visitor had. That is a dispute bundle that
+contradicts itself, on a real sandbox charge.
+
+**Was the money safe?** Yes. The idempotency key covers the whole intent, including its `requested_at` time, and only the
+approved attempt charged. What was wrong was the record of it, which is what a dispute relies on.
+
+**The fix (`029485c`).** The session now counts the purchase intents it has made, and each ask takes the next number. Every
+attempt gets its own intent id and its own trace, live or recorded. The readers were left as they are: with one intent per trace,
+the first approval row is the only one.
+
+**Tests.** A new test caps the day at two model calls, asks step 3 three times (live, then recorded twice), rejecting the first two,
+then approves. It checks that the three traces differ, and that the charged trace has one intent and one approval, the approve. It
+failed first (two distinct traces instead of three). 747 in total. None weakened or removed.
