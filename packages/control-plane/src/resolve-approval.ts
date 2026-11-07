@@ -4,6 +4,7 @@ import { evaluate, type PurchaseIntent } from "@praman/policy";
 import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/mandate";
 import { acceptOutcome, idempotencyKey, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
 import { minorFromDb, minorToJSON, type Currency, type DenyCode, type Minor } from "@praman/shared";
+import { orderProgress } from "./order-view.js";
 import { gateOnRail, routeMerchant, type RailGate } from "./route-merchant.js";
 import { MANDATE_LOCK_NS, parseCachedOutcome } from "./run-intent.js";
 
@@ -153,10 +154,25 @@ export async function resolveApproval(
     const prior = await tx.idempotencyRecord.findUnique({ where: { key } });
     if (prior?.status === "succeeded" || prior?.status === "failed") {
       const cached = parseCachedOutcome(prior, key);
+      // As in runIntent: a released checkout is not sent to the buyer again (D-40).
+      // Nothing is recorded, as with the other refusals on this path (D-36).
+      const progress = prior.status === "succeeded" && cached.orderId !== null ? await orderProgress(tx, key, cached.orderId) : null;
+      if (progress === "released") {
+        return {
+          go: false as const,
+          result: { kind: "REFUSED" as const, trace_id: apr.traceId, reason_code: "DUPLICATE_INTENT", detail: "this approval's checkout was released unpaid" },
+        };
+      }
       await tx.approval.update({ where: { approvalId }, data: { status: "approved", resolvedAt: now } });
       return {
         go: false as const,
-        result: { kind: "EXECUTED" as const, trace_id: apr.traceId, order_id: cached.orderId, order_status: cached.status, approve_url: cached.approveUrl },
+        result: {
+          kind: "EXECUTED" as const,
+          trace_id: apr.traceId,
+          order_id: cached.orderId,
+          order_status: progress ?? cached.status,
+          approve_url: progress === "captured" ? null : cached.approveUrl,
+        },
       };
     }
     if (prior?.status === "pending") {

@@ -5,6 +5,7 @@ import { evaluate, redact, type PurchaseIntent, type AgentVisibleDecision } from
 import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/mandate";
 import { acceptOutcome, idempotencyKey, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
 import { canonical, minorFromDb, minorToJSON } from "@praman/shared";
+import { orderProgress } from "./order-view.js";
 import { gateOnRail, routeMerchant } from "./route-merchant.js";
 
 /** Shared with resolve-approval.ts — the same mandate must serialise through the same lock regardless of which path is mutating its state. */
@@ -163,6 +164,36 @@ export async function runIntent(
         throw new TypeError(`idempotency record ${key} is ${prior.status} but has no amount_minor`);
       }
       const cached = parseCachedOutcome(prior, key);
+      // The record says what the create call returned. A checkout order can move on
+      // after that, and only the ledger knows (D-40).
+      const progress = prior.status === "succeeded" && cached.orderId !== null ? await orderProgress(tx, key, cached.orderId) : null;
+      if (progress === "released") {
+        // The order is dead, and the rail would answer this key with the same dead
+        // order. A new attempt is a new intent with a new key (D-30). Recorded like
+        // any DUPLICATE_INTENT, so it counts toward the denial-rate cap.
+        const detail = "This intent's checkout was released unpaid. Propose a new intent.";
+        await append(tx, {
+          traceId: prior.traceId,
+          ts: now,
+          actor: "praman",
+          eventType: "decision",
+          payload: { mandate_id: mandate.mandate_id, kind: "DENY", reason_code: "DUPLICATE_INTENT", detail, idempotency_key: key },
+        });
+        await maybeCheckpoint(tx, now);
+        return {
+          go: false as const,
+          result: {
+            kind: "DECIDED" as const,
+            trace_id: prior.traceId,
+            agent_visible: { kind: "DENY" as const, reason_code: "DUPLICATE_INTENT" as const },
+            internal_reason_code: "DUPLICATE_INTENT",
+            order_id: null,
+            order_status: null,
+            approval_id: null,
+            approve_url: null,
+          },
+        };
+      }
       return {
         go: false as const,
         result: {
@@ -171,9 +202,9 @@ export async function runIntent(
           agent_visible: { kind: "ALLOW" as const, amount_minor: minorFromDb(prior.amountMinor) },
           internal_reason_code: "OK",
           order_id: cached.orderId,
-          order_status: cached.status,
+          order_status: progress ?? cached.status,
           approval_id: null,
-          approve_url: cached.approveUrl,
+          approve_url: progress === "captured" ? null : cached.approveUrl,
         },
       };
     }

@@ -83,3 +83,15 @@ export async function readOrderView(tx: PrismaTx, key: string, orderId: string):
   if (mandateId === null || merchantId === null || recordedAt === null || currency === null) return null;
   return { key, orderId, mandateId, merchantId, recordedAt, heldAmounts: [...held], currency, created, captured, released, mismatch };
 }
+
+/**
+ * What became of an order after the call that created it, which its outbox record
+ * doesn't say. A capture beats a release, as in deriveState (D-30). Null means it is
+ * still what the record says.
+ */
+export async function orderProgress(tx: PrismaTx, key: string, orderId: string): Promise<"captured" | "released" | null> {
+  const view = await readOrderView(tx, key, orderId);
+  if (view === null) return null;
+  if (view.captured !== null) return "captured";
+  return view.released ? "released" : null;
+}
