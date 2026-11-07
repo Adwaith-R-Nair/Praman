@@ -1163,6 +1163,8 @@ They now configure the merchant as USD, and their assertions didn't change.
 
 ### D-36 · What an approval is bound to, and who can change it · Accepted
 
+Status: the public approval endpoint the Limits paragraph asks about is the demo's, and it doesn't take an approval id from a request at all. See D-51.
+
 Found in independent review of Tasks 3 and 5, and each part reproduced with a failing test before fixing. These are
 an implementer's decisions for the builder to check. Four things were wrong with `resolveApproval`:
 
@@ -1897,6 +1899,8 @@ since no rail is called.
 
 ### D-49 · What a live PayPal capture does in the sandbox · Accepted
 
+Status: decision 4 is built. A no-buyer charge now goes through `runIntent` or `resolveApproval` and `acceptOutcome`, and seven ran live on 2026-11-08 through the demo's own code. `captureOrder` after a live approval is still unverified. See D-50.
+
 An implementer's record for the builder to check. It moves D-26, D-37 and D-38 forward with live sandbox runs from 2026-11-08,
 made with throwaway scripts outside the repo and buyer approvals clicked by hand in a browser. Nothing in the repo changed because
 of them: each answer matches what the code already assumed, and the section after the tables says where.
@@ -1974,3 +1978,105 @@ and PayPal may expire. That is the builder's call. `live.test.ts` stays as it is
 
 **Limits.** One app on one sandbox account, on one day, and most rows were run once. Sandbox risk checks and live ones differ, and
 live keys stay out of scope for this repo.
+
+### D-50 · Who decides whether the buyer is at PayPal · Accepted
+
+An implementer's decision for the builder to check, made in plan Tasks 12 and 14 on 2026-11-08. The builder's brief set the
+requirements: the rail stays server config, the choice must not come from the model or a request, the payment token is a secret,
+and a no-buyer charge goes through the outbox like any other.
+
+The demo merchant is on the PayPal rail, and an order on it can be paid two ways. A checkout order waits for the buyer to approve
+it at PayPal, then Praman captures it (D-40). A charge from a saved payment method names the buyer's vault id and PayPal captures
+it as it creates it, with no buyer present (D-49). Something has to pick one for each order.
+
+**Decision: an order below the signed mandate's approval threshold is charged to the session's saved method, if it has one.
+At or above the threshold, or with no saved method, it is a checkout order.** `savedMethodChoice` in the demo decides, from two
+things only: the amount T1 authorised from the catalog, and the threshold in the mandate the server signed. Nothing in the intent
+or the request reaches it. In the story that gives:
+
+| Step | Praman's decision | Amount | Paid by |
+|---|---|---|---|
+| First purchase | `STEP_UP_FIRST_MERCHANT`, then you approve | $12.50 | saved method, no buyer |
+| Second purchase | `ALLOW` | $4.50 | saved method, no buyer |
+| Large purchase | `STEP_UP_THRESHOLD`, then you approve | $32.00 | PayPal checkout, then a re-checked capture |
+
+The reasoning is that the threshold already means "a person should look at this". A purchase that big gets the person twice:
+once in Praman's approval, and once as the buyer at PayPal.
+
+**How it is built.**
+
+- `PayPalExecutor.chargeSavedMethod` sends `payment_source.paypal.vault_id` with intent `CAPTURE`, the derived key as
+  `PayPal-Request-Id`, and the receipt as `invoice_id`, and reads the answer with the same code as every other order.
+- `SavedMethodExecutor` wraps it and is the `paypal` executor for one session. Its `createOrder` asks the choice function, and
+  either charges or makes a checkout order. So the charge is one `createOrder` call inside `runIntent` or `resolveApproval`: T1
+  writes the outbox record and `api_call`, the call runs outside any transaction, and T2 appends one outcome, `captured`. No
+  capture phase, no capture record.
+- The answer goes through `acceptOutcome`. D-49's $9.00 row showed a reused key answered with an old $4.00 charge, and here money
+  has already moved, so a different amount or currency is a `mismatch` that holds the authorised amount (D-33). A test pins it.
+- A lookup with no order id repeats the create as a checkout order, never as a charge. If PayPal has forgotten the key, a
+  repeated charge could take the money twice, while a new checkout order moves nothing until a buyer approves it (D-26).
+- The router is built per request from the visitor's session, so the only saved method an executor can reach is that session's.
+
+**The payment token.** Anyone holding it with this app's credentials can charge the buyer. It lives in `SavedMethods`, a map in
+server memory keyed by session id, apart from the session object so nothing that renders or serialises a session can reach it. It
+is never logged, never on the ledger or the outbox, never in an approval, never sent to the page or the model, and its `toJSON`
+prints a placeholder. When a session ends or expires the token is removed and deleted at PayPal. A test runs the whole story and
+checks every response, ledger row, record and log line for it.
+
+**Rejected: two merchants, one per mode.** It would make the mode server config with no new code, but the story needs one
+merchant: the second purchase is `ALLOW` only because the first one at the same merchant succeeded (step 17 of `evaluate()`).
+
+**Rejected: choosing by reason code.** `STEP_UP_THRESHOLD` against `STEP_UP_FIRST_MERCHANT` would also work, but the executor
+only sees the amount, and passing a decision down into a rail would let a rail depend on policy vocabulary. The amount and the
+signed threshold give the same answer without that.
+
+**Rejected: keeping the token in the database.** It would survive a restart, and it would be a long-lived credential in a table
+with backups. An hour of a visitor's session doesn't need it.
+
+**What this is not.** It isn't a policy rule. `evaluate()` still decides whether money may move, and this only picks how, after an
+`ALLOW` or an approved `STEP_UP`. It can't widen anything, since both ways need Praman's decision first. `packages/policy` is
+unchanged and `pnpm lint:policy-freeze` passes.
+
+**Live.** On 2026-11-08 the demo's own code charged the sandbox through `runIntent` and `resolveApproval` with the payment token
+the builder approved during the D-49 runs: $12.50 after an approval and $4.50 on an `ALLOW`, each one `captured` outcome on the
+ledger with no token in any row. Seven such charges ran across four runs, the last two being the screenshot runs. A $32.00 order became a checkout order with the demo's return pages,
+and a capture before approval got `ORDER_NOT_APPROVED`. The connect flow made a real setup token and approve link. What hasn't run:
+a buyer approving that connect flow in the demo, and `captureOrder` after a buyer approves the demo's checkout. Those need a person
+at PayPal's login.
+
+### D-51 · The demo has no inputs · Accepted
+
+An implementer's decision for the builder to check, made in plan Task 12 on 2026-11-08. The design said there is no public
+intent API and no free-text goal. This record says how the demo's routes make that hold.
+
+**Decision: a visitor is a session cookie, and every route acts on that session's own things and nothing else. No route reads a
+request body. The one query value read is PayPal's `approval_token_id` on the way back from connecting, and it must equal the
+setup token the server stored for that session.**
+
+So a request can't name a price, currency, rail, merchant, goal, approval, trace or token. `POST /demo/approve/first` approves
+the step-up that this session's first step made, found by the approval id kept in server memory. `POST /demo/capture/large`
+captures this session's large purchase. A second visitor posting the same paths with another visitor's ids in the body or the
+query changes nothing, and a test does exactly that.
+
+- **Sessions are in memory,** with a one-hour life. The mandate's validity is the same hour. A restart ends every session, and
+  the ledger keeps everything they did.
+- **Each session gets two mandates,** signed with `DEMO_MANDATE_PRIVATE_KEY`: the story's, and a separate one for the
+  concurrency harness so twenty test intents can't spend the story's budget. The demo refuses to start if that key is the local
+  `MANDATE_PRIVATE_KEY`.
+- **Each step runs once.** A step that already ran is shown again, not run again, and a session runs one step at a time. A double
+  click can't make a second purchase.
+- **Cross-site posts are refused.** The cookie is `SameSite=Lax` and `HttpOnly`, and a POST whose `Origin` isn't the demo's own
+  gets 403.
+- **Model calls are capped per session** at 40. Task 13 adds the daily cap and the recorded fallback.
+- **Errors show a plain page.** The operator log gets the error's name and message; the visitor gets neither.
+
+**The checkout return page knows nothing.** PayPal's sandbox can decline a second checkout in the same browser session (D-49), so
+the page tells visitors to open the checkout link in a new private window. That window has no cookie. So the return page does
+nothing and tells the visitor to go back to their tab and press capture.
+
+**Rejected: an approval link with the approval id in it.** It is what `pnpm approve` takes, and anyone who saw the link could
+approve. D-36 left that open for a public endpoint.
+
+**Rejected: storing sessions in Postgres.** It would survive restarts and needs a migration and a sweep for a demo that lasts an
+hour. Revisit if the host runs more than one instance.
+
