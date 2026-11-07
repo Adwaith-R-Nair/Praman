@@ -1517,6 +1517,9 @@ how long it lasts, is from PayPal's documentation. Webhooks (Task 9) remain the 
 
 ### D-42 · Attempted calls reserve budget · Accepted
 
+Status: D-44 corrects this record. "Never an overspend" didn't hold for Razorpay, whose calls had no timeout, and the "Still open"
+paragraph missed the overspend before a late T2.
+
 An implementer's decision for the builder to check. It follows the approved design's Concurrency section and `ROADMAP_PHASE2.md`
 Phase 13, which set the direction. The details below were settled while building it.
 
@@ -1613,3 +1616,53 @@ tests, and none of them can widen what a signed mandate allows, but "policy unch
 
 **Rejected: widening the freeze to `packages/ledger` and `packages/shared`.** It would have blocked D-33, D-34 and D-42, each of which
 fixed a way to spend past a budget. Freezing the inputs would protect the claim and leave the bugs in.
+
+### D-44 · A sweep must not act while a call can still be running · Accepted
+
+An implementer's decision for the builder to check. It corrects D-42, which a review showed claimed more than the code gave.
+
+**What D-42 got wrong.** It said a reservation "fails closed: the worst case is a refusal, never an overspend", and its window table
+gave a hung call "up to 30 s, `paypal-exec`'s request timeout". That was PayPal's bound only. Razorpay's `LiveExecutor` called
+`fetch` with no signal, so a hung create could run for Node's default of about 300 s, while a sweep may act on a record once it is
+60 s old (`RECONCILE_MIN_AGE_MS`). The reviewer reproduced the result with a held create on a 5,000 INR mandate and 1,000 INR items:
+
+1. Intent A passes T1 and its create hangs.
+2. A sweep runs after 60 s, finds no order for A's receipt, writes `failed`, and frees A's 1,000 INR.
+3. Intents B to F each get `ALLOW` and create orders.
+4. A's create returns. T2 appends `created`, and the order counts again.
+
+`spent_minor` ends at 6,000 INR against 5,000. D-42's "Still open" paragraph called step 4 right, since the order exists, and
+didn't mention step 3. The gap goes back to D-22 residual 1. D-42 didn't create it, but its wording hid it.
+
+**Decision.** Every live rail call gives up well before a sweep may touch its record.
+
+- `LiveExecutor` now aborts any call, body read included, after `RAZORPAY_REQUEST_TIMEOUT_MS`, 30 s (`f532d2e`). A timeout is an
+  unknown outcome, so `runIntent` leaves the record pending, as it does for any throw.
+- `rail-timeouts.test.ts` checks that both rails' timeouts are at most half of `RECONCILE_MIN_AGE_MS` (`0cf49a2`). Half leaves room
+  for T1's commit and for T2 waiting on the mandate lock. A timeout raised on one rail now fails a test.
+
+So by the time a record is old enough to sweep, the call that made it has returned and T2 has run, or the call threw and nothing
+else will answer it. The sweep and a live call don't overlap.
+
+**What still isn't closed, per rail.**
+
+- **Razorpay.** A client that gives up doesn't stop the server. Razorpay can finish a create after the 30 s abort, and its lookup by
+  receipt lagged creation by over 15 s when measured (D-22). A sweep at 60 s can then miss an order that exists, write `failed`,
+  and free its budget, with no T2 left to count the order. That is an overspend of up to one order per such call, until something
+  reads the order back. Nothing does today. Webhooks (Task 9) would. Waiting longer before a sweep makes it rarer and doesn't end it.
+- **PayPal.** The sweep repeats the create with the same `PayPal-Request-Id` (D-26). PayPal either returns the order it already made
+  or makes it now, so the sweep doesn't report "no order" for one that exists. The timeout bound is what this rail needs.
+- **Both.** A T2 delayed past the bound, by a paused process or a long lock wait, can still arrive after a sweep. T2 still doesn't
+  check that its record is pending. When it isn't, its outcome is appended anyway, which counts an order that exists, and is right.
+  The overspend is in what was allowed between the sweep and that T2.
+- The test doubles, `LatchedExecutor` and `SimulatedExecutor`, have no timeout. They aren't live rails, and the reviewer's case
+  with a latch held past 60 s still overspends. The bound belongs to each live executor, not to the `Executor` interface.
+
+**The honest wording.** A pending reservation fails closed while it is pending. A sweep that wrongly writes `failed` releases it,
+and on Razorpay that can still happen for a create the server finished after the client stopped waiting.
+
+**Rejected: a deadline in `runIntent` around the call.** Dropping a late answer doesn't stop the request, so the order can still be
+made, and an answer that arrives would be thrown away instead of counted. Each executor can abort its own request. `runIntent` can't.
+
+**Rejected: raising `RECONCILE_MIN_AGE_MS`.** It holds budget longer on every failed call and doesn't close the Razorpay case,
+which needs a read of the order after the fact, not a longer wait before it.
