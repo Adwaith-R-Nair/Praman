@@ -420,6 +420,8 @@ async function concurrencyHarness(session: DemoSession, deps: DemoDeps): Promise
     attempted: HARNESS_INTENTS,
     created,
     createdMinor: minorToJSON(addMinor(createdMinor, priorMinor)),
+    priorMinor: minorToJSON(priorMinor),
+    atOnceMinor: minorToJSON(createdMinor),
     budgetMinor,
     refusals,
     traces,

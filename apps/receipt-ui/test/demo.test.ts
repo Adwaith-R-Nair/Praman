@@ -439,6 +439,11 @@ describe("the demo story", () => {
     const page = await v.page();
     expect(page).toContain("Test-harness intents, not the agent: no model is called.");
     expect(page).toContain("approved by the test harness, not a person");
+    // The arithmetic, in the order it happened, and the refusals in words with their code.
+    expect(h).toMatchObject({ priorMinor: "500" });
+    expect(page).toContain("$5.00 + $25.00 = $30.00");
+    expect(page).toContain("15 refused: This is over the mandate&#39;s total budget.");
+    expect(page).toContain("MANDATE_BUDGET_EXHAUSTED");
   });
 
   it("the fixture and recording are visibly labelled", async () => {

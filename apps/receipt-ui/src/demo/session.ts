@@ -42,7 +42,12 @@ export interface HarnessSummary {
   readonly priorTraceId: string;
   readonly attempted: number;
   readonly created: number;
+  /** Everything the harness mandate spent: the first purchase plus the ones paid at once. */
   readonly createdMinor: string;
+  /** The first purchase alone, made before the twenty so they aren't all first-merchant step-ups. */
+  readonly priorMinor: string;
+  /** The ones paid out of the twenty sent at once. createdMinor is priorMinor plus this. */
+  readonly atOnceMinor: string;
   readonly budgetMinor: string;
   readonly refusals: Readonly<Record<string, number>>;
   readonly traces: readonly { readonly traceId: string; readonly outcome: string }[];

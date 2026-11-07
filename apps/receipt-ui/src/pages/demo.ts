@@ -229,17 +229,30 @@ export function recordingHtml(rec: Recording): string {
   </figure>`;
 }
 
+/** A refusal in words. IN_FLIGHT is the harness's own word for a call with no answer yet, not a reason code. */
+function refusalPlain(code: string): string {
+  if (code === "IN_FLIGHT") return "The payment call had no answer yet.";
+  return reasonPlain(code) ?? code;
+}
+
 function harnessHtml(record: BeatRecord | undefined): string {
   const h = record?.harness;
   if (record === undefined || h === undefined || h === null) return "";
   const refusals = Object.entries(h.refusals)
-    .map(([code, n]) => `<li><code>${escapeHtml(code)}</code> ${escapeHtml(n.toString())}</li>`)
+    .map(([code, n]) => `<li>${escapeHtml(`${n.toString()} refused: ${refusalPlain(code)}`)} <code>${escapeHtml(code)}</code></li>`)
     .join("");
   const traces = h.traces
-    .map((t) => `<li><a href="/r/${encodeURIComponent(t.traceId)}">${escapeHtml(t.outcome)}</a></li>`)
+    .map((t) => `<li><a href="/r/${encodeURIComponent(t.traceId)}">${escapeHtml(t.outcome === "paid" ? "paid" : `refused, ${refusalPlain(t.outcome)}`)}</a></li>`)
     .join("");
+  const sum = `${usd(h.priorMinor)} + ${usd(h.atOnceMinor)} = ${usd(h.createdMinor)}`;
   return `<div class="result harness">
-    <p class="harness-line"><span class="big">${escapeHtml(h.created.toString())}</span> of ${escapeHtml(h.attempted.toString())} paid. Spent ${escapeHtml(usd(h.createdMinor))} of a ${escapeHtml(usd(h.budgetMinor))} budget, counting the first purchase.</p>
+    <p class="harness-line"><span class="big">${escapeHtml(h.created.toString())}</span> of ${escapeHtml(h.attempted.toString())} paid.</p>
+    <ol class="sums">
+      <li>The budget is ${escapeHtml(usd(h.budgetMinor))}.</li>
+      <li>The first purchase, approved by the test harness, spent ${escapeHtml(usd(h.priorMinor))}.</li>
+      <li>Then ${escapeHtml(h.attempted.toString())} at once: ${escapeHtml(h.created.toString())} paid, ${escapeHtml(usd(h.atOnceMinor))} in all.</li>
+      <li>Spent: ${escapeHtml(sum)}, of the ${escapeHtml(usd(h.budgetMinor))} budget.</li>
+    </ol>
     <ul class="refusals">${refusals}</ul>
     <p class="message">${escapeHtml(record.message)} Model calls: ${escapeHtml(h.modelCalls.toString())}.</p>
     <details><summary>All ${escapeHtml(h.attempted.toString())} traces</summary><ol class="harness-traces">${traces}</ol></details>
