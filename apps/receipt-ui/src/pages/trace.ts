@@ -50,12 +50,14 @@ function settlementHtml(settlement: SettlementLine | null): string {
  * How the money moved, in words, when the ledger shows it. A charge to a saved PayPal
  * account had nobody at PayPal, so the page says plainly whether anyone approved it.
  */
-function paymentHtml(trace: { readonly payment: "saved_method" | "checkout" | null; readonly approvalVerdict: string | null; readonly orderStatus: string | null }): string {
+function paymentHtml(trace: { readonly payment: "saved_method" | "checkout" | null; readonly approvalVerdict: string | null; readonly approvedBy: "person" | "test_harness" | null; readonly orderStatus: string | null }): string {
   if (trace.payment === "saved_method") {
     const approval =
-      trace.approvalVerdict === "approve"
-        ? "A person approved it in Praman before the charge."
-        : "No person approved it. Praman's decision was the only check before the money moved.";
+      trace.approvalVerdict !== "approve"
+        ? "No person approved it. Praman's decision was the only check before the money moved."
+        : trace.approvedBy === "test_harness"
+          ? "The test harness approved it in Praman before the charge, not a person."
+          : "A person approved it in Praman before the charge.";
     return `<section class="payment">
     <h2>How it was paid</h2>
     <p>Paid from the saved PayPal account, with no buyer present. PayPal took the money as it created the order, so there was no checkout page and no separate capture.</p>
@@ -69,6 +71,12 @@ function paymentHtml(trace: { readonly payment: "saved_method" | "checkout" | nu
   </section>`;
   }
   return "";
+}
+
+/** An entry's plain name. A step-up the test harness resolved is never called a human review. */
+function entryLabel(eventType: string, approvedBy: "person" | "test_harness" | null): string {
+  if (eventType === "step_up_resolved" && approvedBy === "test_harness") return "Test harness approved the step-up. No person reviewed it";
+  return EVENT_TYPE_PLAIN[eventType as EventType] ?? eventType;
 }
 
 export async function renderTracePage(traceId: string): Promise<{ status: number; html: string }> {
@@ -126,7 +134,7 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
       (e, i) => `<li class="entry" data-seq="${e.seq.toString()}">
         ${i > 0 ? hashRow("prev_hash", e.prevHash) : ""}
         <div class="entry-header">
-          <span class="entry-type">${escapeHtml(EVENT_TYPE_PLAIN[e.eventType as EventType] ?? e.eventType)}</span>
+          <span class="entry-type">${escapeHtml(entryLabel(e.eventType, trace.approvedBy))}</span>
           <span class="entry-seq">seq ${e.seq.toString()}</span>
         </div>
         ${hashRow("entry_hash", e.entryHash)}

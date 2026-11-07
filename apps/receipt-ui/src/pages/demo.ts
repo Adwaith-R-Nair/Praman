@@ -340,7 +340,7 @@ ${step(
   7,
   "concurrency",
   "Twenty purchases at once",
-  p("Test-harness intents, not the agent: no model is called. One earlier purchase, then twenty purchases sent at the same instant against a separate $30 mandate on the simulated rail. Praman reserves each attempt as it decides, so they can't all slip past the budget together."),
+  p("Test-harness intents, not the agent: no model is called. One earlier purchase, approved by the test harness, not a person, then twenty purchases sent at the same instant against a separate $30 mandate on the simulated rail. Praman reserves each attempt as it decides, so they can't all slip past the budget together."),
   `${b("concurrency") === undefined ? action("/demo/step/concurrency", "Send twenty at once", "quiet") : ""}${harnessHtml(b("concurrency"))}`,
   b("concurrency") !== undefined,
 )}

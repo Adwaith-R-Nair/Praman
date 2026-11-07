@@ -275,7 +275,18 @@ describe("buildBundle says what the trace page says", () => {
     ]);
     const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_nobuyer_ok"));
     expect(bundle?.execution).toMatchObject({ paid_by: "saved_method_no_buyer" });
-    expect(bundle?.approval).toMatchObject({ verdict: "approve" });
+    expect(bundle?.approval).toEqual({ verdict: "approve", by: "person" });
+  });
+
+  it("names an approval the test harness made as the harness's", async () => {
+    await writeRows("trc_bundle_harness", [
+      ["intent", { mandate_id: "mnd_h", merchant_id: "DEMO_HARNESS", model_id: "harness/no-model" }],
+      ["decision", { mandate_id: "mnd_h", kind: "STEP_UP", reason_code: "STEP_UP_FIRST_MERCHANT", amount_minor: "500", currency: "USD" }],
+      ["step_up_resolved", { mandate_id: "mnd_h", approval_id: "apr_h", verdict: "approve", revalidated_kind: "ALLOW", revalidated_reason: "OK" }],
+      ["outcome", { mandate_id: "mnd_h", idempotency_key: "k_h", order_id: "sim_1", rail: "simulated", status: "captured", amount_minor: "500", currency: "USD" }],
+    ]);
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_harness"));
+    expect(bundle?.approval).toEqual({ verdict: "approve", by: "test_harness" });
   });
 
   it("marks a checkout the buyer paid as a buyer checkout", async () => {

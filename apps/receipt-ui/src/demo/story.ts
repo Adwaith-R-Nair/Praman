@@ -9,6 +9,7 @@ import { routeFor, type DemoDeps } from "./connect.js";
 import type { BeatRecord, DemoSession, HarnessSummary } from "./session.js";
 
 const MODEL_ID_FIXTURE = "fixture/simulated-fooled-model";
+/** The "harness/" prefix is how the trace page and dispute bundle tell a harness approval from a person's. */
 const MODEL_ID_HARNESS = "harness/no-model";
 
 class ModelCapReached extends Error {

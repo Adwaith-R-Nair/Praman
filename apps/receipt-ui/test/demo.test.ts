@@ -438,6 +438,7 @@ describe("the demo story", () => {
     expect(paypal.charges).toHaveLength(0);
     const page = await v.page();
     expect(page).toContain("Test-harness intents, not the agent: no model is called.");
+    expect(page).toContain("approved by the test harness, not a person");
   });
 
   it("the fixture and recording are visibly labelled", async () => {

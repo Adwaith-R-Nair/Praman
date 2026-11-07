@@ -42,6 +42,13 @@ export interface TraceView {
   readonly railFailureCode: string | null;
   readonly approvalVerdict: string | null;
   /**
+   * Who resolved the step-up. "test_harness" when the intent came from the demo's
+   * concurrency harness (model id "harness/..."), which approves its own first
+   * purchase in code (apps/receipt-ui/src/demo/story.ts). Anything else is a person,
+   * through the demo page or `pnpm approve`.
+   */
+  readonly approvedBy: "person" | "test_harness" | null;
+  /**
    * How the money moved, when the ledger shows it. "saved_method": the order's first
    * outcome is a PayPal capture, which only a charge to a saved payment method gives,
    * since a checkout order is created first and captured later (D-49, D-50). There was
@@ -132,6 +139,9 @@ function standingCaptureRefusal(entries: readonly LedgerEntryRecord[], lastOutco
   return payload["kind"] === "DENY" ? payload : null;
 }
 
+/** Intents the test harness made, with no model, carry a model id with this prefix. */
+export const HARNESS_MODEL_PREFIX = "harness/";
+
 /** What a rail said in a mismatch, in words: its amount and status, when they are on the row. */
 function railReported(outcome: Record<string, unknown>): string {
   const status = asString(outcome["rail_status"]);
@@ -162,6 +172,8 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
   const transcriptPayload = firstPayload(entries, "agent_transcript");
   const settlementRow = entries.filter((e) => e.eventType === "settlement").at(-1);
   const settlementPayload = settlementRow ? (settlementRow.payload as Record<string, unknown>) : null;
+
+  const byHarness = (asString(intent?.["model_id"]) ?? "").startsWith(HARNESS_MODEL_PREFIX);
 
   let goal: string | null = null;
   const merchantReads: string[] = [];
@@ -221,7 +233,9 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
       refusalReason =
         asString(stepUpResolved["reason"]) === "expired"
           ? "The approval window closed (15 minutes) before anyone acted on it."
-          : "The human reviewer rejected this purchase.";
+          : byHarness
+            ? "The test harness rejected this purchase."
+            : "The human reviewer rejected this purchase.";
     } else if (verdict === "approve" && asString(stepUpResolved["revalidated_kind"]) === "DENY") {
       // Approved, but re-evaluation at resolution time refused it anyway
       // (expired/revoked/repriced since the step-up — D-24).
@@ -247,6 +261,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     railFailureCode: railFailed ? asString(latestOutcome["failure_code"]) : null,
     approvalVerdict: asString(stepUpResolved?.["verdict"]),
     payment: paymentOf(outcome, latestOutcome),
+    approvedBy: stepUpResolved === null ? null : byHarness ? "test_harness" : "person",
     settlement:
       settlementRow && settlementPayload
         ? {

@@ -324,3 +324,36 @@ describe("loadTrace on an answer about different money", () => {
     expect(html).not.toContain("Allowed (mismatch)");
   });
 });
+
+describe("loadTrace on an approval the test harness made", () => {
+  const rows = (verdict: string): [EventType, Record<string, unknown>][] => [
+    ["intent", { mandate_id: "mnd_h", merchant_id: "DEMO_HARNESS", model_id: "harness/no-model", agent_rationale: "Test-harness intent. No model proposed this." }],
+    ["decision", { mandate_id: "mnd_h", kind: "STEP_UP", reason_code: "STEP_UP_FIRST_MERCHANT", amount_minor: "500", currency: "USD" }],
+    ["step_up_resolved", { mandate_id: "mnd_h", approval_id: "apr_h", verdict, revalidated_kind: "ALLOW", revalidated_reason: "OK" }],
+  ];
+
+  it("labels it as the harness's, never as a human review", async () => {
+    await writeRows("trace_harness", [...rows("approve"), ["outcome", { mandate_id: "mnd_h", idempotency_key: "k_h", order_id: "sim_1", rail: "simulated", status: "captured", amount_minor: "500", currency: "USD" }]]);
+    expect(await loadTrace("trace_harness")).toMatchObject({ approvedBy: "test_harness" });
+    const { html } = await renderTracePage("trace_harness");
+    expect(html).toContain("Test harness approved the step-up");
+    expect(html).not.toContain("Human reviewed");
+  });
+
+  it("says a rejection by the harness was the harness's", async () => {
+    await writeRows("trace_harness_rejected", rows("reject"));
+    const { html } = await renderTracePage("trace_harness_rejected");
+    expect(html).toContain("The test harness rejected this purchase.");
+    expect(html).not.toContain("human reviewer");
+  });
+
+  it("still says a person reviewed an approval on an agent's purchase", async () => {
+    await writeRows("trace_person", [
+      ["intent", { mandate_id: "mnd_test", merchant_id: "DEMO_CAFE", model_id: "gemini-3.1-flash-lite" }],
+      ["decision", { mandate_id: "mnd_test", kind: "STEP_UP", reason_code: "STEP_UP_FIRST_MERCHANT", amount_minor: "1250", currency: "USD" }],
+      ["step_up_resolved", { mandate_id: "mnd_test", approval_id: "apr_p", verdict: "approve", revalidated_kind: "ALLOW", revalidated_reason: "OK" }],
+    ]);
+    expect(await loadTrace("trace_person")).toMatchObject({ approvedBy: "person" });
+    expect((await renderTracePage("trace_person")).html).toContain("Human reviewed the step-up");
+  });
+});

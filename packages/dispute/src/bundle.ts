@@ -62,7 +62,15 @@ export interface DisputeBundle {
     readonly paid_by: "saved_method_no_buyer" | "buyer_checkout" | null;
   } | null;
   /** The approval, when the decision was a step-up someone resolved. Null means nobody approved or rejected anything. */
-  readonly approval: { readonly verdict: string | null } | null;
+  readonly approval: {
+    readonly verdict: string | null;
+    /**
+     * "test_harness" when the intent came from the demo's concurrency harness (model id
+     * "harness/..."), which approves its own first purchase in code. Otherwise a person.
+     * Same reading as apps/receipt-ui/src/data.ts.
+     */
+    readonly by: "person" | "test_harness";
+  } | null;
   readonly chain: {
     readonly entries: readonly {
       readonly seq: string;
@@ -276,7 +284,9 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
           paid_by: paidBy(outcome, latestOutcome),
         }
       : null,
-    approval: stepUpResolved ? { verdict: asString(stepUpResolved["verdict"]) } : null,
+    approval: stepUpResolved
+      ? { verdict: asString(stepUpResolved["verdict"]), by: (asString(intent?.["model_id"]) ?? "").startsWith("harness/") ? "test_harness" : "person" }
+      : null,
     chain: {
       entries: entries.map((e) => ({
         seq: e.seq.toString(),
