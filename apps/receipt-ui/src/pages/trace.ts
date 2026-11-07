@@ -134,6 +134,7 @@ ${
     ? `<section class="reason">
          <p class="reason-plain">${escapeHtml(reasonPlain)}</p>
          ${trace.reasonCode ? `<span class="reason-code data">${escapeHtml(trace.reasonCode)}</span>` : ""}
+         ${trace.railFailureCode ? `<span class="reason-code data">${escapeHtml(trace.railFailureCode)}</span>` : ""}
        </section>`
     : ""
 }

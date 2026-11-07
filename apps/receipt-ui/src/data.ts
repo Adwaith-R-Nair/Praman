@@ -37,6 +37,8 @@ export interface TraceView {
   readonly merchantReads: readonly MerchantItemRead[];
   readonly orderId: string | null;
   readonly orderStatus: string | null;
+  /** The rail's own code when the latest outcome is a failure. Executor vocabulary, not a reason code (D-32). */
+  readonly railFailureCode: string | null;
   readonly approvalVerdict: string | null;
   readonly settlement: SettlementLine | null;
   /** Non-evidentiary pointer to this run's Langfuse trace, if tracing was configured when it ran. See D-47. */
@@ -160,11 +162,25 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
   let reasonCode = asString(decision?.["reason_code"]);
   let refusalReason: string | null = null;
 
-  if (outcome) {
-    // Money was actually attempted — this supersedes any earlier STEP_UP. A capture
-    // refused later supersedes that in turn, with its own reason (D-31).
-    decisionKind = captureRefusal ? "DENY" : "ALLOW";
-    reasonCode = captureRefusal ? asString(captureRefusal["reason_code"]) : "OK";
+  const railFailed = latestOutcome !== null && asString(latestOutcome["status"]) === "failed";
+  if (outcome && captureRefusal) {
+    // A capture Praman refused after the order existed: its own reason stands (D-31).
+    decisionKind = "DENY";
+    reasonCode = asString(captureRefusal["reason_code"]);
+  } else if (outcome && railFailed) {
+    // Praman allowed it and the rail said no. That is not "Allowed" and not OK: no money
+    // moved. A failed capture leaves the order and its hold in place (D-40); a failed
+    // create means no order exists. The rail's code is shown, not turned into a reason code.
+    const atCapture = outcome !== latestOutcome || "capture_key" in latestOutcome;
+    decisionKind = atCapture ? "CAPTURE_FAILED" : "ORDER_FAILED";
+    reasonCode = null;
+    refusalReason = atCapture
+      ? "Praman allowed the capture, and the payment provider refused it. No money moved. The order still holds its budget, and it can be captured again until it is released."
+      : "Praman allowed this purchase, and the payment provider refused to create the order. No money moved, and nothing is held.";
+  } else if (outcome) {
+    // Money was actually attempted — this supersedes any earlier STEP_UP.
+    decisionKind = "ALLOW";
+    reasonCode = "OK";
   } else if (stepUpResolved) {
     const verdict = asString(stepUpResolved["verdict"]);
     if (verdict === "reject") {
@@ -195,6 +211,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     merchantReads: parseMerchantReads(merchantReads),
     orderId: asString(latestOutcome?.["order_id"]) ?? asString(outcome?.["order_id"]),
     orderStatus: asString(latestOutcome?.["status"]),
+    railFailureCode: railFailed ? asString(latestOutcome["failure_code"]) : null,
     approvalVerdict: asString(stepUpResolved?.["verdict"]),
     settlement:
       settlementRow && settlementPayload

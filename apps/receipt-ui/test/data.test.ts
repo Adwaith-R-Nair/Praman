@@ -177,6 +177,45 @@ describe("loadTrace on a checkout that went on to capture", () => {
     expect(await loadTrace("trace_released")).toMatchObject({ decisionKind: "ALLOW", orderStatus: "released", amountMinor: "1250", currency: "USD" });
   });
 
+  it("shows a capture the rail refused as a failed capture, not ALLOW and OK", async () => {
+    await writeCheckoutTrace("trace_cap_rail_refused", [
+      ["capture_decision", { ...base, kind: "ALLOW_CAPTURE", reason_code: "OK", amount_minor: "1250", currency: "USD" }],
+      ["outcome", { ...base, rail: "paypal", status: "failed", failure_code: "ORDER_NOT_APPROVED", amount_minor: "1250", currency: "USD", capture_key: "k_cap" }],
+    ]);
+    const view = await loadTrace("trace_cap_rail_refused");
+    expect(view).toMatchObject({ decisionKind: "CAPTURE_FAILED", orderStatus: "failed", railFailureCode: "ORDER_NOT_APPROVED", amountMinor: "1250" });
+    expect(view?.reasonCode).not.toBe("OK");
+
+    const { html } = await renderTracePage("trace_cap_rail_refused");
+    expect(html).toContain("Capture failed");
+    expect(html).toContain("ORDER_NOT_APPROVED");
+    expect(html).toContain("No money moved");
+    expect(html).not.toContain("Allowed (failed)");
+  });
+
+  it("shows an order the rail refused to create as failed, with the rail's code", async () => {
+    const traceId = "trace_create_failed";
+    for (const [eventType, payload] of [
+      ["decision", { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "1250", currency: "USD" }],
+      ["outcome", { mandate_id: "mnd_test", idempotency_key: "k_order", order_id: "", rail: "paypal", status: "failed", failure_code: "PAYEE_ACCOUNT_RESTRICTED", amount_minor: "1250", currency: "USD" }],
+    ] as const) {
+      await prisma.$transaction((tx) => append(tx, { traceId, ts: new Date("2026-11-08T10:00:00.000Z"), actor: "praman", eventType, payload }));
+    }
+    expect(await loadTrace(traceId)).toMatchObject({ decisionKind: "ORDER_FAILED", railFailureCode: "PAYEE_ACCOUNT_RESTRICTED" });
+    const { html } = await renderTracePage(traceId);
+    expect(html).toContain("Payment failed");
+    expect(html).toContain("PAYEE_ACCOUNT_RESTRICTED");
+  });
+
+  it("escapes a rail's failure code on the page", async () => {
+    await writeCheckoutTrace("trace_cap_code_html", [
+      ["outcome", { ...base, rail: "paypal", status: "failed", failure_code: "<b>X</b>", amount_minor: "1250", currency: "USD", capture_key: "k_cap" }],
+    ]);
+    const { html } = await renderTracePage("trace_cap_code_html");
+    expect(html).not.toContain("<b>X</b>");
+    expect(html).toContain("&lt;b&gt;X&lt;/b&gt;");
+  });
+
   it("does not let a capture attempt by an unproven caller change what the trace shows", async () => {
     await writeCheckoutTrace("trace_cap_claim", [
       ["capture_decision", { claimed_mandate_id: "mnd_test", kind: "DENY", reason_code: "MANDATE_SIGNATURE_INVALID", detail: "bad sig" }],
