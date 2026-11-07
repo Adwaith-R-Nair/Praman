@@ -13,6 +13,7 @@
     "keygen": "tsx scripts/keygen.ts",
     "issue-mandate": "tsx scripts/issue-mandate.ts",
     "seed-catalog": "tsx scripts/seed-catalog.ts",
+    "catalog:channel3": "tsx scripts/catalog-channel3.ts",
     "demo": "tsx apps/buyer-agent/src/demo.ts",
     "eval": "tsx apps/eval/src/cli.ts",
     "approve": "tsx scripts/approve.ts",
@@ -44,6 +45,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "@praman/channel3": "workspace:*",
     "@praman/control-plane": "workspace:*",
     "@praman/db": "workspace:*",
     "@praman/dispute": "workspace:*",

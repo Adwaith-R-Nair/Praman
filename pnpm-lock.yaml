@@ -207,6 +207,9 @@ importers:
 
   .:
     dependencies:
+      '@praman/channel3':
+        specifier: workspace:*
+        version: link:packages/channel3
       '@praman/control-plane':
         specifier: workspace:*
         version: link:packages/control-plane
