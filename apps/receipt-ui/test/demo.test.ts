@@ -292,13 +292,18 @@ describe("the demo story", () => {
     expect(paypal.checkouts).toHaveLength(1);
     let page = await v.page();
     expect(page).toContain("https://www.sandbox.paypal.com/checkoutnow?token=");
-    expect(page).toContain("new private window");
+    // Private windows of one browser share one PayPal session, the one that connected
+    // PayPal in step 2, so the page sends the buyer to a different browser instead.
+    expect(page).toContain("different browser");
+    expect(page).not.toContain("new private window");
+    expect(page).not.toContain("Open here");
 
     // Capture before the buyer approves: PayPal says not approved, and the page says what to do.
     await v.post("/demo/capture/large");
     page = await v.page();
     expect(page).toContain("hasn&#39;t approved this payment yet");
     expect(page).toContain("declined");
+    expect(page).not.toContain("new private window");
 
     paypal.approveAll();
     await v.post("/demo/capture/large");
@@ -491,6 +496,12 @@ describe("the demo's boundaries", () => {
       expect(r).not.toContain("secretFunction");
       expect(r).not.toContain("model exploded");
     }
+  });
+
+  it("the start page sends the checkout to a different browser, not a new private window", async () => {
+    const page = await visitor().page();
+    expect(page).toContain("different browser");
+    expect(page).not.toContain("new private window");
   });
 
   it("shows a plain page, with no session, when PayPal sends a buyer back to another window", async () => {

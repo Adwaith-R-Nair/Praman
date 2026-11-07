@@ -231,8 +231,8 @@ function harnessHtml(record: BeatRecord | undefined): string {
 function checkoutHtml(record: BeatRecord | undefined): string {
   if (record?.state !== "awaiting_checkout" || record.approveUrl === null) return "";
   return `<div class="checkout">
-    <p><strong>Pay at PayPal.</strong> Copy this link into a <strong>new private window</strong>, log in with the sandbox buyer account, and approve. PayPal's sandbox declines a second checkout in the same browser session, so a fresh window matters.</p>
-    <p class="link-row"><input class="link" type="text" readonly value="${escapeHtml(record.approveUrl)}" aria-label="PayPal checkout link"><a class="btn btn-quiet" href="${escapeHtml(record.approveUrl)}" target="_blank" rel="noopener noreferrer">Open here</a></p>
+    <p><strong>Pay at PayPal.</strong> Copy this link into a <strong>different browser</strong> from this one, log in with the sandbox buyer account, and approve. If this is Chrome, use Firefox, Safari or Edge, or your phone. PayPal's sandbox declines a second checkout in the browser session that connected PayPal in step 2, and every private window of one browser shares that session.</p>
+    <p class="link-row"><input class="link" type="text" readonly value="${escapeHtml(record.approveUrl)}" aria-label="PayPal checkout link"></p>
     <p>When PayPal says you're done, come back to this tab and capture.</p>
     <div class="actions">${action("/demo/capture/large", "Capture the payment")}</div>
   </div>`;
@@ -249,7 +249,7 @@ export function renderStartPage(notice: string | null, configured: { readonly pa
     ${notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}</p>`}
     <section class="start">
       <p>You'll need the PayPal sandbox buyer login from the project's testing instructions. It's a US sandbox account with play money.</p>
-      <p>Use a private browser window for this demo. PayPal's sandbox can refuse a second checkout in the same browser session.</p>
+      <p>Step 5 needs a different browser from this one, such as Firefox if you are in Chrome, or your phone. PayPal's sandbox can refuse a checkout in the same browser session that connected PayPal, and private windows of one browser share that session.</p>
       ${missing.length > 0 ? `<p class="note">This server is missing ${escapeHtml(missing.join(" and "))}, so some steps won't run.</p>` : ""}
       ${action("/demo/start", "Start a session")}
       <p class="small">A session lasts an hour. Sandbox only. No real money moves.</p>
@@ -349,7 +349,7 @@ export function renderCheckoutReturnPage(cancelled: boolean): string {
     `<header class="masthead"><h1>${cancelled ? "Checkout cancelled" : "Approved at PayPal"}</h1></header>
      <section class="start">
        ${cancelled ? p("You cancelled at PayPal. Nothing was charged.") : p("PayPal has your approval. Nothing is charged yet.")}
-       ${p("Go back to the tab where your demo session is open and press Capture the payment. This window can be closed.")}
+       ${p("Go back to the browser where your demo session is open and press Capture the payment. This window can be closed.")}
      </section>`,
   );
 }

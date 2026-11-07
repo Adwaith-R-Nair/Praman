@@ -270,7 +270,7 @@ function fromCapture(record: BeatRecord, result: CaptureResult): BeatRecord {
           ...record,
           failureCode: result.failure_code,
           message:
-            "PayPal hasn't approved this payment yet, so nothing was charged. Open the PayPal link, log in as the sandbox buyer and approve, then capture again. If PayPal said the transaction was declined, open the link in a new private window and try again.",
+            "PayPal hasn't approved this payment yet, so nothing was charged. Open the PayPal link, log in as the sandbox buyer and approve, then capture again. If PayPal said the transaction was declined, open the link in a different browser from this one, not another private window, and try again.",
         };
       }
       return { ...record, failureCode: result.failure_code, message: "PayPal refused the capture. No money moved. The order still holds its budget, and you can try the capture again." };
