@@ -711,3 +711,22 @@ describe("the demo's boundaries", () => {
     expect(await v.page()).toContain("Start a session");
   });
 });
+
+describe("the demo under a content security policy", () => {
+  it("the start page, the story page and the error pages carry no inline script or style", async () => {
+    const inline = (html: string) => [
+      ...[...html.matchAll(/<script\b([^>]*)>/gi)].filter((m) => !/\bsrc=/.test(m[1] ?? "")).map((m) => m[0]),
+      ...[...html.matchAll(/<style\b[^>]*>|<[^>]+\s(?:style|on[a-z]+)\s*=/gi)].map((m) => m[0]),
+    ];
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    const pages = [await v.page(), (await visitor().get("/demo")).text, (await visitor().get("/demo/checkout/return")).text];
+    for (const html of pages) {
+      expect(inline(html)).toEqual([]);
+      expect(html).toContain('<link rel="stylesheet" href="/demo/demo.css">');
+    }
+    const css = await visitor().get("/demo/demo.css");
+    expect(css.status).toBe(200);
+    expect(css.text).toContain(".demo");
+  });
+});

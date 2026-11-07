@@ -64,3 +64,29 @@ describe("the index of recent traces", () => {
     expect(await renderIndexPage()).toContain('href="/demo"');
   });
 });
+
+describe("pages work under a content security policy with no inline code", () => {
+  /** Anything a CSP without 'unsafe-inline' would block: inline script, style blocks, style or event attributes. */
+  function inlineCode(html: string): string[] {
+    const found: string[] = [];
+    for (const m of html.matchAll(/<script\b([^>]*)>/gi)) if (!/\bsrc=/.test(m[1] ?? "")) found.push(m[0]);
+    for (const m of html.matchAll(/<style\b[^>]*>/gi)) found.push(m[0]);
+    for (const m of html.matchAll(/<[^>]+\s(style|on[a-z]+)\s*=/gi)) found.push(m[0]);
+    return found;
+  }
+
+  it("the index and a trace page load script and style only from files", async () => {
+    await writeTrace("trc_csp", "MERCHANT_FOOD_01");
+    const trace = await renderTracePage("trc_csp");
+    expect(inlineCode(trace.html)).toEqual([]);
+    expect(trace.html).toContain('<script src="/assets/trace.js" defer></script>');
+    expect(trace.html).toContain('data-trace-id="trc_csp"');
+    expect(inlineCode(await renderIndexPage())).toEqual([]);
+    expect(inlineCode((await renderTracePage("trc_missing")).html)).toEqual([]);
+  });
+
+  it("escapes the page title", async () => {
+    const { html } = await renderTracePage("<b>x</b>");
+    expect(html).not.toContain("<b>x</b>");
+  });
+});
