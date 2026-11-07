@@ -12,9 +12,27 @@ const { verifyTrace } = await import("./verify.js");
 const { buildBundleStandalone } = await import("@praman/dispute");
 const { handlePayPalWebhook, payPalWebhookDepsFromEnv, readRawBody } = await import("./webhooks.js");
 
+const { createDemoHandler, sweepExpiredSessions } = await import("./demo/routes.js");
+const { demoDepsFromEnv } = await import("./demo/wiring.js");
+const { seedDemoCatalog } = await import("./demo/seed.js");
+
 const payPalWebhooks = payPalWebhookDepsFromEnv(process.env);
 
 const PORT = Number(process.env["RECEIPT_UI_PORT"] ?? 4100);
+
+// The demo story under /demo. Off, with a plain page saying why, unless its own key is set.
+const demoWiring = demoDepsFromEnv(process.env, PORT);
+const demo = demoWiring.ok ? createDemoHandler(demoWiring.deps) : null;
+if (demoWiring.ok) {
+  await seedDemoCatalog();
+  const deps = demoWiring.deps;
+  // Ends expired sessions and gives up their saved PayPal methods. One failure doesn't stop the next run.
+  setInterval(() => {
+    sweepExpiredSessions(deps).catch((err: unknown) => console.error(`demo: session sweep failed: ${err instanceof Error ? err.name : "unknown error"}`));
+  }, 60_000).unref();
+} else {
+  console.log(`receipt-ui: demo off: ${demoWiring.reason}`);
+}
 
 const server = createServer((req, res) => {
   void (async () => {
@@ -24,6 +42,16 @@ const server = createServer((req, res) => {
     const disputeMatch = /^\/dispute\/([^/]+)\/?$/.exec(url.pathname);
 
     try {
+      if (url.pathname === "/demo" || url.pathname.startsWith("/demo/")) {
+        if (demo === null) {
+          res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end("The demo isn't configured on this server.");
+          return;
+        }
+        await demo(req, res);
+        return;
+      }
+
       if (url.pathname === "/webhooks/paypal") {
         if (req.method !== "POST") {
           res.writeHead(405, { Allow: "POST", "Content-Type": "text/plain; charset=utf-8" });
@@ -77,8 +105,9 @@ const server = createServer((req, res) => {
       res.end("Not found");
     } catch (err) {
       console.error(err);
+      // The error is in the server log. A visitor gets no stack trace or message.
       res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end(`Internal error: ${String(err)}`);
+      res.end("Internal error");
     }
   })();
 });
