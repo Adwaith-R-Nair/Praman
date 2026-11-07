@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { minor, type Currency, type Minor } from "@praman/shared";
-import { LiveExecutor } from "../src/executor.js";
+import { LiveExecutor, RAZORPAY_REQUEST_TIMEOUT_MS } from "../src/executor.js";
 
 const create = (amount: Minor, receipt: string, currency: Currency) => ({ amount_minor: amount, currency, idempotency_key: "key_1", receipt });
 
@@ -79,5 +79,42 @@ describe("LiveExecutor.capture", () => {
 
     expect(outcome).toMatchObject({ rail: "razorpay", order_id: "order_1", status: "failed", failure_code: "CAPTURE_NOT_SUPPORTED" });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("LiveExecutor request timeout", () => {
+  /** A fetch that never answers, like a hung connection, and gives up only when its signal aborts. */
+  const hangingFetch = () =>
+    vi.fn<typeof fetch>(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        }),
+    );
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("gives up on a hung create after RAZORPAY_REQUEST_TIMEOUT_MS, so the record is left pending well before a sweep may touch it", async () => {
+    // Without a bound, Node's default of about 300 s applies, and a sweep 60 s in
+    // can write `failed` for an order still being created, freeing its budget (D-44).
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", hangingFetch());
+
+    const call = new LiveExecutor("k", "s").createOrder(create(minor(50000n), "rcpt_inr", "INR"));
+    const settled = expect(call).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(RAZORPAY_REQUEST_TIMEOUT_MS);
+    await settled;
+  });
+
+  it("gives up on a hung lookup too", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", hangingFetch());
+
+    const call = new LiveExecutor("k", "s").findOrder({ receipt: "rcpt_inr", idempotency_key: "key_1", order_id: null, amount_minor: minor(50000n), currency: "INR" });
+    const settled = expect(call).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(RAZORPAY_REQUEST_TIMEOUT_MS);
+    await settled;
   });
 });

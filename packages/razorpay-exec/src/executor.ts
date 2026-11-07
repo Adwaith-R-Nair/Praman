@@ -4,6 +4,16 @@ import { isCurrency, minorFromRazorpay, type Currency, type Minor } from "@prama
 const BASE = "https://api.razorpay.com/v1";
 
 /**
+ * Every call gives up after this, reading the body included. Without it Node's
+ * default of about 300 s applies, and a reconcile sweep, which may act on a
+ * record 60 s old (RECONCILE_MIN_AGE_MS), could find no order yet, write
+ * `failed`, and free the budget of an order still being created (D-44). Half
+ * the sweep's minimum age leaves room for T1's commit and T2's lock. A timeout
+ * rejects, which is an unknown outcome: the record stays pending.
+ */
+export const RAZORPAY_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
  * bigint → Number for the outbound Razorpay call. minorFromRazorpay (the
  * inbound boundary) checks Number.isSafeInteger for exactly this reason —
  * this is the same check in the outbound direction. Currently unreachable at
@@ -33,13 +43,20 @@ export class LiveExecutor implements Executor {
   }
 
   async #call(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
-    const res = await fetch(`${BASE}${path}`, {
-      ...init,
-      headers: { "Content-Type": "application/json", Authorization: this.#auth, ...init?.headers },
-    });
-    const body = (await res.json()) as Record<string, unknown>;
-    if (!res.ok) throw new Error(`Razorpay ${res.status}: ${JSON.stringify(body)}`);
-    return body;
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(new Error(`Razorpay call timed out after ${RAZORPAY_REQUEST_TIMEOUT_MS} ms`)), RAZORPAY_REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${BASE}${path}`, {
+        ...init,
+        signal: abort.signal,
+        headers: { "Content-Type": "application/json", Authorization: this.#auth, ...init?.headers },
+      });
+      const body = (await res.json()) as Record<string, unknown>;
+      if (!res.ok) throw new Error(`Razorpay ${res.status}: ${JSON.stringify(body)}`);
+      return body;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
