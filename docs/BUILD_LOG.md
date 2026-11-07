@@ -2474,3 +2474,44 @@ each break turned the right tests red. The repeat, reconcile and display fixes h
 
 **For Task 8:** a capture's `api_call` carries the order's key, with `operation: "orders.capture"`. Pairing attempted calls with
 outcomes by key has to tell a capture from a create by `operation`, or a pending capture will look like a second order.
+
+### Phase P7 · 2026-11-08 · review fix: a capture still completing was called failed
+
+A review of Task 7 found a real money bug in the capture reconciler, and it reproduced in a test. Nothing was hurt, because no
+capture has run against PayPal yet.
+
+**The bug.** Say the buyer approves, Praman sends the capture, and the call times out while PayPal is still completing it. The
+capture record stays pending, which is right. A few minutes later `pnpm reconcile` runs. The reconciler read the order, saw it still
+as approved and not captured, and wrote the capture off as failed. With nothing pending any more, the release sweep in the same run
+saw an order older than 10 minutes that the rail said wasn't captured, and released it. When PayPal then finished, the money had
+moved, but the ledger said created, failed, released, so the budget counted none of it and could be spent again.
+
+**The fix.** If the order doesn't read as captured, the reconciler now sends the same capture again, with the same derived key.
+PayPal treats a repeat with the same `PayPal-Request-Id` as the same request, so this can't capture twice. What comes back decides:
+
+- a capture: recorded as captured, whether it's the first one finishing or this one landing.
+- `ORDER_NOT_APPROVED`: recorded as failed. The buyer never approved, so no money moved, and the hold stays.
+- still completing, or anything it can't read: nothing is written, the record stays pending, and the sweep leaves the order alone.
+
+The capture call and its read-back now live in one function, `sendCapture`, which both `captureOrder` and the reconciler use, so
+the two can't drift apart. D-41 has the reasoning, including the option I turned down: leaving the record pending while the order
+reads as approved. That is safe for the money, but a capture that never reached PayPal would then sit pending for ever and block
+every retry.
+
+**One behaviour change worth knowing.** A capture that never reached PayPal on an approved order used to end as failed, waiting for
+the buyer to try again. Now the reconciler completes it. It is the same attempt Praman already approved and recorded in T1, not a new
+decision.
+
+**Tests.** The stand-in rail can now model a capture PayPal is still completing. Three tests in `reconcile-capture.test.ts` were
+written first and failed before the fix: the still-completing case (stays pending, no release, then recorded as captured once PayPal
+finishes), the repeat that completes a lost capture under the same key, and an unapproved order that ends as `ORDER_NOT_APPROVED`
+with the hold kept. One existing test, which expected a lost capture on an approved order to end as `RECONCILE_NOT_CAPTURED`, was
+replaced by the second of these, because that outcome is the bug. Its other checks, the hold kept and a retry under a fresh key, moved
+to the third. 517 tests pass. No policy or schema change.
+
+**A correction to what I wrote earlier.** The P7 entry says a capture read as not captured and recorded as failed keeps the hold, "so
+no budget is lost". That was wrong: the release sweep could free the hold in the same run. That entry stays as written, and D-40 now
+points to D-41.
+
+**Still open, worth your look:** what PayPal shows while a capture is completing, and for how long, is still from its documentation,
+not seen live.
