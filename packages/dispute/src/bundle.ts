@@ -43,7 +43,26 @@ export interface DisputeBundle {
     readonly order_id: string | null;
     readonly status: string | null;
     readonly idempotency_key: string | null;
+    readonly rail: string | null;
+    /**
+     * True when the rail's latest answer is "failed" or "mismatch". The authorisation
+     * above is still Praman's decision; this says the money didn't move as authorised.
+     * The trace page shows both as a failure, not as "Allowed".
+     */
+    readonly failed: boolean;
+    /** The rail's own code on a failure (D-32). */
+    readonly failure_code: string | null;
+    /** What the rail said, on a mismatch: its status and the money it named (D-33). */
+    readonly rail_reported: { readonly status: string | null; readonly amount_minor: string | null; readonly currency: string | null } | null;
+    /**
+     * "saved_method_no_buyer": the order's first outcome is a PayPal capture, which
+     * only a charge to a saved payment method gives, with nobody at PayPal (D-49, D-50).
+     * "buyer_checkout": created, then captured after the buyer approved at PayPal.
+     */
+    readonly paid_by: "saved_method_no_buyer" | "buyer_checkout" | null;
   } | null;
+  /** The approval, when the decision was a step-up someone resolved. Null means nobody approved or rejected anything. */
+  readonly approval: { readonly verdict: string | null } | null;
   readonly chain: {
     readonly entries: readonly {
       readonly seq: string;
@@ -97,6 +116,15 @@ function finalState(entries: readonly LedgerEntryRecord[]): {
     last: lastOutcome ? (lastOutcome.payload as Record<string, unknown>) : null,
     captureRefusal: stands ? lastDecision : null,
   };
+}
+
+/** Same reading as paymentOf in apps/receipt-ui/src/data.ts. */
+function paidBy(first: Record<string, unknown> | null, last: Record<string, unknown> | null): "saved_method_no_buyer" | "buyer_checkout" | null {
+  if (first === null || last === null || asString(first["rail"]) !== "paypal") return null;
+  const firstStatus = asString(first["status"]);
+  if (firstStatus === "captured" && !("capture_key" in first)) return "saved_method_no_buyer";
+  if (firstStatus === "created" && asString(last["status"]) === "captured") return "buyer_checkout";
+  return null;
 }
 
 /**
@@ -238,8 +266,17 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
           order_id: asString(latestOutcome["order_id"]) ?? asString(outcome?.["order_id"]),
           status: asString(latestOutcome["status"]),
           idempotency_key: asString(latestOutcome["idempotency_key"]),
+          rail: asString(latestOutcome["rail"]),
+          failed: latestOutcome["status"] === "failed" || latestOutcome["status"] === "mismatch",
+          failure_code: latestOutcome["status"] === "failed" ? asString(latestOutcome["failure_code"]) : null,
+          rail_reported:
+            latestOutcome["status"] === "mismatch"
+              ? { status: asString(latestOutcome["rail_status"]), amount_minor: asString(latestOutcome["rail_amount_minor"]), currency: asString(latestOutcome["rail_currency"]) }
+              : null,
+          paid_by: paidBy(outcome, latestOutcome),
         }
       : null,
+    approval: stepUpResolved ? { verdict: asString(stepUpResolved["verdict"]) } : null,
     chain: {
       entries: entries.map((e) => ({
         seq: e.seq.toString(),

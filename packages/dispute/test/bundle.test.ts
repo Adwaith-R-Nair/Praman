@@ -104,7 +104,8 @@ describe("buildBundle", () => {
       text: "Chicken Biryani\nDum-style biryani",
       marked_untrusted: true,
     });
-    expect(bundle.execution).toEqual({ order_id: "order_x", status: "captured", idempotency_key: "idem_x" });
+    expect(bundle.execution).toEqual({ order_id: "order_x", status: "captured", idempotency_key: "idem_x", rail: null, failed: false, failure_code: null, rail_reported: null, paid_by: null });
+    expect(bundle.approval).toBeNull();
     expect(bundle.chain.entries).toHaveLength(4);
     expect(bundle.chain.global_chain_ok).toBe(true);
     expect(bundle.chain.trace_fully_verified).toBe(true);
@@ -229,13 +230,80 @@ describe("buildBundle on a checkout that went on to capture", () => {
     ]);
     const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_cap"));
     expect(bundle?.authorisation).toMatchObject({ decision: "ALLOW", reason_code: "OK", amount_minor: "1250", currency: "USD" });
-    expect(bundle?.execution).toEqual({ order_id: "PP1", status: "captured", idempotency_key: "k_order" });
+    expect(bundle?.execution).toEqual({ order_id: "PP1", status: "captured", idempotency_key: "k_order", rail: null, failed: false, failure_code: null, rail_reported: null, paid_by: null });
   });
 
   it("reports a refused capture with its real reason code, not OK", async () => {
     await write("trc_bundle_refused", [["capture_decision", { ...base, kind: "DENY", reason_code: "ORDER_RELEASED", detail: "released" }]]);
     const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_refused"));
     expect(bundle?.authorisation).toMatchObject({ decision: "DENY", reason_code: "ORDER_RELEASED" });
-    expect(bundle?.execution).toEqual({ order_id: "PP1", status: "created", idempotency_key: "k_order" });
+    expect(bundle?.execution).toEqual({ order_id: "PP1", status: "created", idempotency_key: "k_order", rail: null, failed: false, failure_code: null, rail_reported: null, paid_by: null });
+  });
+});
+
+/** A trace written row by row, as runIntent and resolveApproval would leave it. */
+async function writeRows(traceId: string, rows: readonly [EventType, Record<string, unknown>][]): Promise<void> {
+  for (const [eventType, payload] of rows) {
+    await prisma.$transaction((tx) => append(tx, { traceId, ts: new Date("2026-11-08T10:00:00.000Z"), actor: "praman", eventType, payload }));
+  }
+}
+
+// The bundle says what the trace page says (apps/receipt-ui/src/data.ts): how it was
+// paid, whether anyone approved it, and that a failed or mismatched answer moved no
+// clean payment.
+describe("buildBundle says what the trace page says", () => {
+  const order = { mandate_id: "mnd_test", idempotency_key: "k_order", rail: "paypal", currency: "USD" };
+  const intent = { mandate_id: "mnd_test", merchant_id: "DEMO_CAFE", model_id: "gemini-3.1-flash-lite" };
+
+  it("marks a saved-method charge as paid with no buyer present, with no approval", async () => {
+    await writeRows("trc_bundle_nobuyer", [
+      ["intent", intent],
+      ["decision", { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "450", currency: "USD" }],
+      ["outcome", { ...order, order_id: "VLT1", status: "captured", payment_id: "CAP9", amount_minor: "450" }],
+    ]);
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_nobuyer"));
+    expect(bundle?.execution).toMatchObject({ status: "captured", rail: "paypal", failed: false, paid_by: "saved_method_no_buyer" });
+    expect(bundle?.approval).toBeNull();
+  });
+
+  it("records the approval on a saved-method charge a person approved", async () => {
+    await writeRows("trc_bundle_nobuyer_ok", [
+      ["intent", intent],
+      ["decision", { mandate_id: "mnd_test", kind: "STEP_UP", reason_code: "STEP_UP_FIRST_MERCHANT", amount_minor: "1250", currency: "USD" }],
+      ["step_up_resolved", { mandate_id: "mnd_test", approval_id: "apr_1", verdict: "approve", revalidated_kind: "ALLOW", revalidated_reason: "OK" }],
+      ["outcome", { ...order, order_id: "VLT2", status: "captured", payment_id: "CAP8", amount_minor: "1250" }],
+    ]);
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_nobuyer_ok"));
+    expect(bundle?.execution).toMatchObject({ paid_by: "saved_method_no_buyer" });
+    expect(bundle?.approval).toMatchObject({ verdict: "approve" });
+  });
+
+  it("marks a checkout the buyer paid as a buyer checkout", async () => {
+    await writeRows("trc_bundle_checkout", [
+      ["decision", { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "3200", currency: "USD" }],
+      ["outcome", { ...order, order_id: "PP2", status: "created", amount_minor: "3200" }],
+      ["outcome", { ...order, order_id: "PP2", status: "captured", payment_id: "CAP7", amount_minor: "3200", capture_key: "k_cap" }],
+    ]);
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_checkout"));
+    expect(bundle?.execution).toMatchObject({ status: "captured", paid_by: "buyer_checkout", failed: false });
+  });
+
+  it("marks a rail mismatch as failed, with what the rail reported", async () => {
+    await writeRows("trc_bundle_mismatch", [
+      ["decision", { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "900", currency: "USD" }],
+      ["outcome", { ...order, order_id: "VLT3", status: "mismatch", amount_minor: "900", rail_status: "captured", rail_amount_minor: "400", rail_currency: "USD" }],
+    ]);
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_mismatch"));
+    expect(bundle?.execution).toMatchObject({ status: "mismatch", failed: true, paid_by: null, rail_reported: { status: "captured", amount_minor: "400", currency: "USD" } });
+  });
+
+  it("marks a capture the rail refused as failed, with the rail's code", async () => {
+    await writeRows("trc_bundle_failed", [
+      ["decision", { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "3200", currency: "USD" }],
+      ["outcome", { ...order, order_id: "PP4", status: "created", amount_minor: "3200" }],
+      ["outcome", { ...order, order_id: "PP4", status: "failed", failure_code: "ORDER_NOT_APPROVED", amount_minor: "3200", capture_key: "k_cap" }],
+    ]);
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_failed"));
+    expect(bundle?.execution).toMatchObject({ status: "failed", failed: true, failure_code: "ORDER_NOT_APPROVED", paid_by: null });
   });
 });
