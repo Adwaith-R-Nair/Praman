@@ -3412,3 +3412,43 @@ the final polish task redoes them.
 The plan's seven Task 13 tests are all there (the daily model cap's labelled recording, the 429 page, PayPal unreachable, the
 model failing, both start-up refusals, the sweep surviving a failure). This session resumed an interrupted attempt, so I
 did not see those tests fail first myself; this session added no code and no tests. No test was weakened or removed. Every check ran with `TSX_DISABLE_CACHE=1`, and the eval wrote its report into this repo, not `praman-mcp`.
+
+### Phase P13 · 2026-11-08 · review fix: three ways one person could take the hosted demo down
+
+Reviewers read the Task 13 work as an attacker would and found three real problems. Each one let a single person with a
+terminal spoil the hosted demo for every judge. All three are fixed, each with a test that failed first.
+
+**1. One malformed request stopped the whole server (`07f9027`).** The server turned the request's path into a URL before its
+error handling started. A request like `GET //[ HTTP/1.1` can't be parsed as a URL, so it threw there, outside the safety net.
+Node treats an error nobody catches as fatal, so the process exited: every visitor's session gone, any step in flight cut off,
+and the saved PayPal methods left at PayPal undeleted (D-50). A reviewer reproduced it. Now a path that can't be parsed gets a
+plain `400 Bad request`, and `server.ts` also catches anything that still escapes the app, logs its name and ends that one
+request. The test sends the three bad requests over a raw socket (a normal HTTP client refuses to send them), checks each gets
+a 400 with the security headers, and checks `/healthz` still answers afterwards. Before the fix the test run itself died with
+`TypeError: Invalid URL`.
+
+**2. The per-address limits trusted an address the visitor wrote (`f3d05a5`, D-60).** Behind Render's proxy the server read the
+*first* address in the `X-Forwarded-For` header. But the visitor writes that one: proxies add the address they really saw on the
+*right* and keep whatever the client sent. So a script could claim a new address on every request and never hit a limit. A
+reviewer started 50 sessions from one machine that way. Now `TRUST_PROXY` is the number of proxies in front of the server
+(Render: `1`) and the server reads the address that many places from the right, which only the proxy could have written.
+Anything but one digit there stops the server at start. Two tests: the address picker on its own, and eight session starts
+through the real routes, each claiming a different address in front of the same real one, where the sixth onwards are refused
+and a genuinely different visitor still gets in. One old test asserted the leftmost address was the visitor's; it was asserting
+the bug, so it now asserts the right one. Nobody has seen Render's real header yet, so `docs/DEPLOY.md`'s smoke test now checks
+both ways this could go wrong: made-up addresses must hit the limit, and your phone on mobile data must still get in. If the
+phone is refused, `TRUST_PROXY=2` is the fix.
+
+**3. Using up the day's sessions hid the whole demo (`8aa15dc`, D-61).** Once the 200 daily sessions were gone, **Start a
+session** gave a refusal and the start page, with nothing of the story visible until midnight UTC. With fix 2 that takes much
+more than one header, but it can still happen, by a busy day or by 40 real addresses. Task 13 asked for a labelled recording at
+the cap, and D-57 itself said a judge arriving late must still see the product. Now a visitor past the cap is sent to
+`/demo/recorded`: a page that says "Recorded run, not live" before anything else, says when the live demo opens again, and shows
+a screenshot of one complete session with all seven steps, described in its alt text. It has no buttons, starts nothing and
+touches no database. It serves the screenshot file the screenshot script writes, so it updates when the final polish task
+regenerates them. You can open `/demo/recorded` any time to see it.
+
+**Decisions.** D-60 and D-61 are new. D-57 gained two Status lines pointing at them. The README's decision count is 61.
+
+**Tests.** 754, all passing (750 before; four new, one old test changed as explained in 2). None weakened or removed.
+`packages/policy` untouched. Every check ran with `TSX_DISABLE_CACHE=1`.
