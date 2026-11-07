@@ -46,3 +46,58 @@ export class SimulatedExecutor implements Executor {
     };
   }
 }
+
+/**
+ * Holds every call until release(), then passes it to the executor it wraps. Lets a
+ * test start many intents at once and keep each one between T1 and T2, which is the
+ * window where an attempt is on the ledger and its outcome isn't yet. Test only.
+ */
+export class LatchedExecutor implements Executor {
+  readonly #inner: Executor;
+  readonly #gate: Promise<void>;
+  #open: () => void = () => {};
+  #waiting = 0;
+
+  constructor(inner: Executor = new SimulatedExecutor()) {
+    this.#inner = inner;
+    this.#gate = new Promise<void>((resolve) => {
+      this.#open = resolve;
+    });
+  }
+
+  get rail(): Executor["rail"] {
+    return this.#inner.rail;
+  }
+
+  /** Calls held at the latch right now. */
+  get waiting(): number {
+    return this.#waiting;
+  }
+
+  /** Lets every held call through, and every later one without waiting. */
+  release(): void {
+    this.#open();
+  }
+
+  async #hold<T>(call: () => Promise<T>): Promise<T> {
+    this.#waiting += 1;
+    try {
+      await this.#gate;
+    } finally {
+      this.#waiting -= 1;
+    }
+    return call();
+  }
+
+  createOrder(req: CreateOrderRequest): Promise<ExecOutcome> {
+    return this.#hold(() => this.#inner.createOrder(req));
+  }
+
+  findOrder(lookup: OrderLookup): Promise<ExecOutcome | null> {
+    return this.#hold(() => this.#inner.findOrder(lookup));
+  }
+
+  capture(req: CaptureRequest): Promise<ExecOutcome> {
+    return this.#hold(() => this.#inner.capture(req));
+  }
+}
