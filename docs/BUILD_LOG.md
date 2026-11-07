@@ -2822,3 +2822,68 @@ live PayPal sandbox test timing out at 30 s; it passed when run again and in the
 **For you to answer, from the roadmap's understanding gate.** An auditor asks you to prove what the agent read before trace X's
 purchase. Which system do you open, and why not the other? Name three properties the ledger has that Langfuse lacks, and one thing
 Langfuse gives you that should never go into the ledger.
+
+### Phase P11 · 2026-11-08 · honest numbers
+
+The eval report now says how sure each number is, runs every Layer 1 case on both rails, and stops saying things that had gone
+stale. Nothing in `packages/policy` changed, and `pnpm lint:policy-freeze` passes. No model was called: Layer 2 costs money, so
+its figures stay as recorded on 2026-09-05 and are labelled that way.
+
+**Intervals (`1c4faee`).** A rate like "100%" on 17 cases hides how little 17 cases can prove. Every rate in the report now prints
+k/n and a 95% Wilson interval beside it, from `apps/eval/src/stats.ts`. Worked through on the defended ablation arm, 0 influenced
+out of 21: the usual normal approximation gives 0% to 0%, which would claim certainty. Wilson's upper bound at zero is
+z²/(n + z²) = 3.84 / 24.84 = 15.5%, so the honest reading is "somewhere under 15.5%". The test checks that number.
+
+**The Fisher test (same commit).** The ablation compared 2 of 21 influenced (undefended) against 0 of 21 (defended). Is that gap
+real? The Fisher exact test fixes the totals (2 influenced out of 42 runs) and asks how the 2 could fall between the arms. Out of
+C(42,2) = 861 equally likely ways, 210 put both in the undefended arm, 210 put both in the defended arm, and 441 split them. A
+result at least as lopsided as ours is 210 + 210 = 420 of 861, so p = 0.49. That means a gap this size turns up about half the time
+by chance alone. The report and README now say so plainly: this run doesn't show the prompt defence works, or that it fails. The
+report used to call it "a measured difference, not an assumed one", which the test doesn't support, so that sentence is gone.
+
+**Both rails (`ca294b8`).** Eval merchants used to be on a rail called `simulated`. Now each merchant is configured on the rail its
+currency belongs to, rupees on Razorpay and dollars on PayPal, and every run still goes to the simulated executor, so no gateway is
+called. Each case runs once as written, then 42 of the 46 run again with every currency relabelled, at a merchant on the other rail.
+A case using the ₹180.00 thali at a Razorpay merchant becomes a $180.00 thali at a PayPal merchant, with the mandate's limits
+relabelled the same way. All 42 mirrored runs got the same outcome and reason code as the original. Four cases run on one rail,
+and the report names them: two test INR against USD, one is in JPY, and one uses a v1 mandate, which can only be in INR.
+
+To check the mirrored runs aren't hollow, I broke the mirror on purpose: relabel the mandate but not the catalog. 24 mirrored runs
+failed, 64 of 88 passed, which is what should happen when a dollar mandate meets rupee prices. With it back, 88 of 88.
+
+**How runs are counted.** This was my call, recorded as D-48 for you to check. The headline rates, money at risk and latency count
+each case once, as written. A mirrored run is the same case again, so counting it would double n and make the intervals about 30%
+narrower than the evidence allows. Its amount isn't real either: it would have added an invented $21,598.00 to the money at risk
+prevented. Mirrored runs get their own "Both rails" section and still fail the eval if they fail.
+
+**Report prose that had gone stale (`8f69c9b`, `a7e69d2`).** Some sentences in the report were typed by hand and no longer matched:
+
+- "a 50/50 split at n=32". The corpus is 46 now and the split is 20 held-out. The sentence is now computed from the run.
+- "no case has yet been observed to fail". Not true since Phases P3 and P4, where removing the currency check failed 2 cases and
+  removing release handling failed 3. It now says that, and that it only shows those cases catch the faults they were written for.
+- Nothing said Layer 2 hadn't run. When it doesn't, the report now says so and why.
+- The ablation now shows the date it was recorded, read from git, and when that is before 2026-11-05 it says the catalog line the
+  model reads has changed since (`price_paise=48000` became `price_minor=48000 currency=INR` in Phases P2 and P3).
+- A new "What the metrics count" section. For a capture case, `money_moved` means `evaluateCapture()` allowed the capture of an
+  order already on the ledger. No executor is called, so it is the decision, not a capture.
+
+The generated prose has no em dashes, and a test keeps it that way.
+
+**Numbers now (`c1ba75a`).** 46 of 46 cases and 42 of 42 mirrored runs passed. Containment 17/17 on the dev split (95% CI 81.6% to
+100%) and 11/11 held out (74.1% to 100%). False refusals 0/16 (0% to 19.4%). Money at risk prevented ₹21,610.50 and $30.00. The old
+committed report was from 2026-09-04 and said 32 cases and ₹20,338.00.
+
+**README (`e9d0d34`).** Results now match the report, with intervals, the both-rails result, p ≈ 0.49 stated plainly, and the Layer
+2 figures labelled as recorded on 2026-09-05, before the catalog line changed. Other stale facts fixed on the way: "24 records" is
+47 with D-48, the reason-code enum is 21 not 19, the README said a `.heldout` file was committed when the split is a hash in
+`split.ts`, "Razorpay test mode only" now includes the PayPal sandbox, and the History paragraph no longer says PayPal isn't built.
+It now lists what is built (orders, capture and release, reconcile, webhooks, the both-rails eval) and what isn't true yet: no real
+PayPal capture, no real webhook delivery, and the demo and approve commands still pay through Razorpay only.
+
+**Tests.** 635, up from 604: 10 for the statistics and the report's intervals, 12 for both rails, 9 for the report's wording. The
+new files failed before their code existed (the module imports failed first). In the wording file, 7 of 8 failed before the fix;
+the one that passed checks that the warning is left out for an ablation recorded after the change, which was trivially true while
+no warning existed. The "no case has failed" test was added and seen failing on its own before its fix. None weakened or removed.
+
+**Worth knowing.** The `.env` list in the README's Quickstart doesn't mention the `PAYPAL_*` variables, which `.env.example` has.
+Not changed here, since it isn't a number.
