@@ -126,7 +126,7 @@ describe("the in-process sweeps", () => {
       },
     });
     await until(() => reconcileRuns >= 4);
-    schedule.stop();
+    await schedule.stop();
     expect(reconcileRuns).toBeGreaterThanOrEqual(4);
     // The release ran even in the pass where reconcile threw, and the pass after release threw ran too.
     expect(calls.slice(0, 6)).toEqual(["reconcile", "release", "reconcile", "release", "reconcile", "release"]);
@@ -147,7 +147,7 @@ describe("the in-process sweeps", () => {
     expect(await schedule.tick()).toBe(true);
     now += 2 * 60 * 1000;
     expect(await schedule.tick()).toBe(false);
-    schedule.stop();
+    await schedule.stop();
     expect(runs).toBe(1);
   });
 
@@ -172,7 +172,7 @@ describe("the in-process sweeps", () => {
     expect(await schedule.tick()).toBe(false);
     release();
     expect(await first).toBe(true);
-    schedule.stop();
+    await schedule.stop();
     expect(runs).toBe(1);
   });
 

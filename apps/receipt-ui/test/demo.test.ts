@@ -773,8 +773,7 @@ describe("the demo under a content security policy", () => {
 
 describe("the sweeps, through the running server", () => {
   /** The server as server.ts builds it: the app around the demo, telling the sweeps when the demo is used. */
-  function hostedServer() {
-    const activity = new DemoActivity();
+  function hostedServer(activity = new DemoActivity()) {
     handler = createApp({
       demo: createDemoHandler(deps),
       webhooks: { webhookId: null, verify: async () => false, apply: async () => "unmatched", now: () => new Date(clock) },
@@ -822,7 +821,7 @@ describe("the sweeps, through the running server", () => {
       expect(page).toContain("wasn&#39;t approved in time");
       expect([...paypal.orders.values()].some((o) => o.captured && o.id.startsWith("CHK"))).toBe(false);
     } finally {
-      sweeps.stop();
+      await sweeps.stop();
     }
   });
 
@@ -850,12 +849,13 @@ describe("the sweeps, through the running server", () => {
       // The saved account was charged once, by the call that lost its answer. The sweep never charges.
       expect(paypal.charges).toHaveLength(2);
     } finally {
-      sweeps.stop();
+      await sweeps.stop();
     }
   });
 
   it("does nothing while nobody has used the demo for 30 minutes", async () => {
-    const sweeps = hostedServer();
+    const activity = new DemoActivity();
+    let sweeps = hostedServer(activity);
     try {
       const v = await startConnected();
       await v.post("/demo/step/first");
@@ -863,14 +863,20 @@ describe("the sweeps, through the running server", () => {
       await v.post("/demo/step/large");
       await v.post("/demo/approve/large");
       const large = sessionOf(v).beats.get("large");
+      // A pass that began while the demo was in use may still be running. Moving the clock
+      // under it would let it release at the new time, which no real clock can do. So the
+      // schedule is stopped once that pass ends, the clock moves, and the same server
+      // starts its schedule again, with the last use 31 minutes ago.
+      await sweeps.stop();
       clock += 31 * 60 * 1000;
+      sweeps = hostedServer(activity);
       await new Promise((r) => setTimeout(r, 120));
       expect(await outcomeStatuses(large?.traceId ?? null)).toEqual(["created"]);
       // The next visit wakes them, and the overdue order is released.
       await visitor().get("/demo");
       expect(await waitFor(async () => (await outcomeStatuses(large?.traceId ?? null)).includes("released"))).toBe(true);
     } finally {
-      sweeps.stop();
+      await sweeps.stop();
     }
   });
 });

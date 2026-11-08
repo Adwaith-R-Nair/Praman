@@ -64,7 +64,8 @@ export async function runSweeps(deps: SweepDeps): Promise<SweepRun> {
 export interface SweepSchedule {
   /** One interval's work: a pass if the demo was used recently and no pass is running. True if it ran. */
   tick(): Promise<boolean>;
-  stop(): void;
+  /** Stops the timer. Resolves once a pass already under way has finished, so nothing runs after it. */
+  stop(): Promise<void>;
 }
 
 /**
@@ -74,20 +75,27 @@ export interface SweepSchedule {
  */
 export function scheduleSweeps(deps: SweepDeps & { readonly activity: DemoActivity; readonly intervalMs?: number; readonly activeWindowMs?: number }): SweepSchedule {
   const windowMs = deps.activeWindowMs ?? ACTIVE_WINDOW_MS;
-  let running = false;
+  let current: Promise<SweepRun> | null = null;
   const tick = async (): Promise<boolean> => {
-    if (running || !deps.activity.usedWithin(deps.now(), windowMs)) return false;
-    running = true;
+    if (current !== null || !deps.activity.usedWithin(deps.now(), windowMs)) return false;
+    current = runSweeps(deps);
     try {
-      await runSweeps(deps);
+      await current;
       return true;
     } finally {
-      running = false;
+      current = null;
     }
   };
   const timer = setInterval(() => {
     void tick();
   }, deps.intervalMs ?? SWEEP_INTERVAL_MS);
   timer.unref();
-  return { tick, stop: () => clearInterval(timer) };
+  return {
+    tick,
+    stop: async () => {
+      clearInterval(timer);
+      // runSweeps never throws, so this only waits.
+      if (current !== null) await current;
+    },
+  };
 }
