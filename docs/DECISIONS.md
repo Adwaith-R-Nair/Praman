@@ -2921,3 +2921,25 @@ D-27 said each change to `evaluate.ts` and the hash chain needed the builder's r
 
 **Consequence.** The trust D-27 rested on the builder's reading now rests on the failing test, the isolated commit, the independent review and the CI checks. Agents' own design calls are marked as implementer's decisions in this file, for the builder to check afterwards. Dated records, such as older build log entries, are left as they were.
 
+---
+
+### D-81 · The demo says it signs the mandate for you, and adds no signing step · Accepted (implementer's decision, for the builder to check)
+
+The front page and `/demo` told visitors they signed a mandate they never saw before it existed. The server signs a fixed mandate per session with the demo key, as `docs/DEMO_INSTRUCTIONS.md` already says.
+
+**Decided.** The pages say so in plain words. There is no review-and-sign step. A step that only confirmed fixed limits would add a click and let the page imply a choice the visitor doesn't have. If the builder wants a real signing moment, it needs editable terms, which is a product change.
+
+### D-82 · A run of one eval layer writes beside the committed report · Accepted (implementer's decision, for the builder to check)
+
+`pnpm eval --layer1` is the quickstart's own command, and it overwrote `eval/report.md`, removing the Layer 2 section. A reviewer following the README got a dirty tree and lost the headline numbers.
+
+**Decided.** Only a run of both layers writes `eval/report.md`, `eval/report.json` and `eval/badge.json`. A run of one layer writes `eval/report.partial.md` and `.json`, which are gitignored. CI runs Layer 1 only, so it writes the partial files, and nothing in CI reads them.
+
+### D-83 · A retry within the window keeps the first run's trace, even if that run threw · Accepted (implementer's decision, for the builder to check)
+
+D-71 kept each proposal's trace id for the retry window, but a run that threw left null there, and a retry started a new purchase. A throw after T1 can leave an order at the rail.
+
+**Decided.** The trace id is known before the run (`trc_` plus the intent id), so it is kept either way. A retry reads that trace: a throw after T1 answers from the pending record, and a throw inside T1 wrote nothing, so `readPurchase` finds no trace and a fresh purchase starts.
+
+**Rejected: answering every retry after an error with the same ERROR.** It would block a proposal that never reached T1 for the whole window for no gain.
+

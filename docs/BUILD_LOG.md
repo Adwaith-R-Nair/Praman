@@ -3954,3 +3954,22 @@ On https://praman-demo.onrender.com, session `mnd_demo_8c8c90c3397d`:
 - A phone on mobile data started a session. The per-address limit was reading a proxy's entry; D-78 records the measurement and the fix.
 
 Not yet run on the hosted site: the 11-minute release of an unpaid checkout, and an MCP gateway checkout paid by a real buyer.
+
+### Phase P22 · 2026-11-08 · fixing what the testing round found
+
+A test round on the hosted site and the code left 34 confirmed findings. All 34 are fixed, each in its own commit, in the order they were reported. No change touched `packages/policy`, `packages/ledger`, `packages/razorpay-exec` or `packages/paypal-exec`, and `.policy-freeze` still holds, so no five-line plan was due. New decision records are D-79 (the signed mandate on the intent row), D-80 (the builder's move to agent review, recorded for him to check), D-81, D-82 and D-83; all but D-80 are implementer's decisions.
+
+**Money path, in the control plane and the gateway.**
+- A refund PayPal reports as pending and then failed can now be retried under a new key (`refund-order.ts`). `standingRefund` read the newest non-failed row, which was the older pending one, so the refund could never be sent again and the status stayed false. Each attempt is now judged by its own latest row.
+- A refund on a trace whose capture has no answer yet returns `IN_FLIGHT` instead of "nothing was paid".
+- A gateway retry after an internal error reads the first run's trace instead of starting a second order (D-83).
+- `runIntent` writes the signed mandate and its public key on the intent row, after verification passed, so a dispute bundle can be checked from outside (D-79). The bundle recomputes the signature. This grew one row's payload and changed no decision. The commit touches seven files because the record, the spec and the README count had to move with it.
+
+**The demo and the site.** A stale session now says the session ended and the button did nothing. The checkout return page no longer promises a capture it can't make. The hosted run's evidence, the honest signing wording, a model deadline, a 404 for unknown demo paths, a favicon, phone tap targets, the UTC chart axis and the rest are in the commits between `fcc4cc0` and `f0e5ada`.
+
+**Docs.** The README opens with PayPal, the hosted URL and Render, and reports the hosted run. `CHANNEL3_API_KEY`, the `mkdir -p private` before `keygen`, and the Render `TRUST_PROXY` value are documented. Layer 1 alone no longer overwrites the committed eval report (D-82).
+
+**Checks.** 985 tests before, 1018 after, each new behaviour with a test that failed before its fix. One flake appeared once in the whole round: `apps/eval/test/tracing-inert.test.ts`, the "host that never answers" case, compared catalog reads in a different order. It was not caused by this work and passed on retry and in four separate runs. It is not fixed. `pnpm e2e` passed all three tests, with the 401 the browser used to log now gone from the empty console. Every commit went through the full check first, with `TSX_DISABLE_CACHE=1`.
+
+**Open.** GitHub's `main` still has none of this work, so the front page links to the `paypal-hackathon` branch until the builder merges or pushes it. The hosted site runs the code from before these commits until the builder redeploys. Nothing here pushed, merged or deployed.
+
