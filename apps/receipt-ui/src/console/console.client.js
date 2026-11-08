@@ -15,9 +15,9 @@
   var nonce = (script && script.nonce) || "";
   var source = root.getAttribute("data-src") || "";
 
-  var INK = { ink: "#172420", muted: "#4b5b55", hairline: "#c7d0c9", seal: "#24496b", allow: "#2e6b4c", stepUp: "#8a5f22", deny: "#9e3b2e", paper: "#f6f8f6", neutral: "#7a8a84" };
+  var INK = { ink: "#172420", muted: "#4b5b55", hairline: "#c7d0c9", seal: "#24496b", allow: "#2e6b4c", stepUp: "#8a5f22", deny: "#9e3b2e", paper: "#f6f8f6", neutral: "#7a8a84", returned: "#6b8796" };
   var RAIL_NAMES = { paypal: "PayPal", razorpay: "Razorpay", simulated: "Simulated" };
-  var STATUS_COLOURS = { captured: INK.allow, created: INK.seal, released: INK.neutral, failed: INK.deny, mismatch: INK.stepUp };
+  var STATUS_COLOURS = { captured: INK.allow, created: INK.seal, released: INK.neutral, refunded: INK.returned, failed: INK.deny, mismatch: INK.stepUp };
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -145,6 +145,7 @@
     { headerName: "Rail", field: "rail", width: 100, valueFormatter: function (p) { return p.value ? RAIL_NAMES[p.value] || p.value : ""; } },
     { headerName: "Order id", field: "orderId", width: 170, cellClass: "cell-code" },
     { headerName: "Capture id", field: "captureId", width: 170, cellClass: "cell-code" },
+    { headerName: "Refund id", field: "refundId", width: 170, cellClass: "cell-code" },
     {
       headerName: "Hash check",
       field: "hashVerdict",

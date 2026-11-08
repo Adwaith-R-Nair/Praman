@@ -186,6 +186,7 @@ describe("countDecisions and countRails", () => {
     reasonPlain: null,
     orderId: null,
     captureId: null,
+    refundId: null,
     prevHash: "",
     payloadHash: "",
     entryHash: "",
@@ -222,5 +223,37 @@ describe("countDecisions and countRails", () => {
       { rail: "razorpay", statuses: { created: 1 } },
       { rail: "simulated", statuses: { captured: 1 } },
     ]);
+  });
+
+  it("counts a captured order whose money went back as refunded, and one with a refund still open as captured", () => {
+    const rails = countRails([
+      row({ eventType: "outcome", rail: "paypal", status: "captured", orderId: "A" }),
+      row({ eventType: "refund_requested", rail: "paypal", status: "attempted", orderId: "A" }),
+      row({ eventType: "refund_outcome", rail: "paypal", status: "refunded", orderId: "A" }),
+      row({ eventType: "outcome", rail: "paypal", status: "captured", orderId: "B" }),
+      row({ eventType: "refund_outcome", rail: "paypal", status: "pending", orderId: "B" }),
+      row({ eventType: "outcome", rail: "paypal", status: "captured", orderId: "C" }),
+      row({ eventType: "refund_outcome", rail: "paypal", status: "failed", orderId: "C" }),
+    ]);
+    expect(rails).toEqual([{ rail: "paypal", statuses: { refunded: 1, captured: 2 } }]);
+  });
+});
+
+describe("the console on a refunded purchase (D-66, D-67)", () => {
+  it("shows the refund rows with their status and refund id, and the spend line doesn't move", async () => {
+    await paidPurchase("trc_mine", "mnd_mine", "450", "ORD1");
+    const refund = { mandate_id: "mnd_mine", merchant_id: "DEMO_CAFE", idempotency_key: "key_trc_mine", order_id: "ORD1", payment_id: "CAP_ORD1", refund_key: "r".repeat(64), rail: "paypal", amount_minor: "450", currency: "USD" };
+    await event("trc_mine", "refund_requested", { ...refund, operation: "captures.refund", status: "attempted", requested_by: "demo_visitor" }, "demo_visitor");
+    await event("trc_mine", "refund_outcome", { ...refund, status: "refunded", refund_id: "2JV473619H1766245", failure_code: null }, "praman");
+
+    const data = await loadConsoleData({ kind: "mandates", mandateIds: ["mnd_mine"] }, new Map([["mnd_mine", { maxTotalMinor: "6000", currency: "USD" }]]), T);
+    expect(data.rows.find((r) => r.eventType === "refund_requested")).toMatchObject({ status: "attempted", actor: "demo_visitor", amount: "$4.50", eventPlain: "A person asked for a refund, and the payment provider was called", refundId: null });
+    expect(data.rows.find((r) => r.eventType === "refund_outcome")).toMatchObject({ status: "refunded", refundId: "2JV473619H1766245", captureId: "CAP_ORD1", orderId: "ORD1", eventPlain: "Refund result recorded" });
+    expect(data.rails).toEqual([{ rail: "paypal", statuses: { refunded: 1 } }]);
+
+    // The budget still counts it: the line ends where deriveState says, and the refund added no point.
+    const [spend] = data.spend;
+    expect(spend).toMatchObject({ spentNowMinor: "450" });
+    expect(spend?.points.map((p) => p.heldMinor)).toEqual(["450"]);
   });
 });

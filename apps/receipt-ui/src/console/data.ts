@@ -68,6 +68,8 @@ export interface ConsoleRow {
   readonly reasonPlain: string | null;
   readonly orderId: string | null;
   readonly captureId: string | null;
+  /** The rail's refund id, on a refund outcome. */
+  readonly refundId: string | null;
   readonly prevHash: string;
   readonly payloadHash: string;
   readonly entryHash: string;
@@ -223,7 +225,7 @@ export function toRow(entry: ConsoleEntry, check: EntryCheck, chainVerified: boo
   const amountMinor = amountIfPresent(p);
   const currency = amountMinor === null ? null : currencyOf(p);
   const { decision, reasonCode } = decisionOf(entry.eventType, p);
-  const isOutcomeLike = entry.eventType === "outcome" || entry.eventType === "api_call" || entry.eventType === "settlement";
+  const isOutcomeLike = ["outcome", "api_call", "settlement", "refund_requested", "refund_outcome"].includes(entry.eventType);
   return {
     seq: entry.seq.toString(),
     ts: entry.ts.toISOString(),
@@ -244,6 +246,7 @@ export function toRow(entry: ConsoleEntry, check: EntryCheck, chainVerified: boo
     reasonPlain: reasonCode !== null && isReasonCode(reasonCode) ? REASON_CODE_PLAIN[reasonCode] : null,
     orderId: str(p["order_id"]),
     captureId: str(p["payment_id"]),
+    refundId: entry.eventType === "refund_outcome" ? str(p["refund_id"]) : null,
     prevHash: entry.prevHash,
     payloadHash: entry.payloadHash,
     entryHash: entry.entryHash,
@@ -257,7 +260,8 @@ export function toRow(entry: ConsoleEntry, check: EntryCheck, chainVerified: boo
  * Spent or held over time for one mandate, row by row, for the chart. It follows the
  * rules deriveState() counts by (D-30, D-42): an attempted order call is held until an
  * outcome answers it; an order holds the largest amount any of its outcomes names; a
- * release gives an order's hold back. The chart ends at deriveState()'s own number,
+ * release gives an order's hold back. A refund gives nothing back (D-67), so its rows
+ * don't move the line. The chart ends at deriveState()'s own number,
  * which is the one evaluate() is given; this line only shows how it got there.
  */
 export function spendTimeline(entries: readonly ConsoleEntry[], currency: Currency): SpendPoint[] {
@@ -320,13 +324,24 @@ export function countDecisions(rows: readonly ConsoleRow[]): ReasonCount[] {
     .sort((a, b) => b.allow + b.stepUp + b.deny - (a.allow + a.stepUp + a.deny) || a.reasonCode.localeCompare(b.reasonCode));
 }
 
-/** Orders by rail, counted once each at their latest outcome: captured, created, released, failed or mismatch. */
+/**
+ * Orders by rail, counted once each at their latest outcome: captured, created, released,
+ * failed or mismatch. A captured order whose money went back is counted as refunded. A
+ * refund that is pending, refused or open leaves the order as captured, since the money
+ * is still with the merchant.
+ */
 export function countRails(rows: readonly ConsoleRow[]): RailCount[] {
   const latest = new Map<string, { rail: string; status: string }>();
+  const refunded = new Set<string>();
   for (const row of rows) {
+    if (row.eventType === "refund_outcome" && row.status === "refunded" && row.orderId !== null) refunded.add(row.orderId);
     if (row.eventType !== "outcome" || row.rail === null || row.status === null) continue;
     // An order is its order id; an outcome with none (a create the rail refused) is its own trace's attempt.
     latest.set(row.orderId ?? `trace:${row.traceId}`, { rail: row.rail, status: row.status });
+  }
+  for (const id of refunded) {
+    const order = latest.get(id);
+    if (order?.status === "captured") latest.set(id, { rail: order.rail, status: "refunded" });
   }
   const byRail = new Map<string, Record<string, number>>();
   for (const { rail, status } of latest.values()) {
