@@ -458,6 +458,12 @@
     document.getElementById("chain-text").textContent = message;
   }
 
+  // With no session the server leaves data-src empty, so there is nothing to ask for.
+  if (source === "") {
+    fail("Your demo session has ended or hasn't started. Start one at /demo, then come back.");
+    return;
+  }
+
   fetch(source, { credentials: "same-origin", headers: { Accept: "application/json" } })
     .then(function (res) {
       if (res.status === 401) throw new Error("Your demo session has ended or hasn't started. Start one at /demo, then come back.");

@@ -54,7 +54,7 @@ export function renderConsolePage(mode: ConsoleMode, nonce: string, notice: stri
 <link rel="stylesheet" href="/assets/console.css">
 </head>
 <body>
-<main class="console" id="console" data-mode="${escapeHtml(mode)}" data-src="${escapeHtml(copy.data)}">
+<main class="console" id="console" data-mode="${escapeHtml(mode)}" data-src="${notice === null ? escapeHtml(copy.data) : ""}">
 <nav class="nav"><a href="${escapeHtml(copy.back)}">${escapeHtml(copy.backLabel)}</a></nav>
 <header class="masthead">
   <p class="kicker">Ledger console</p>

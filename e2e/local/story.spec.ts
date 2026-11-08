@@ -145,8 +145,7 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
 
 test.describe("without a session", () => {
   test("the start page, the recorded run and the empty console", async ({ page, watch }) => {
-    // The console page asks for its data even with no session, and the browser logs the 401.
-    watch.expected.push(/\/demo\/console: Failed to load resource: .*401/);
+    expect(watch.expected).toEqual([]);
     await page.goto("/demo");
     await expect(page.getByRole("button", { name: "Start a session" })).toBeEnabled();
     await page.goto("/demo/recorded");

@@ -11,6 +11,8 @@ interface FakeNode {
   [key: string]: unknown;
 }
 
+let dataSrc = "/demo/console.json";
+
 function fakeNode(id: string): FakeNode {
   const children: unknown[] = [];
   const node: FakeNode = {
@@ -24,12 +26,14 @@ function fakeNode(id: string): FakeNode {
     appendChild(c: unknown) { children.push(c); return c; },
     removeChild(c: unknown) { children.splice(children.indexOf(c), 1); return c; },
     setAttribute() {},
-    getAttribute(name: string) { return name === "data-src" ? "/demo/console.json" : name === "data-mode" ? "visitor" : null; },
+    getAttribute(name: string) { return name === "data-src" ? dataSrc : name === "data-mode" ? "visitor" : null; },
     addEventListener() {},
     scrollIntoView() { node.scrolled += 1; },
   };
   return node;
 }
+
+const fetches = { count: 0 };
 
 interface Row { seq: string; traceId: string }
 
@@ -77,7 +81,10 @@ function openConsole(hash: string, rows: Row[]) {
     agGrid: { themeQuartz: { withParams: () => ({}) }, createGrid: (_el: unknown, options: Record<string, unknown>) => { gridOptions = options; return gridApi; } },
     agCharts: { AgCharts: { create: () => ({}) } },
   };
-  const fetch = () => Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve(data) });
+  const fetch = () => {
+    fetches.count += 1;
+    return Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve(data) });
+  };
   byId("console");
   const source = readFileSync(new URL("../src/console/console.client.js", import.meta.url), "utf8");
   runInNewContext(source, { document, window, fetch, BigInt, Promise });
@@ -111,6 +118,17 @@ describe("the console opened from a trace link", () => {
     const page = await openConsole("#trace=trc_none", ROWS);
     expect(page.count.textContent).toBe("0 of 3 rows");
     expect(page.selected).toEqual([]);
+  });
+});
+
+describe("the console with no session", () => {
+  it("asks the server for nothing and says what to do", async () => {
+    dataSrc = "";
+    fetches.count = 0;
+    const page = await openConsole("", []);
+    dataSrc = "/demo/console.json";
+    expect(fetches.count).toBe(0);
+    expect(page.chainText.textContent).toContain("Start one at /demo");
   });
 });
 
