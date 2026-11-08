@@ -231,6 +231,26 @@ describe("a model call that never answers", () => {
   });
 });
 
+describe("a cross-site start", () => {
+  it("doesn't spend the visitor's limit on new sessions", async () => {
+    handler = createApp({
+      demo: createDemoHandler(deps),
+      webhooks: { webhookId: null, verify: async () => false, apply: async () => "unmatched", now: () => new Date(clock) },
+      hsts: false,
+      proxyHops: 0,
+      onDemoRequest: () => {},
+      log: (line) => logs.push(line),
+      demoOrigin: new URL(base).origin,
+    });
+    for (let i = 0; i < 8; i += 1) {
+      expect((await visitor().post("/demo/start", { headers: { Origin: "https://evil.example" } })).status).toBe(403);
+    }
+    const real = await visitor().post("/demo/start", { headers: { Origin: new URL(base).origin } });
+    expect(real.status).toBe(303);
+    expect(real.location).toBe("/demo");
+  });
+});
+
 describe("the fooled cart", () => {
   it("shows the items, their prices and the category refused, as the front page does", async () => {
     const v = visitor();

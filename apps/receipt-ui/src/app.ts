@@ -37,6 +37,8 @@ export interface AppDeps {
   readonly now?: () => Date;
   /** Told about every request to /demo, so the sweeps know the demo is in use. */
   readonly onDemoRequest: () => void;
+  /** The demo's own origin, so a request the demo's origin check refuses doesn't spend the starts limit. */
+  readonly demoOrigin?: string;
   readonly log: (line: string) => void;
   /**
    * The operator console at /console, which shows the whole ledger. Only on a local
@@ -122,7 +124,8 @@ export function createApp(deps: AppDeps): Handler {
 
       if (url.pathname === "/demo" || url.pathname.startsWith("/demo/")) {
         deps.onDemoRequest();
-        if (method === "POST" && url.pathname.replace(/\/+$/, "") === "/demo/start" && !within(starts, req, res, "Too many new demo sessions from your address. Wait ten minutes, or carry on with the session you have at /demo.")) return;
+        const refusedOrigin = deps.demoOrigin !== undefined && req.headers.origin !== undefined && req.headers.origin !== deps.demoOrigin;
+        if (method === "POST" && !refusedOrigin && url.pathname.replace(/\/+$/, "") === "/demo/start" && !within(starts, req, res, "Too many new demo sessions from your address. Wait ten minutes, or carry on with the session you have at /demo.")) return;
         if (deps.demo === null) {
           text(res, 503, "The demo isn't configured on this server.");
           return;

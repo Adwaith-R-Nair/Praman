@@ -64,6 +64,7 @@ const app = createApp({
   // checkStartup has already refused anything but a small whole number here.
   proxyHops: Number(process.env["TRUST_PROXY"] || "0"),
   onDemoRequest: () => activity.touch(new Date()),
+  ...(demoWiring.ok ? { demoOrigin: new URL(demoWiring.deps.baseUrl).origin } : {}),
   log: (line) => console.error(line),
   // The whole-ledger console, only with the demo off and never in production. With
   // the demo on, each visitor has their own console at /demo/console instead.
