@@ -64,14 +64,17 @@ body {
      same idea as the watermark fibres in a real check or bond, generated
      inline so there's no image asset to ship. The feColorMatrix strips
      colour from the turbulence (raw feTurbulence is RGB static, not a
-     neutral grain), and fill-opacity keeps it at texture strength. */
+     neutral grain), and opacity on the rect keeps it at texture strength.
+     fill-opacity did nothing here: a filter's output replaces the rect's
+     fill, so the grain drew at full strength and the page read as grey. */
   background: var(--paper)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' fill-opacity='0.02'/%3E%3C/svg%3E")
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E")
     repeat;
   color: var(--ink);
   font-family: var(--serif);
   font-size: var(--size-base);
   line-height: 1.55;
+  min-height: 100vh;
 }
 
 .record {
