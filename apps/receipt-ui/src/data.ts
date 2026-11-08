@@ -60,6 +60,8 @@ export interface TraceView {
   readonly settlement: SettlementLine | null;
   /** Non-evidentiary pointer to this run's Langfuse trace, if tracing was configured when it ran. See D-47. */
   readonly langfuseTraceId: string | null;
+  /** Set when this trace withdraws a mandate: its own trace, with one mandate_revoked row and no purchase. */
+  readonly revocation: { readonly mandateId: string | null; readonly reason: string | null } | null;
 }
 
 /**
@@ -182,6 +184,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
   const settlementPayload = settlementRow ? (settlementRow.payload as Record<string, unknown>) : null;
 
   const byHarness = (asString(intent?.["model_id"]) ?? "").startsWith(HARNESS_MODEL_PREFIX);
+  const revoked = firstPayload(entries, "mandate_revoked");
 
   let goal: string | null = null;
   const merchantReads: string[] = [];
@@ -234,6 +237,9 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     // Money was actually attempted — this supersedes any earlier STEP_UP.
     decisionKind = "ALLOW";
     reasonCode = "OK";
+  } else if (intent === null && revoked !== null) {
+    // Not a purchase at all: the issuer took a mandate's authority back.
+    decisionKind = "REVOKED";
   } else if (stepUpResolved) {
     const verdict = asString(stepUpResolved["verdict"]);
     if (verdict === "reject") {
@@ -282,6 +288,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
           }
         : null,
     langfuseTraceId: asString((transcriptPayload?.["observability"] as Record<string, unknown> | undefined)?.["langfuse_trace_id"]),
+    revocation: revoked === null ? null : { mandateId: asString(revoked["mandate_id"]), reason: asString(revoked["reason"]) },
   };
 }
 

@@ -357,3 +357,36 @@ describe("loadTrace on an approval the test harness made", () => {
     expect((await renderTracePage("trace_person")).html).toContain("Human reviewed the step-up");
   });
 });
+
+describe("loadTrace on a revocation", () => {
+  const revoke = (traceId: string, reason: string) =>
+    prisma.$transaction((tx) =>
+      append(tx, { traceId, ts: new Date("2026-11-08T10:00:00.000Z"), actor: "issuer", eventType: "mandate_revoked", payload: { mandate_id: "mnd_rev_page", reason } }),
+    );
+
+  it("calls it a revocation, with the mandate and the issuer's reason, not an unknown decision", async () => {
+    await revoke("trc_revoke_page", "lost trust in the agent");
+    const view = await loadTrace("trc_revoke_page");
+    expect(view).toMatchObject({ decisionKind: "REVOKED", revocation: { mandateId: "mnd_rev_page", reason: "lost trust in the agent" } });
+
+    const { status, html } = await renderTracePage("trc_revoke_page");
+    expect(status).toBe(200);
+    expect(html).toContain("Mandate revoked");
+    expect(html).not.toContain(">Unknown<");
+    expect(html).toContain("mnd_rev_page");
+    expect(html).toContain("MANDATE_REVOKED");
+  });
+
+  it("escapes the reason, which a person typed", async () => {
+    await revoke("trc_revoke_page_x", "<img src=x onerror=alert(1)>");
+    const { html } = await renderTracePage("trc_revoke_page_x");
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  });
+
+  it("leads a demo visitor's revocation back to the demo", async () => {
+    await revoke("trc_demo_abc123abc123_revoke", "Revoked by the demo visitor from the demo page.");
+    const { html } = await renderTracePage("trc_demo_abc123abc123_revoke");
+    expect(html).toContain('href="/demo"');
+  });
+});

@@ -73,6 +73,20 @@ function paymentHtml(trace: { readonly payment: "saved_method" | "checkout" | nu
   return "";
 }
 
+/**
+ * A revocation trace has no purchase. It says which mandate lost its authority, what
+ * that does to every later purchase, and the issuer's reason, which a person typed.
+ */
+function revocationHtml(revocation: { readonly mandateId: string | null; readonly reason: string | null } | null): string {
+  if (revocation === null) return "";
+  const which = revocation.mandateId === null ? "a mandate" : `mandate ${revocation.mandateId}`;
+  return `<section class="reason">
+    <p class="reason-plain">${escapeHtml(`The issuer took back ${which}'s authority. Praman reads this row before every decision, so every purchase under it from here on is refused.`)}</p>
+    <span class="reason-code data">MANDATE_REVOKED</span>
+  </section>
+  ${revocation.reason === null ? "" : `<section><h2>Reason the issuer gave</h2><p class="rationale">${escFreeText(revocation.reason)}</p></section>`}`;
+}
+
 /** An entry's plain name. A step-up the test harness resolved is never called a human review. */
 function entryLabel(eventType: string, approvedBy: "person" | "test_harness" | null): string {
   if (eventType === "step_up_resolved" && approvedBy === "test_harness") return "Test harness approved the step-up. No person reviewed it";
@@ -168,6 +182,8 @@ ${
     : ""
 }
 
+${revocationHtml(trace.revocation)}
+
 ${paymentHtml(trace)}
 
 ${settlementHtml(trace.settlement)}
@@ -212,6 +228,7 @@ ${(() => {
 <script src="/assets/trace.js" defer></script>
 `;
 
-  const fromDemo = trace.merchantId !== null && DEMO_MERCHANTS.includes(trace.merchantId);
+  // A demo visitor's revocation has no merchant, and its trace id says whose it is.
+  const fromDemo = (trace.merchantId !== null && DEMO_MERCHANTS.includes(trace.merchantId)) || traceId.startsWith("trc_demo_");
   return { status: 200, html: layout(`Trace ${traceId}`, body, fromDemo ? "demo" : "index") };
 }
