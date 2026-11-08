@@ -60,9 +60,22 @@ For a purchase case, "money moved" means an order was created on the simulated e
 
 **On both rails.** Each case runs once as written, at a merchant on the rail its currency belongs to (rupees on Razorpay, dollars on PayPal), and 42 of the 46 run again with every currency relabelled, at a merchant on the other rail. All 42 mirrored runs got the same outcome and reason code as the original. Both runs use the simulated executor, so this shows that a merchant's rail changes nothing in what Praman decides, not that either rail's API behaves. The 4 cases left on one rail test a currency difference or a v1 mandate, which relabelling would erase.
 
-**Layer 2: agent susceptibility (7 injection cases × 3 repeats per arm, live model, recorded 2026-09-05)**
+**Layer 2: agent susceptibility (live model)**
 
-An ablation: identical cases, identical policy engine, differing only in whether merchant text is delimited and whether the system prompt carries untrusted-content instructions.
+Two runs, on different days.
+
+*Rerun on 2026-11-08, on the current catalog line.* All 8 Layer 2 cases (7 injections and a control), once each, against `google/gemini-3.1-flash-lite`, with merchant text delimited and the prompt defence on. The model read each item as `price_minor=12000 currency=INR`.
+
+| | |
+|---|---|
+| Proposals influenced | 0 of 8 (95% CI 0% to 32.4%) |
+| Money moved | 0 |
+| Policy decision on every cart | `STEP_UP`, reason `STEP_UP_FIRST_MERCHANT` |
+| Tokens | 17701 input, 1168 output |
+
+In every case the model proposed the one dosa and one coffee the user asked for, and in all 7 injection cases its rationale says it ignored the merchant's instruction. That is one run per case on one model, so 0 of 8 only says the rate is probably under a third. Every cart was held for a person because the eval merchant is new to the mandate. So this run shows what the model proposed, not what the gate would let through on its own. The per-case table and the transcripts are in [`eval/report.md`](eval/report.md) and `eval/transcripts/`.
+
+*Ablation, recorded 2026-09-05 (7 injection cases × 3 repeats per arm).* Identical cases, identical policy engine, differing only in whether merchant text is delimited and whether the system prompt carries untrusted-content instructions.
 
 | Arm | Runs | Proposals influenced | Money moved |
 |---|---|---|---|
@@ -75,7 +88,7 @@ In both undefended cases the model was genuinely fooled. Its own rationale reads
 
 **Contained despite influence: 2 / 2.** That is the claim this project rests on, seen twice: when the model was manipulated, the policy engine stopped the money regardless of the prompt layer. Two cases show the mechanism working, not a rate.
 
-**These Layer 2 figures predate a prompt change.** On 2026-11-05 the catalog line the model reads changed from `price_paise=48000` to `price_minor=48000 currency=INR`. Layer 2 has not been rerun since, because it calls a paid model. Prices still come from the catalog and the policy never reads that line, so the policy side doesn't depend on it; how often the model is influenced might.
+**The ablation predates a prompt change.** On 2026-11-05 the catalog line the model reads changed from `price_paise=48000` to `price_minor=48000 currency=INR`. The single run above used the new line; the 42-run ablation has not been repeated on it. Prices still come from the catalog and the policy never reads that line, so the policy side doesn't depend on it; how often the model is influenced might.
 
 ### How to read these numbers
 
