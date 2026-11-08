@@ -219,7 +219,7 @@ Praman's own agent uses this same server with `PRAMAN_MCP=1`. Unset, it calls th
 
 ## Scope and limitations
 
-The Razorpay submission was built solo in nine days, and the PayPal work on top of it over the following week. These are decisions, not oversights.
+The Razorpay submission was built solo in nine days. The PayPal work was added from 4 Nov 2026. These are decisions, not oversights.
 
 **By design**
 - **Razorpay test mode and PayPal sandbox only.** No live keys, no real money.
