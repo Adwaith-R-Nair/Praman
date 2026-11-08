@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url";
 import { formatMoney, minorFromJSON, REASON_CODES, type ReasonCode } from "@praman/shared";
 import type { AgentVisibleDecision } from "@praman/policy";
 import { CAFE, MARKET, type BeatId, type PurchaseBeat } from "../demo/config.js";
-import { canAskAgain } from "../demo/story.js";
+import { canAskAgain, refundable } from "../demo/story.js";
+import type { TraceView } from "../data.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
 import { REASON_CODE_PLAIN } from "../reason-codes.js";
@@ -58,10 +59,33 @@ function action(path: string, label: string, kind: "primary" | "quiet" = "primar
   return `<form method="post" action="${escapeHtml(path)}" class="act"><button type="submit" class="btn btn-${kind}" disabled aria-describedby="${escapeHtml(id)}">${escapeHtml(label)}</button></form><p class="why" id="${escapeHtml(id)}">${escapeHtml(disabledWhy)}</p>`;
 }
 
-function traceLinks(traceId: string | null): string {
+/**
+ * A purchase step's trace opens in the visitor's own view of it, /demo/r/<step>, which
+ * is where a paid purchase can be refunded. Every other trace opens on the public page.
+ */
+function traceLinks(traceId: string | null, ownView: PurchaseBeat | null = null): string {
   if (traceId === null) return "";
   const id = encodeURIComponent(traceId);
-  return `<p class="links"><a href="/r/${id}">Ledger trace</a><a href="/dispute/${id}">Dispute bundle</a><span class="trace-id">${escapeHtml(traceId)}</span></p>`;
+  const href = ownView === null ? `/r/${id}` : `/demo/r/${ownView}`;
+  return `<p class="links"><a href="${href}">Ledger trace</a><a href="/dispute/${id}">Dispute bundle</a><span class="trace-id">${escapeHtml(traceId)}</span></p>`;
+}
+
+/**
+ * What the visitor may do with their own paid purchase, on their view of its trace:
+ * refund it, once, in full (D-66). Shown only while the ledger has no refund under way
+ * or done. The route names the step, never the trace, so it acts on this session only.
+ */
+export function refundControlHtml(beat: PurchaseBeat, record: BeatRecord, trace: TraceView, notice: string | null): string {
+  const said = notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}</p>`;
+  const open = trace.refund === null || trace.refund.status === "failed";
+  if (!refundable(record) || !open) return said === "" ? "" : `<section class="refund-control" id="refund-control">${said}</section>`;
+  const amount = record.amountMinor === null ? "this purchase" : usd(record.amountMinor);
+  return `<section class="refund-control" id="refund-control">
+    ${said}
+    <h2>Refund this purchase</h2>
+    <p>${escapeHtml(`You can give the whole ${amount} back to the buyer's PayPal sandbox account. Only you can do this, from this page: the agent has no way to ask for one. Afterwards the mandate's budget still counts this purchase, so a refund never lets the agent spend more.`)}</p>
+    ${action(`/demo/refund/${beat}`, `Refund ${amount}`)}
+  </section>`;
 }
 
 /** Exactly what runIntent handed the agent: the redacted decision, never a limit (D-08). */
@@ -128,7 +152,14 @@ function moneyHtml(record: BeatRecord): string {
     what = "Nothing charged.";
   }
   const ids = [record.orderId ? `order ${record.orderId}` : null, record.failureCode ? `PayPal said ${record.failureCode}` : null].filter((x) => x !== null);
-  return `<p class="cell-body money-${tone}">${escapeHtml(what)}</p>${ids.length > 0 ? `<p class="ids">${escapeHtml(ids.join(", "))}</p>` : ""}`;
+  return `<p class="cell-body money-${tone}">${escapeHtml(what)}</p>${refundLine(record)}${ids.length > 0 ? `<p class="ids">${escapeHtml(ids.join(", "))}</p>` : ""}`;
+}
+
+/** Under a paid purchase: whether its money went back, or where to ask for that. */
+function refundLine(record: BeatRecord): string {
+  if (record.refund?.state === "refunded") return `<p class="cell-body">Refunded to the buyer. The mandate's budget still counts it.</p>`;
+  if (record.refund !== null) return `<p class="cell-body">${escapeHtml(record.refund.message)}</p>`;
+  return refundable(record) ? `<p class="cell-body">You can refund it from its ledger trace.</p>` : "";
 }
 
 /**
@@ -153,14 +184,14 @@ function gate(record: BeatRecord, moneyLabel: string): string {
   </div>`;
 }
 
-function resultHtml(record: BeatRecord | undefined, moneyLabel = "PayPal"): string {
+function resultHtml(record: BeatRecord | undefined, moneyLabel = "PayPal", purchase: PurchaseBeat | null = null): string {
   if (record === undefined) return "";
   if (record.state === "no_proposal") return `<p class="note">${escapeHtml(record.message)}</p>`;
   return `<div class="result" data-state="${escapeHtml(record.state)}">
     ${gate(record, moneyLabel)}
     <p class="message">${escapeHtml(record.message)}</p>
     ${agentViewHtml(record.agentView)}
-    ${traceLinks(record.traceId)}
+    ${traceLinks(record.traceId, purchase)}
   </div>`;
 }
 
@@ -385,7 +416,7 @@ ${step(
   "first",
   "First purchase: Praman asks you",
   p("The agent has never bought from this shop, so Praman stops it and asks you. Once you approve, Praman charges the saved PayPal account. No buyer is at PayPal for this."),
-  `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", firstWhy) : ""}${resultHtml(first)}${approvalActions("first", first)}${checkoutHtml("first", first)}`,
+  `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", firstWhy) : ""}${resultHtml(first, "PayPal", "first")}${approvalActions("first", first)}${checkoutHtml("first", first)}`,
   first?.state === "done",
 )}
 
@@ -394,7 +425,7 @@ ${step(
   "second",
   "Second purchase: the agent pays on its own",
   p("Same shop, a small amount. Nobody approves this one, and no buyer is at PayPal. The agent proposes, Praman checks the mandate, and the money moves. Praman's decision is the only thing between the agent and the money."),
-  `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", laterWhy) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second)}${approvalActions("second", second)}${checkoutHtml("second", second)}`,
+  `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", laterWhy) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second, "PayPal", "second")}${approvalActions("second", second)}${checkoutHtml("second", second)}`,
   second?.state === "done",
 )}
 
@@ -403,7 +434,7 @@ ${step(
   "large",
   "Large purchase: you pay at PayPal",
   p("Over the approval threshold. Praman asks you first, then sends this one through a real PayPal checkout that you approve as the buyer. Before taking the money, Praman checks the mandate again: it may have been revoked or expired while you were at PayPal."),
-  `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", laterWhy) : ""}${resultHtml(large)}${approvalActions("large", large)}${checkoutHtml("large", large)}`,
+  `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", laterWhy) : ""}${resultHtml(large, "PayPal", "large")}${approvalActions("large", large)}${checkoutHtml("large", large)}`,
   large?.state === "done",
 )}
 

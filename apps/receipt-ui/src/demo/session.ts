@@ -38,6 +38,14 @@ export interface BeatRecord {
   readonly harness: HarnessSummary | null;
   /** Set when the cart came from a recorded model answer, because the demo's daily model calls were used up. */
   readonly recordedModel: { readonly model: string; readonly recordedAt: string } | null;
+  /** The visitor's last refund request for this step, if any. The ledger trace is the record; this is for the page. */
+  readonly refund: RefundNote | null;
+}
+
+/** What became of the visitor's refund request, in the page's words. Fixed text chosen by the server. */
+export interface RefundNote {
+  readonly state: "refunded" | "pending" | "open" | "failed" | "mismatch";
+  readonly message: string;
 }
 
 export interface HarnessSummary {

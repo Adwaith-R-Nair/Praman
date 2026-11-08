@@ -1,6 +1,6 @@
 import { formatMoney, minorFromJSON, type ReasonCode } from "@praman/shared";
 import type { EventType } from "@praman/ledger";
-import { loadTrace, type RefundLine, type SettlementLine } from "../data.js";
+import { loadTrace, type RefundLine, type SettlementLine, type TraceView } from "../data.js";
 import { DEMO_MERCHANTS } from "../demo/config.js";
 import { decisionClass, decisionLabel } from "../decision-display.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
@@ -137,7 +137,12 @@ function entryLabel(eventType: string, approvedBy: "person" | "test_harness" | n
   return EVENT_TYPE_PLAIN[eventType as EventType] ?? eventType;
 }
 
-export async function renderTracePage(traceId: string): Promise<{ status: number; html: string }> {
+/**
+ * `ownerControl` is for the demo's own view of a visitor's trace (/demo/r/<step>) only:
+ * it renders what that visitor, and nobody else, may do with this trace, which is ask
+ * for a refund. The public page at /r/<id> never has one.
+ */
+export async function renderTracePage(traceId: string, ownerControl: ((trace: TraceView) => string) | null = null): Promise<{ status: number; html: string }> {
   const trace = await loadTrace(traceId);
 
   if (!trace) {
@@ -238,6 +243,8 @@ ${paymentHtml(trace)}
 ${settlementHtml(trace.settlement)}
 
 ${refundHtml(trace.refund)}
+
+${ownerControl === null ? "" : ownerControl(trace)}
 
 ${
   trace.rationale

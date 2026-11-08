@@ -1,14 +1,15 @@
 import { readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
-import { loadRecording, renderCheckoutReturnPage, renderDemoPage, renderErrorPage, renderRecordedRunPage, renderStartPage } from "../pages/demo.js";
+import { loadRecording, refundControlHtml, renderCheckoutReturnPage, renderDemoPage, renderErrorPage, renderRecordedRunPage, renderStartPage } from "../pages/demo.js";
+import { renderTracePage } from "../pages/trace.js";
 import { loadConsoleData, type Budget } from "../console/data.js";
 import { newStyleNonce, renderConsolePage } from "../console/page.js";
 import { SESSION_TTL_MS, type BeatId, type PurchaseBeat } from "./config.js";
 import { finishConnect, releaseSession, startConnect, type DemoDeps } from "./connect.js";
 import { LIMITS, RateLimiter } from "./limits.js";
 import type { DemoSession } from "./session.js";
-import { captureCheckout, decideApproval, runBeat } from "./story.js";
+import { captureCheckout, decideApproval, refundPurchase, runBeat } from "./story.js";
 
 export const COOKIE = "praman_demo";
 const CLIENT_JS = readFileSync(fileURLToPath(new URL("./client.js", import.meta.url)), "utf8");
@@ -61,6 +62,7 @@ const SECURITY_HEADERS = {
  * nothing else: no route reads a request body, and the only query value read is
  * PayPal's own token on the way back from approval, which must match the session's.
  * So a request can't name a price, currency, rail, merchant, goal, approval or trace.
+ * A refund is asked for by step, /demo/refund/<step>, and acts on that step's purchase.
  */
 export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const secure = deps.baseUrl.startsWith("https://");
@@ -239,6 +241,22 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       }
 
       const [, , verb, name] = path.split("/");
+
+      // The visitor's own view of a purchase step's trace: the public trace page, plus
+      // the refund control for this session's purchase. The path names a step, never a trace.
+      if (method === "GET" && verb === "r" && name !== undefined && isPurchase(name)) {
+        const record = session.beats.get(name);
+        if (record === undefined || record.traceId === null) {
+          redirect(res, "/demo");
+          return;
+        }
+        const notice = session.notice;
+        session.notice = null;
+        const page = await renderTracePage(record.traceId, (trace) => refundControlHtml(name, record, trace, notice));
+        send(res, page.status, page.html);
+        return;
+      }
+
       if (method === "POST" && name !== undefined) {
         if (verb === "step" && isStep(name, STEPS)) {
           await exclusive(session, () => runBeat(session, name, deps));
@@ -253,6 +271,12 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
         if (verb === "capture" && isPurchase(name)) {
           await exclusive(session, () => captureCheckout(session, name, deps));
           redirect(res, `/demo#${name}`);
+          return;
+        }
+        if (verb === "refund" && isPurchase(name)) {
+          // Only a person on this session's page gets here: no agent can reach this route (D-66).
+          await exclusive(session, () => refundPurchase(session, name, deps));
+          redirect(res, (session.beats.get(name)?.traceId ?? null) === null ? `/demo#${name}` : `/demo/r/${name}#refund`);
           return;
         }
       }

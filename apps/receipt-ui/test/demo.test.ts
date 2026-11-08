@@ -7,7 +7,7 @@ import { releaseStaleOrders } from "@praman/control-plane";
 import { prisma } from "@praman/db";
 import { deriveState } from "@praman/ledger";
 import { generateKeypair } from "@praman/mandate";
-import type { CaptureRequest, CreateOrderRequest, ExecOutcome, OrderLookup } from "@praman/exec-core";
+import type { CaptureRequest, CreateOrderRequest, ExecOutcome, OrderLookup, RefundOutcome, RefundRequest } from "@praman/exec-core";
 import type { SavedMethodCharger, SetupToken, VaultResult } from "@praman/paypal-exec";
 import type { Minor } from "@praman/shared";
 import { HARNESS_LIMITS } from "../src/demo/config.js";
@@ -20,6 +20,7 @@ import { DemoActivity, scheduleSweeps } from "../src/sweeps.js";
 import { routeByRail } from "@praman/exec-core";
 import { SavedMethods, SessionStore } from "../src/demo/session.js";
 import { loadRecording, recordingHtml } from "../src/pages/demo.js";
+import { renderTracePage } from "../src/pages/trace.js";
 import { readFileSync } from "node:fs";
 import { CONTENT_SECURITY_POLICY } from "../src/csp.js";
 import { VENDOR, vendorPath } from "../src/assets.js";
@@ -130,6 +131,23 @@ class FakePayPal implements SavedMethodCharger, VaultApi {
   }
   approveAll(): void {
     for (const o of this.orders.values()) o.approved = true;
+  }
+  /** Refunds by PayPal-Request-Id: the same key gets the same refund, as on 2026-11-08 (D-68). */
+  readonly refunds: RefundRequest[] = [];
+  readonly #refundsByKey = new Map<string, RefundOutcome>();
+  /** The next refund gets no answer, as when the network drops before PayPal replies. */
+  failNextRefund = false;
+  async refund(req: RefundRequest): Promise<RefundOutcome> {
+    this.refunds.push(req);
+    if (this.failNextRefund) {
+      this.failNextRefund = false;
+      throw new Error("ETIMEDOUT");
+    }
+    const known = this.#refundsByKey.get(req.idempotency_key);
+    if (known !== undefined) return known;
+    const done: RefundOutcome = { rail: "paypal", payment_id: req.payment_id, refund_id: `REF${String(this.#refundsByKey.size + 1)}`, status: "refunded", amount_minor: req.amount_minor, currency: req.currency, failure_code: null };
+    this.#refundsByKey.set(req.idempotency_key, done);
+    return done;
   }
   async createSetupToken(): Promise<VaultResult<SetupToken>> {
     return { ok: true, value: { id: SETUP_TOKEN, approveUrl: `https://www.sandbox.paypal.com/agreements/approve?approval_session_id=${SETUP_TOKEN}` } };
@@ -623,6 +641,132 @@ describe("revoking the mandate", () => {
     await v.post("/demo/capture/large");
     expect(sessionOf(v).beats.get("large")).toMatchObject({ state: "refused", reasonCode: "MANDATE_REVOKED" });
     expect([...paypal.orders.values()].some((o) => o.captured && o.id.startsWith("CHK"))).toBe(false);
+  });
+});
+
+describe("refunding a purchase from its trace page (D-66, D-67)", () => {
+  const refundRows = (traceId: string) =>
+    prisma.ledgerEntry.findMany({ where: { traceId, eventType: { in: ["refund_requested", "refund_outcome"] } }, orderBy: { seq: "asc" } });
+
+  async function paidSecond(): Promise<Visitor> {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    await v.post("/demo/approve/first");
+    await v.post("/demo/step/second");
+    expect(sessionOf(v).beats.get("second")).toMatchObject({ state: "done", payment: "saved_method" });
+    return v;
+  }
+
+  it("the visitor refunds a paid purchase from its trace page, once, and the budget still counts it", async () => {
+    const v = await paidSecond();
+    const second = sessionOf(v).beats.get("second");
+    const traceId = second?.traceId ?? "";
+    const mandateId = sessionOf(v).mandate.document.mandate_id;
+
+    // The demo page sends the visitor to their own view of the trace, by step, not by trace id.
+    expect(await v.page()).toContain('href="/demo/r/second"');
+    const before = await v.get("/demo/r/second");
+    expect(before.status).toBe(200);
+    expect(before.text).toContain(traceId);
+    expect(before.text).toContain('action="/demo/refund/second"');
+    expect(before.text).toContain("Refund $4.50");
+    expect(before.text).toContain("the agent has no way to ask for one");
+
+    const spentBefore = (await prisma.$transaction((tx) => deriveState(tx, mandateId))).spent_minor;
+    const res = await v.post("/demo/refund/second");
+    expect(res.status).toBe(303);
+    expect(res.location).toBe("/demo/r/second#refund");
+    expect(paypal.refunds).toEqual([expect.objectContaining({ payment_id: "CAP_VLT2", amount_minor: 450n, currency: "USD" })]);
+
+    const after = await v.get("/demo/r/second");
+    expect(after.text).toContain("Refunded in full. $4.50 went back to the buyer.");
+    expect(after.text).toContain("Asked for by the demo visitor, on this trace page");
+    expect(after.text).not.toContain('action="/demo/refund/second"');
+    const rows = await refundRows(traceId);
+    expect(rows.map((r) => [r.eventType, r.actor])).toEqual([
+      ["refund_requested", "demo_visitor"],
+      ["refund_outcome", "praman"],
+    ]);
+    expect((await prisma.$transaction((tx) => deriveState(tx, mandateId))).spent_minor).toBe(spentBefore);
+    expect(await v.page()).toContain("Refunded to the buyer");
+
+    // Pressed again: answered from the ledger, nothing sent, nothing written.
+    await v.post("/demo/refund/second");
+    expect(paypal.refunds).toHaveLength(1);
+    expect(await refundRows(traceId)).toHaveLength(2);
+  });
+
+  it("refunds a purchase the buyer paid at PayPal's checkout", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    await v.post("/demo/approve/first");
+    await v.post("/demo/step/large");
+    await v.post("/demo/approve/large");
+    paypal.approveAll();
+    await v.post("/demo/capture/large");
+    expect(sessionOf(v).beats.get("large")).toMatchObject({ state: "done", payment: "checkout" });
+
+    await v.post("/demo/refund/large");
+    expect(paypal.refunds).toEqual([expect.objectContaining({ amount_minor: 3200n })]);
+    expect((await v.get("/demo/r/large")).text).toContain("Refunded in full. $32.00 went back to the buyer.");
+  });
+
+  it("has nothing to refund on a step that hasn't paid", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    expect(sessionOf(v).beats.get("first")).toMatchObject({ state: "awaiting_approval" });
+
+    expect((await v.get("/demo/r/first")).text).not.toContain('action="/demo/refund/first"');
+    await v.post("/demo/refund/first");
+    await v.post("/demo/refund/large");
+    expect(paypal.refunds).toHaveLength(0);
+    expect(await v.page()).toContain("There is no paid purchase in that step to refund.");
+    // A step that never ran has no trace to show.
+    expect((await v.get("/demo/r/large")).location).toBe("/demo");
+  });
+
+  it("one visitor cannot see the refund button on, or refund, another session's purchase", async () => {
+    const a = await paidSecond();
+    const traceId = sessionOf(a).beats.get("second")?.traceId ?? "";
+    const b = visitor();
+    await b.post("/demo/start");
+
+    expect((await b.get("/demo/r/second")).location).toBe("/demo");
+    await b.post("/demo/refund/second", { body: JSON.stringify({ trace_id: traceId, step: "second" }), headers: { "Content-Type": "application/json" } });
+    await b.post(`/demo/refund/second?trace=${encodeURIComponent(traceId)}`);
+    expect(paypal.refunds).toHaveLength(0);
+    expect(await refundRows(traceId)).toHaveLength(0);
+  });
+
+  it("the public trace page shows the refund and never offers one", async () => {
+    const v = await paidSecond();
+    const traceId = sessionOf(v).beats.get("second")?.traceId ?? "";
+    expect((await renderTracePage(traceId)).html).not.toContain("/demo/refund/");
+    await v.post("/demo/refund/second");
+    const { html } = await renderTracePage(traceId);
+    expect(html).toContain("Refunded in full. $4.50 went back to the buyer.");
+    expect(html).not.toContain("/demo/refund/");
+  });
+
+  it("still refunds after the visitor has revoked the mandate", async () => {
+    const v = await paidSecond();
+    await v.post("/demo/step/revoke");
+    await v.post("/demo/refund/second");
+    expect(paypal.refunds).toHaveLength(1);
+    expect((await v.get("/demo/r/second")).text).toContain("Refunded in full.");
+  });
+
+  it("a refund with no answer from PayPal says so in plain words and isn't sent twice", async () => {
+    const v = await paidSecond();
+    paypal.failNextRefund = true;
+    const res = await v.post("/demo/refund/second");
+    expect(res.status).toBe(303);
+    const page = await v.get("/demo/r/second");
+    expect(page.text).toContain("has no answer yet");
+    expect(page.text).not.toContain("ETIMEDOUT");
+    expect(page.text).not.toContain('action="/demo/refund/second"');
+    await v.post("/demo/refund/second");
+    expect(paypal.refunds).toHaveLength(1);
   });
 });
 

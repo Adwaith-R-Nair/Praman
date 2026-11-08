@@ -1,13 +1,13 @@
 import type { ConversationItem, ModelProvider, ProviderTurn, ToolSpec } from "@praman/agent-core";
 import { recordAgentTranscript, runAgent } from "@praman/buyer-agent";
-import { captureOrder, resolveApproval, revokeMandate, runIntent, type CaptureResult, type ResolveResult, type RunResult } from "@praman/control-plane";
+import { captureOrder, refundOrder, resolveApproval, revokeMandate, runIntent, type CaptureResult, type RefundResult, type ResolveResult, type RunResult } from "@praman/control-plane";
 import { routeByRail, SimulatedExecutor } from "@praman/exec-core";
 import type { PurchaseIntent } from "@praman/policy";
 import { addMinor, minorFromJSON, minorToJSON, ZERO_MINOR, type Minor } from "@praman/shared";
 import { FOOLED_CART, GOALS, HARNESS, HARNESS_INTENTS, HARNESS_ITEMS, MODEL_CALLS_PER_SESSION, REVOKE_REASON, type AgentStep, type BeatId, type PurchaseBeat } from "./config.js";
 import { routeFor, type DemoDeps } from "./connect.js";
 import { loadModelAnswers, RecordedProvider } from "./recorded-model.js";
-import type { BeatRecord, DemoSession, HarnessSummary } from "./session.js";
+import type { BeatRecord, DemoSession, HarnessSummary, RefundNote } from "./session.js";
 
 const MODEL_ID_FIXTURE = "fixture/simulated-fooled-model";
 /** The "harness/" prefix is how the trace page and dispute bundle tell a harness approval from a person's. */
@@ -60,6 +60,7 @@ const empty = {
   approvalId: null,
   harness: null,
   recordedModel: null,
+  refund: null,
 } satisfies Omit<BeatRecord, "state" | "message">;
 
 function amountOf(view: RunResult & { kind: "DECIDED" }): string | null {
@@ -406,6 +407,51 @@ function fromCapture(record: BeatRecord, result: CaptureResult): BeatRecord {
     case "NOT_FOUND":
       return { ...record, state: "failed", approveUrl: null, message: "Praman couldn't find the order for this step. Nothing was charged." };
   }
+}
+
+/** Whether a step paid real sandbox money, so its visitor may ask for it back. */
+export function refundable(record: BeatRecord | undefined): boolean {
+  return record !== undefined && record.state === "done" && record.traceId !== null && (record.payment === "saved_method" || record.payment === "checkout");
+}
+
+function refundNote(result: RefundResult): RefundNote {
+  switch (result.kind) {
+    case "REFUNDED":
+      return { state: "refunded", message: "Refunded in full. The money went back to the buyer's PayPal sandbox account. The mandate's budget still counts this purchase." };
+    case "PENDING":
+      return { state: "pending", message: "PayPal accepted the refund and hasn't finished it. The reconcile sweep records it when it does." };
+    case "IN_FLIGHT":
+      return { state: "open", message: "The refund has no answer yet. Praman won't send another; the reconcile sweep settles it." };
+    case "MISMATCH":
+      return { state: "mismatch", message: "PayPal reported a refund of different money than Praman asked for. A person needs to look at it with PayPal." };
+    case "FAILED":
+      return {
+        state: "failed",
+        message:
+          result.failure_code === "CAPTURE_FULLY_REFUNDED"
+            ? "PayPal says this payment was already refunded in full, so this refund moved no money."
+            : "PayPal refused the refund. No money went back. You can ask again.",
+      };
+    case "CANNOT_REFUND":
+      return { state: "failed", message: result.detail };
+  }
+}
+
+/**
+ * Gives back the whole of one paid purchase in this session, when its visitor asks from
+ * the step's trace page (D-66). The step names the purchase; the request names nothing.
+ * Only this session's own mandate's orders can be found, and the agent has no way here.
+ */
+export async function refundPurchase(session: DemoSession, beat: PurchaseBeat, deps: DemoDeps): Promise<void> {
+  const record = session.beats.get(beat);
+  if (record === undefined || !refundable(record) || record.traceId === null) {
+    session.notice = "There is no paid purchase in that step to refund.";
+    return;
+  }
+  const result = await refundOrder({ traceId: record.traceId, mandateIds: [session.mandate.document.mandate_id], requestedBy: "demo_visitor" }, routeFor(session, deps), deps.now());
+  const note = refundNote(result);
+  session.beats.set(beat, { ...record, refund: note });
+  session.notice = note.message;
 }
 
 /**

@@ -580,6 +580,22 @@ button {
   cursor: pointer;
 }
 
+/* A demo visitor's own view of a paid purchase: the one thing they may do with it. */
+.refund-control {
+  border-top: 1px solid var(--hairline);
+  padding-top: var(--space-2);
+}
+
+.refund-control .act {
+  margin: var(--space-2) 0 0;
+}
+
+.refund-control .notice {
+  background: var(--paper-raised);
+  border-left: 3px solid var(--ink);
+  padding: var(--space-1) var(--space-2);
+}
+
 button:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--step-up);
@@ -726,7 +742,8 @@ a:focus-visible {
   }
 
   .nav,
-  #verify-btn {
+  #verify-btn,
+  .refund-control {
     display: none;
   }
 
