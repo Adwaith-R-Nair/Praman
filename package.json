@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test -c e2e/playwright.local.config.ts",
+    "e2e:hosted": "playwright test -c e2e/playwright.hosted.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify-ledger": "tsx scripts/verify-ledger.ts",
     "keygen": "tsx scripts/keygen.ts",
