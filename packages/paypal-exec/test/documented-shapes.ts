@@ -32,3 +32,23 @@ export function documentedCapture(captureStatus: string, value = "100.00", curre
     links: [{ href: `https://api-m.paypal.com/v2/checkout/orders/${orderId}`, rel: "self", method: "GET" }],
   };
 }
+
+/**
+ * A refund as PayPal's sandbox answered POST /v2/payments/captures/68C05697TX7382946/refund
+ * on 2026-11-08 (D-68), with Prefer: return=representation. Recorded live, unlike the
+ * capture above, and trimmed to the fields paypal-exec reads plus the times; the fee
+ * breakdown is left out. Its ids are that sandbox run's.
+ */
+export function liveRefund(over: { readonly status?: string; readonly value?: string; readonly capture?: string } = {}) {
+  return {
+    id: "7DA46548R94559222",
+    amount: { currency_code: "USD", value: over.value ?? "2.00" },
+    status: over.status ?? "COMPLETED",
+    create_time: "2026-11-07T16:49:47-08:00",
+    update_time: "2026-11-07T16:49:47-08:00",
+    links: [
+      { href: "https://api.sandbox.paypal.com/v2/payments/refunds/7DA46548R94559222", rel: "self", method: "GET" },
+      { href: `https://api.sandbox.paypal.com/v2/payments/captures/${over.capture ?? "68C05697TX7382946"}`, rel: "up", method: "GET" },
+    ],
+  };
+}

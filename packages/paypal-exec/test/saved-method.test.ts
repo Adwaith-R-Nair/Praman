@@ -165,6 +165,21 @@ describe("SavedMethodExecutor", () => {
     expect(exec.rail).toBe("paypal");
   });
 
+  it("refunds through the plain rail, and has no refund when the plain rail has none", async () => {
+    const inner = new FakeCharger();
+    const plain = new SavedMethodExecutor(inner, () => VAULT_ID);
+    expect(plain.refund).toBeUndefined();
+
+    const refunding = Object.assign(new FakeCharger(), {
+      refund: async (r: { payment_id: string; amount_minor: Minor; currency: "USD" | "INR" }) => ({ rail: "paypal" as const, payment_id: r.payment_id, refund_id: "R1", status: "refunded" as const, amount_minor: r.amount_minor, currency: r.currency, failure_code: null }),
+    });
+    const exec = new SavedMethodExecutor(refunding, () => VAULT_ID);
+    const outcome = await exec.refund?.({ payment_id: "CAP1", amount_minor: minor(450n), currency: "USD", idempotency_key: KEY });
+    expect(outcome).toMatchObject({ status: "refunded", refund_id: "R1", payment_id: "CAP1" });
+    // A refund never touches the saved method or the order calls.
+    expect(refunding.calls).toEqual([]);
+  });
+
   it("never repeats a charge to look an order up, and captures through the plain rail", async () => {
     const inner = new FakeCharger();
     const exec = new SavedMethodExecutor(inner, () => VAULT_ID);

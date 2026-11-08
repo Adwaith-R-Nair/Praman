@@ -1,4 +1,4 @@
-import type { CaptureRequest, CreateOrderRequest, ExecOutcome, Executor, OrderLookup } from "@praman/exec-core";
+import type { CaptureRequest, CreateOrderRequest, ExecOutcome, Executor, OrderLookup, RefundOutcome, RefundRequest } from "@praman/exec-core";
 import { isCurrency, type Currency, type Minor } from "@praman/shared";
 import { describePayPalFailure, isRecord, PayPalClient, PayPalUnknownOutcome, type PayPalConfig, type PayPalResponse } from "./client.js";
 import { fromPayPalValue, toPayPalValue } from "./money.js";
@@ -77,6 +77,22 @@ export interface CheckoutReturn {
 export interface PayPalExecutorConfig extends PayPalConfig {
   /** Unset, PayPal shows its own page after approval and the buyer comes back by hand. */
   readonly checkoutReturn?: CheckoutReturn;
+}
+
+/**
+ * Where a refund's "up" link says it belongs: the capture id at the end of
+ * /v2/payments/captures/{id}. Null when there is no such link to read.
+ */
+function refundedCapture(links: unknown): string | null {
+  if (!Array.isArray(links)) return null;
+  const up: unknown = links.find((l: unknown) => isRecord(l) && l["rel"] === "up");
+  if (!isRecord(up) || typeof up["href"] !== "string") return null;
+  try {
+    const match = /\/v2\/payments\/captures\/([^/]+)$/.exec(new URL(up["href"]).pathname);
+    return match?.[1] === undefined ? null : decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
 }
 
 /** A rail that can also charge a payment method the buyer saved earlier, with no buyer present. */
@@ -158,6 +174,54 @@ export class PayPalExecutor implements SavedMethodCharger {
       default:
         throw unknown("capture has an unrecognised status");
     }
+  }
+
+  #failedRefund(req: RefundRequest, code: string, refundId: string | null = null): RefundOutcome {
+    return { rail: this.rail, payment_id: req.payment_id, refund_id: refundId, status: "failed", amount_minor: req.amount_minor, currency: req.currency, failure_code: code };
+  }
+
+  /**
+   * Reads PayPal's answer to a refund, seen live on 2026-11-08 (D-68): 201 with id,
+   * status and amount, and links whose "up" names the capture. Status for status:
+   *
+   *   COMPLETED            refunded: the money went back to the buyer
+   *   PENDING              pending: accepted, not finished, so a later look decides
+   *   CANCELLED, FAILED    failed: this refund moved no money
+   *   anything else        unknown
+   *
+   * A link naming another capture means the answer isn't about this one.
+   */
+  #readRefund(body: Record<string, unknown>, req: RefundRequest): RefundOutcome {
+    const refundId = body["id"];
+    if (typeof refundId !== "string" || refundId === "") throw unknown("refund response has no id");
+    const capture = refundedCapture(body["links"]);
+    if (capture !== null && capture !== req.payment_id) throw unknown("refund response is about a different capture");
+    const status = body["status"];
+    if (status === "CANCELLED") return this.#failedRefund(req, "PAYPAL_REFUND_CANCELLED", refundId);
+    if (status === "FAILED") return this.#failedRefund(req, "PAYPAL_REFUND_FAILED", refundId);
+    if (status !== "COMPLETED" && status !== "PENDING") throw unknown("refund response has an unrecognised status");
+    return { rail: this.rail, payment_id: req.payment_id, refund_id: refundId, status: status === "COMPLETED" ? "refunded" : "pending", ...readMoney(body["amount"]), failure_code: null };
+  }
+
+  /**
+   * A full refund of one captured payment: POST /v2/payments/captures/{id}/refund, with
+   * the amount stated, under a derived PayPal-Request-Id. Seen live (D-68): the same key
+   * again answers 200 with the same refund, even when the amount differs, which is why
+   * the caller compares what comes back (acceptRefund). A second refund of a capture
+   * already refunded in full is a 422 CAPTURE_FULLY_REFUNDED, which moved no money.
+   *
+   * A named refusal is a failure of this refund. No answer, a 5xx or a 409 throws, and
+   * the caller's record stays pending until the same request is sent again.
+   */
+  async refund(req: RefundRequest): Promise<RefundOutcome> {
+    if (req.currency !== "USD") return this.#failedRefund(req, "CURRENCY_NOT_SUPPORTED");
+    if (!fitsPayPal(req.idempotency_key)) return this.#failedRefund(req, "IDEMPOTENCY_KEY_INVALID");
+    if (req.payment_id === "") return this.#failedRefund(req, "PAYMENT_ID_MISSING");
+    const res = await this.#client.call("POST", `/v2/payments/captures/${encodeURIComponent(req.payment_id)}/refund`, {
+      requestId: req.idempotency_key,
+      body: { amount: { currency_code: req.currency, value: toPayPalValue(req.amount_minor) } },
+    });
+    return res.kind === "ok" ? this.#readRefund(res.body, req) : this.#failedRefund(req, res.code);
   }
 
   /** An order Praman already named, so an answer about any other is not an answer. */

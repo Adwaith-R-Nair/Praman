@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { acceptOutcome, idempotencyKey, type CaptureRequest, type CreateOrderRequest } from "@praman/exec-core";
+import { acceptOutcome, acceptRefund, idempotencyKey, type CaptureRequest, type CreateOrderRequest, type RefundRequest } from "@praman/exec-core";
 import { minor, type Currency, type Minor } from "@praman/shared";
 import { describePayPalFailure, PayPalUnknownOutcome } from "../src/client.js";
 import { PayPalExecutor, PAYPAL_SANDBOX_BASE_URL } from "../src/executor.js";
-import { documentedCapture } from "./documented-shapes.js";
+import { documentedCapture, liveRefund } from "./documented-shapes.js";
 
 const KEY = "a".repeat(64);
 const SECRET = "shh-this-is-the-client-secret";
@@ -585,6 +585,91 @@ describe("PayPalExecutor.capture", () => {
     const { fetchMock } = fakePayPal([]);
     const outcome = await executor(fetchMock).capture({ ...captureReq(), currency: "INR" });
     expect(outcome).toMatchObject({ status: "failed", failure_code: "CURRENCY_NOT_SUPPORTED" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+const refundReq = (over: Partial<RefundRequest> = {}): RefundRequest => ({ payment_id: "68C05697TX7382946", amount_minor: minor(200n), currency: "USD", idempotency_key: KEY, ...over });
+
+describe("PayPalExecutor.refund", () => {
+  it("refunds the stated amount of one capture under the derived key, and reports PayPal's refund", async () => {
+    const { fetchMock, api } = fakePayPal([{ status: 201, body: liveRefund() }]);
+    const outcome = await executor(fetchMock).refund(refundReq());
+    expect(outcome).toEqual({ rail: "paypal", payment_id: "68C05697TX7382946", refund_id: "7DA46548R94559222", status: "refunded", amount_minor: 200n, currency: "USD", failure_code: null });
+    expect(api[0]?.url).toBe(`${PAYPAL_SANDBOX_BASE_URL}/v2/payments/captures/68C05697TX7382946/refund`);
+    expect(api[0]?.init.method).toBe("POST");
+    expect(headersOf(api[0]!.init).get("PayPal-Request-Id")).toBe(KEY);
+    expect(headersOf(api[0]!.init).get("Prefer")).toBe("return=representation");
+    expect(JSON.parse(String(api[0]?.init.body))).toEqual({ amount: { currency_code: "USD", value: "2.00" } });
+  });
+
+  it("gives the same answer to a repeat with the same key, which PayPal answers with a 200", async () => {
+    const { fetchMock } = fakePayPal([{ status: 200, body: liveRefund() }]);
+    expect(await executor(fetchMock).refund(refundReq())).toMatchObject({ status: "refunded", refund_id: "7DA46548R94559222" });
+  });
+
+  it("reports the old refund's amount when a reused key asks for other money, for acceptRefund to catch", async () => {
+    // Seen live (D-68): the same key with 1.00 after a 2.00 refund answered 200 and the 2.00 refund.
+    const { fetchMock } = fakePayPal([{ status: 200, body: liveRefund() }]);
+    const outcome = await executor(fetchMock).refund(refundReq({ amount_minor: minor(100n) }));
+    expect(outcome).toMatchObject({ status: "refunded", amount_minor: 200n });
+    expect(acceptRefund(outcome, { amount_minor: minor(100n), currency: "USD" }).status).toBe("mismatch");
+  });
+
+  it("reports a pending refund as pending, not as money returned", async () => {
+    const { fetchMock } = fakePayPal([{ status: 201, body: liveRefund({ status: "PENDING" }) }]);
+    expect(await executor(fetchMock).refund(refundReq())).toMatchObject({ status: "pending", refund_id: "7DA46548R94559222" });
+  });
+
+  it.each([
+    ["CANCELLED", "PAYPAL_REFUND_CANCELLED"],
+    ["FAILED", "PAYPAL_REFUND_FAILED"],
+  ])("reports a %s refund as failed, keeping PayPal's refund id", async (status, code) => {
+    const { fetchMock } = fakePayPal([{ status: 201, body: liveRefund({ status }) }]);
+    expect(await executor(fetchMock).refund(refundReq())).toMatchObject({ status: "failed", failure_code: code, refund_id: "7DA46548R94559222", amount_minor: 200n });
+  });
+
+  it("returns a definite failure when the capture is already refunded in full", async () => {
+    // Seen live (D-68): a new key, or no key at all, after a full refund.
+    const { fetchMock } = fakePayPal([{ status: 422, body: refusal("UNPROCESSABLE_ENTITY", "CAPTURE_FULLY_REFUNDED") }]);
+    expect(await executor(fetchMock).refund(refundReq())).toEqual({
+      rail: "paypal",
+      payment_id: "68C05697TX7382946",
+      refund_id: null,
+      status: "failed",
+      amount_minor: 200n,
+      currency: "USD",
+      failure_code: "CAPTURE_FULLY_REFUNDED",
+    });
+  });
+
+  it.each([
+    { status: 500, raw: "oops" },
+    { status: 409, body: refusal("RESOURCE_CONFLICT", "PREVIOUS_REQUEST_IN_PROGRESS") },
+    new Error("ECONNRESET"),
+  ])("stays unknown when PayPal's answer can't say what happened (%#)", async (reply) => {
+    const { fetchMock } = fakePayPal([reply]);
+    await expect(executor(fetchMock).refund(refundReq())).rejects.toBeInstanceOf(PayPalUnknownOutcome);
+  });
+
+  it("stays unknown when the answer is about another capture, has no id, or an unknown status", async () => {
+    for (const body of [
+      liveRefund({ capture: "SOMEONE_ELSES_CAPTURE" }),
+      { ...liveRefund(), id: "" },
+      liveRefund({ status: "ON_HOLD" }),
+      liveRefund({ value: "2.0" }),
+    ]) {
+      const { fetchMock } = fakePayPal([{ status: 201, body }]);
+      await expect(executor(fetchMock).refund(refundReq())).rejects.toBeInstanceOf(PayPalUnknownOutcome);
+    }
+  });
+
+  it("refuses with no call: another currency, a key PayPal can't take, or no capture id", async () => {
+    const { fetchMock } = fakePayPal([]);
+    const exec = executor(fetchMock);
+    expect(await exec.refund(refundReq({ currency: "INR" }))).toMatchObject({ status: "failed", failure_code: "CURRENCY_NOT_SUPPORTED" });
+    expect(await exec.refund(refundReq({ idempotency_key: "k".repeat(109) }))).toMatchObject({ status: "failed", failure_code: "IDEMPOTENCY_KEY_INVALID" });
+    expect(await exec.refund(refundReq({ payment_id: "" }))).toMatchObject({ status: "failed", failure_code: "PAYMENT_ID_MISSING" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

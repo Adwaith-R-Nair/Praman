@@ -1,4 +1,4 @@
-import type { CaptureRequest, CreateOrderRequest, ExecOutcome, Executor, OrderLookup, Rail } from "@praman/exec-core";
+import type { CaptureRequest, CreateOrderRequest, ExecOutcome, Executor, OrderLookup, Rail, RefundOutcome, RefundRequest } from "@praman/exec-core";
 import type { SavedMethodCharger } from "./executor.js";
 
 /**
@@ -24,9 +24,14 @@ export class SavedMethodExecutor implements Executor {
   readonly #inner: SavedMethodCharger;
   readonly #choose: SavedMethodChoice;
 
+  /** The plain rail's refund, when it has one. A refund never goes near the saved method. */
+  readonly refund?: (req: RefundRequest) => Promise<RefundOutcome>;
+
   constructor(inner: SavedMethodCharger, choose: SavedMethodChoice) {
     this.#inner = inner;
     this.#choose = choose;
+    const refund = inner.refund;
+    if (refund !== undefined) this.refund = (req) => refund.call(inner, req);
   }
 
   get rail(): Rail {
