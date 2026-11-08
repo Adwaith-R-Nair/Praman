@@ -22,7 +22,7 @@ The hosted server signs a mandate for each visitor with its own key. It must nev
 
 A fresh pair was made with `pnpm keygen` and saved in `private/demo-mandate-keys.env`. `private/` is in `.gitignore`. Open that file in an editor when step 4 asks for the two values. Don't paste them into a chat, an issue, or a commit.
 
-If you ever need a new pair: run `pnpm keygen > private/demo-mandate-keys.env`, so the private key is never printed on screen, then open the file, delete the lines that aren't keys, and rename the two key names to `DEMO_MANDATE_PRIVATE_KEY` and `DEMO_MANDATE_PUBLIC_KEY`.
+If you ever need a new pair: run `mkdir -p private && pnpm --silent keygen > private/demo-mandate-keys.env`, so the private key is never printed on screen, then open the file, delete the lines that aren't keys, and rename the two key names to `DEMO_MANDATE_PRIVATE_KEY` and `DEMO_MANDATE_PUBLIC_KEY`.
 
 ## 2. Neon: the database and its two addresses
 
