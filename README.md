@@ -254,7 +254,7 @@ Three that changed the architecture:
 
 ## Decision records
 
-79 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
+80 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
 
 ## Documentation
 
@@ -287,8 +287,8 @@ To see what changed:
 
 ## Built with
 
-Praman was designed and built with Claude as a pair-programming partner. Every architectural decision in `docs/DECISIONS.md` is mine, made deliberately and defended there. Up to the `v1.0-submission` tag, the policy engine's `evaluate()` and the ledger's hash chain were hand-written, because those are the two files where a subtle bug is a money bug and I wanted to own them line by line. Claude generated much of the surrounding scaffolding from specifications I wrote, under the constraints in `docs/INVARIANTS.md`, and I reviewed every diff. The commit history shows the sequence: specification, then core, then plumbing, then measurement.
+Praman was designed and built with Claude as a pair-programming partner. Every architectural decision in `docs/DECISIONS.md` is mine, made deliberately and defended there. Up to the `v1.0-submission` tag, the policy engine's `evaluate()` and the ledger's hash chain were hand-written, because those are the two files where a subtle bug is a money bug and I wanted to own them line by line. Claude generated much of the surrounding scaffolding from specifications I wrote, under the constraints in `docs/INVARIANTS.md`, and at that stage I reviewed every diff. The commit history shows the sequence: specification, then core, then plumbing, then measurement.
 
-Since 2026-11-04 the project follows an agentic development life cycle, by my decision ([D-27](docs/DECISIONS.md)). Agents may now edit those two files as well. Each change to them needs a failing test first, its own commit, and my review. An agent can propose a design, and accepting it stays my call. No model takes part in a payment decision at runtime, and that has not changed.
+Since 2026-11-04 the project follows an agentic development life cycle, by my decision ([D-27](docs/DECISIONS.md)). Agents may now edit those two files as well. Since 2026-11-07 I no longer review changes before they land ([D-80](docs/DECISIONS.md)): agents make the changes and the commits, and an independent agent reviews the money path. A change to those two files needs a failing test first, its own commit and that independent review, and I am told what changed and why. Decisions an agent made on its own are marked in `docs/DECISIONS.md` as implementer's decisions for me to check. No model takes part in a payment decision at runtime, and that has not changed.
 
 MIT licensed.

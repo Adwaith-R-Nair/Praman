@@ -19,7 +19,7 @@ The rule from Phase 0 still holds: *if you cannot explain the phase you just fin
 These rules apply to every phase. The engineer executing a phase (human or model) reads this section first.
 
 1. **Protected packages.** `CLAUDE.md` requires a five-line plan, and explicit approval, before any change to `packages/policy`, `packages/ledger` or `packages/razorpay-exec`. Phases that touch them are marked **⚑ PROTECTED** with the exact files involved. That includes test-only changes inside those packages. Post the plan, wait, then start.
-2. **`packages/policy/src/evaluate.ts` was hand-written up to the `v1.0-submission` tag.** Since 2026-11-04 agents may edit it (D-27), with a failing test first, its own commit, and the builder's review. Two phases (19 and 20) need new decision logic and follow that rule. They are marked **✎ DECISION LOGIC**.
+2. **`packages/policy/src/evaluate.ts` was hand-written up to the `v1.0-submission` tag.** Since 2026-11-04 agents may edit it (D-27), with a failing test first, its own commit, and an independent agent review (D-80). Two phases (19 and 20) need new decision logic and follow that rule. They are marked **✎ DECISION LOGIC**.
 3. **Documentation happens inside the phase.** No phase is finished until it has (a) a build-log entry and (b) a decision record wherever a real design choice was made. There is no "docs cleanup" phase at the end.
    - Build log: new entries go under a `## Phase 2` divider in `docs/BUILD_LOG.md`, headed `### Phase N · <date> · <topic>`. The existing rule still applies: entries are never edited after the fact, and corrections are written forward.
    - Decision records: continue from D-25 in `docs/DECISIONS.md`. Numbers are assigned when the record is written, in the order they're written. The `D-xx` labels in this document are working titles, not reserved numbers. When a new record supersedes part of an old one (D-20 and D-22 will both be partly superseded), the old record gets a one-line `Status:` pointer forward. Its original text stays as written.
@@ -503,7 +503,7 @@ Answer the policy question D-20 deliberately left open.
 - `test: slow probe stays under the window cap indefinitely` ⚑ policy tests
 - `feat: add mandate schema v2 with a lifetime denial limit`
 - `feat: add MANDATE_LOCKED to reason codes and spec table`
-- `feat: enforce the lifetime denial ceiling` ✎ **its own commit, builder's review**
+- `feat: enforce the lifetime denial ceiling` ✎ **its own commit, independent agent review**
 - `feat: derive unlock events and add an unlock cli` ⚑ ledger
 - `test: v1 mandates are unaffected by the ceiling`
 - `chore: add the slow-probe and locked-mandate fixtures`
@@ -542,7 +542,7 @@ Let an agent hand a strictly smaller slice of its authority to a sub-agent. The 
 - `test: sibling spend is bounded by the parent budget` ⚑
 - `feat: add sub-mandate issuance with attenuation checks`
 - `feat: derive subtree spend for ancestor mandates` ⚑ ledger
-- `feat: evaluate intents against every level of a chain` ✎ **its own commit, builder's review**
+- `feat: evaluate intents against every level of a chain` ✎ **its own commit, independent agent review**
 - `feat: cascade parent revocation to descendants`
 - `feat: show the denying level on the trace page`
 - `chore: add delegation fixtures`

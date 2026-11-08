@@ -674,7 +674,8 @@ tag. At the time of this record, neither file has a commit after that tag, which
 typed a line, so the evidence for "hand-written" is the builder's own statement:
 the README at that tag, and the Day 4 build-log entry for `evaluate()`.
 
-**The rule from here.** Agents may edit both files. Each change needs a failing
+**The rule from here.** (Amended on 2026-11-07 by D-80: the review is now an
+independent agent's, not the builder's.) Agents may edit both files. Each change needs a failing
 test first, its own commit, and the builder's review. `evaluate.ts` stays one
 readable pure function.
 
@@ -2909,4 +2910,14 @@ The dispute bundle said `signature_verified: true` with no mandate in it, inferr
 **Limit.** The public key travels with the bundle, so it proves the mandate wasn't altered after signing, not who holds the key. Tying a key to a person is a key registry, which Praman doesn't have.
 
 **Rejected.** The unused `mandate` table: outside the hash chain, so no tamper evidence. A new ledger event: more rows on every trace and no gain over a field on the row that already belongs to the decision. A signing step in the demo: it would change what a visitor does, not what an outsider can check.
+
+---
+
+### D-80 · Since 2026-11-07 an independent agent reviews changes, not the builder · Accepted (the builder's decision, recorded by an implementer for the builder to check)
+
+D-27 said each change to `evaluate.ts` and the hash chain needed the builder's review, and the README repeated it. On 2026-11-07 the builder changed how the project runs, in `CLAUDE.md` (invariant 3 and Working style): agents make all code changes and commits without waiting for him, and independent agent reviewers check the money path. No later record said so, which left the README's provenance statement false.
+
+**Decided.** The review a change gets is an independent agent's. A change to `evaluate.ts` still needs a failing test first and its own commit, and the builder is told in plain language what changed and why. Invariant 1 doesn't change: no model takes part in a payment decision at runtime.
+
+**Consequence.** The trust D-27 rested on the builder's reading now rests on the failing test, the isolated commit, the independent review and the CI checks. Agents' own design calls are marked as implementer's decisions in this file, for the builder to check afterwards. Dated records, such as older build log entries, are left as they were.
 
