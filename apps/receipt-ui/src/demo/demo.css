@@ -690,3 +690,12 @@ summary {
     columns: 1;
   }
 }
+
+/* Phone tap targets: trace links and the top bar, around 44px tall. */
+@media (max-width: 40rem) {
+  .links a,
+  .demo-top a {
+    display: inline-block;
+    padding: 0.8rem 0.5rem 0.8rem 0;
+  }
+}
