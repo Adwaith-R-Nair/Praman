@@ -219,11 +219,11 @@ Praman's own agent uses this same server with `PRAMAN_MCP=1`. Unset, it calls th
 
 ## Scope and limitations
 
-Built solo in nine days. These are decisions, not oversights.
+The Razorpay submission was built solo in nine days, and the PayPal work on top of it over the following week. These are decisions, not oversights.
 
 **By design**
 - **Razorpay test mode and PayPal sandbox only.** No live keys, no real money.
-- **No HTTP API.** The control plane is a `runIntent()` orchestrator invoked by CLI. The transaction boundary, advisory lock and ledger writes are identical; an Express layer would have added routing, not architecture.
+- **No public API for agents.** The control plane is a `runIntent()` orchestrator, called by the CLI, by the demo's routes and by the MCP gateway. The transaction boundary, advisory lock and ledger writes are the same from each; a REST layer would add routing, not architecture.
 - **Gate sits before order creation.** Agent-initiated card payments cannot complete headlessly in test mode. An order is a payable obligation, so creating one commits budget ([D-17](docs/DECISIONS.md)); the payment leg is completed via test checkout.
 - **Not a UAP implementation.** UAP is unpublished.
 
