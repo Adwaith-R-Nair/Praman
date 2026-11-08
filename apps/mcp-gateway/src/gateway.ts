@@ -134,7 +134,7 @@ export function createGateway(deps: GatewayDeps): McpServer {
   );
   const mandateId = deps.signed.document.mandate_id;
   const reads: ReadRecord[] = [];
-  const recent = new Map<string, { at: number; trace: Promise<string | null> }>();
+  const recent = new Map<string, { at: number; trace: Promise<string> }>();
   let readSeq = 0;
 
   function remember(name: string, input: Record<string, unknown>, content: string): void {
@@ -230,7 +230,7 @@ export function createGateway(deps: GatewayDeps): McpServer {
       const prior = recent.get(retryKey);
       if (prior !== undefined && now.getTime() - prior.at < RETRY_WINDOW_MS) {
         const priorTrace = await prior.trace;
-        const view = priorTrace === null ? null : await readPurchase(priorTrace, mandateId, deps.receiptBaseUrl, now);
+        const view = await readPurchase(priorTrace, mandateId, deps.receiptBaseUrl, now);
         if (view !== null) return purchaseReply(view, { retry_of: priorTrace, retry_note: "Same merchant, SKU and quantity within two minutes: this is the first proposal's answer. To buy more, use qty." });
       }
 
@@ -243,7 +243,11 @@ export function createGateway(deps: GatewayDeps): McpServer {
         agent_rationale: "proposed through the Praman MCP gateway",
       };
       const run = runIntent(intent, deps.signed, deps.publicKeyPem, deps.route, now, clientLabel(server.server.getClientVersion()));
-      recent.set(retryKey, { at: now.getTime(), trace: run.then((r) => r.trace_id).catch(() => null) });
+      // The trace id is known before the run, and kept even if it throws: a throw after T1
+      // can leave an order at the rail, and only the trace can say so. A throw in T1 wrote
+      // nothing, so readPurchase finds no trace and the retry starts afresh.
+      const started = `trc_${intent.intent_id}`;
+      recent.set(retryKey, { at: now.getTime(), trace: run.then((r) => r.trace_id).catch(() => started) });
       const result = await run;
 
       const proposal: ReadRecord = { id: `read_${(++readSeq).toString()}`, name: "propose_purchase", input: { merchant_id, sku, qty }, content: `trace_id=${result.trace_id}` };

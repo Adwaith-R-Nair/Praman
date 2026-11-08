@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { resolveApproval } from "@praman/control-plane";
@@ -331,6 +331,32 @@ describe("propose_purchase", () => {
     const c = await call(h, "propose_purchase", { merchant_id: SHOP, sku: "C3_MUG", qty: 1 });
     expect(c.data["retry_of"]).toBeUndefined();
     expect(c.data["trace_id"]).not.toBe(a.data["trace_id"]);
+  });
+
+  it("answers a retry after an internal error with the first trace, and starts no new order", async () => {
+    const h = await harness();
+    // One purchase a person approved, so the next isn't stopped by the first-merchant step-up.
+    const first = await call(h, "propose_purchase", { merchant_id: SHOP, sku: "C3_NOTEBOOK", qty: 1 });
+    await resolveApproval(String(approvalOf(first.data)["approval_id"]), "approve", h.deps.signed, h.deps.publicKeyPem, h.deps.route, h.clock);
+    const createsBefore = h.rail.creates;
+
+    // The order reaches the rail, then T2 can't commit.
+    const original = h.rail.createOrder.bind(h.rail);
+    h.rail.createOrder = async (req) => {
+      const answered = await original(req);
+      h.rail.createOrder = original;
+      vi.spyOn(prisma, "$transaction").mockImplementationOnce(() => Promise.reject(new Error("database down at T2")));
+      return answered;
+    };
+    const failed = await call(h, "propose_purchase", { merchant_id: SHOP, sku: "C3_MUG", qty: 1 });
+    expect(failed.data).toMatchObject({ status: "ERROR" });
+    expect(h.rail.creates).toBe(createsBefore + 1);
+
+    const retry = await call(h, "propose_purchase", { merchant_id: SHOP, sku: "C3_MUG", qty: 1 });
+
+    expect(retry.data).toMatchObject({ status: "PENDING" });
+    expect(retry.data["retry_of"]).toBeDefined();
+    expect(h.rail.creates).toBe(createsBefore + 1);
   });
 
   it("charges the catalog price whatever the merchant text says", async () => {
