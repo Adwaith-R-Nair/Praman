@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
-import { loadRecording, refundControlHtml, renderCheckoutReturnPage, renderDemoPage, renderErrorPage, renderRecordedRunPage, renderStartPage } from "../pages/demo.js";
+import { loadRecording, refundControlHtml, renderCheckoutReturnPage, renderDemoPage, renderErrorPage, renderNotFoundPage, renderRecordedRunPage, renderStartPage } from "../pages/demo.js";
 import { renderTracePage } from "../pages/trace.js";
 import { loadConsoleData, type Budget } from "../console/data.js";
 import { newStyleNonce, renderConsolePage } from "../console/page.js";
@@ -21,6 +21,9 @@ const RECORDED_RUN_PNG = readFileSync(fileURLToPath(new URL("../../../../docs/sc
 /** Told to a visitor whose session is gone, whatever they had pressed. */
 const SESSION_ENDED =
   "Your demo session has ended, because the server restarted or its hour ran out. Whatever you just pressed was not run. A PayPal checkout that wasn't captured can't be captured now, so nothing is charged for it. Everything already paid stays on the ledger. Start a new session to go on.";
+
+/** Routes that act on a session. Anything else under /demo with no session has nothing to send a visitor to. */
+const SESSION_PATHS = /^\/demo(\/end|\/connect(\/(return|cancel))?|\/(r|step|approve|reject|capture|refund)\/[^/]+)?$/;
 
 const STEPS: readonly BeatId[] = ["first", "second", "large", "injection", "fixture", "concurrency", "revoke", "after_revoke"];
 /** The steps that buy at the cafe. Any of them can need approval or become a checkout. */
@@ -202,6 +205,11 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
           send(res, 200, renderStartPage("Your session ended before PayPal sent you back. Nothing was saved. Start a new session.", configured));
           return;
         }
+        // A path that doesn't exist even with a session gets a 404, not the start page.
+        if (!SESSION_PATHS.test(path)) {
+          send(res, 404, renderNotFoundPage());
+          return;
+        }
         // Nothing to act on. A stale cookie gets the start page, which says what happened.
         redirect(res, "/demo");
         return;
@@ -287,8 +295,7 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
         }
       }
 
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", ...SECURITY_HEADERS });
-      res.end("Not found");
+      send(res, 404, renderNotFoundPage());
     } catch (err) {
       // The visitor gets a plain page. The operator gets the error's name and message,
       // which on this path never carry a token or a cookie.

@@ -40,6 +40,8 @@ function vendorFile(v: (typeof VENDOR)[keyof typeof VENDOR]): string {
  * allow script and style from this origin only, with no 'unsafe-inline'.
  */
 export const ASSETS: ReadonlyMap<string, Asset> = new Map([
+  ["/favicon.svg", { contentType: "image/svg+xml", body: read("./favicon.svg") }],
+  ["/favicon.ico", { contentType: "image/svg+xml", body: read("./favicon.svg") }],
   ["/assets/style.css", { contentType: "text/css; charset=utf-8", body: read("./style.css") }],
   ["/assets/landing.css", { contentType: "text/css; charset=utf-8", body: read("./landing.css") }],
   ["/assets/print.js", { contentType: "text/javascript; charset=utf-8", body: read("./layout.print.js") }],

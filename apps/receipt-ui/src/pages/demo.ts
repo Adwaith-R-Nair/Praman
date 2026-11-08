@@ -38,6 +38,7 @@ export function demoLayout(title: string, body: string): string {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/demo/demo.css">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 </head>
 <body>
 <main class="demo">
@@ -509,6 +510,10 @@ export function renderCheckoutReturnPage(cancelled: boolean): string {
        ${cancelled ? p("This window can be closed.") : p("If your demo session is still open in another window, go back to it and press Capture the payment. If that window says the session has ended, the server restarted or its hour ran out, so this payment can't be captured any more and nothing will be charged. Start a new session to try again. This window can be closed.")}
      </section>`,
   );
+}
+
+export function renderNotFoundPage(): string {
+  return demoLayout("Not found", `<header class="masthead"><h1>Not found</h1></header><section class="start"><p>There is nothing at this address in the demo. <a href="/demo">Go to the demo</a>.</p></section>`);
 }
 
 export function renderErrorPage(): string {

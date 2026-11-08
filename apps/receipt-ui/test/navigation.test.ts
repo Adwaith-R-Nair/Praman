@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@praman/db";
 import { append, type EventType } from "@praman/ledger";
 import { createApp } from "../src/app.js";
+import { ASSETS } from "../src/assets.js";
 import { countTraces, listRecentTraceIds } from "../src/data.js";
 import { renderIndexPage } from "../src/pages/index.js";
 import { renderLandingPage } from "../src/pages/landing.js";
@@ -83,6 +84,14 @@ describe("the index of recent traces", () => {
     expect(html).not.toContain("pnpm");
     expect(html).not.toContain("No traces yet");
     expect(html).toMatch(/<h1[^>]*>[^<]*<a href="\/demo">/);
+  });
+});
+
+describe("the favicon", () => {
+  it("is linked from the front page and served", async () => {
+    expect(renderLandingPage()).toContain('rel="icon"');
+    expect(ASSETS.get("/favicon.ico")?.contentType).toBe("image/svg+xml");
+    expect(ASSETS.get("/favicon.svg")?.body).toContain("<svg");
   });
 });
 

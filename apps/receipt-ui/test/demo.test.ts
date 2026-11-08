@@ -178,6 +178,22 @@ describe("after revoking, with no PayPal connected", () => {
   });
 });
 
+describe("addresses that don't exist", () => {
+  it("answers 404 under /demo with and without a session", async () => {
+    expect((await visitor().get("/demo/nonexistent")).status).toBe(404);
+    const v = visitor();
+    await v.post("/demo/start");
+    const page = await v.get("/demo/nonexistent");
+    expect(page.status).toBe(404);
+    expect(page.text).toContain("Not found");
+  });
+
+  it("still sends a visitor with no session from a real route to the start page", async () => {
+    expect((await visitor().post("/demo/approve/first")).location).toBe("/demo");
+    expect((await visitor().get("/demo/r/first")).location).toBe("/demo");
+  });
+});
+
 describe("the fooled cart", () => {
   it("shows the items, their prices and the category refused, as the front page does", async () => {
     const v = visitor();
