@@ -150,8 +150,14 @@ pnpm refund <trace_id>                      # give a paid PayPal purchase back, 
 pnpm verify-ledger                          # walk the chain, recompute every hash
 pnpm eval --layer1                          # deterministic corpus
 pnpm dispute <trace_id>                     # self-verifying evidence bundle
-pnpm receipt-ui                             # trace viewer on :4100
+pnpm receipt-ui                             # front page, PayPal demo and trace viewer on :4100
 ```
+
+### Run the PayPal demo locally
+
+The demo at `http://localhost:4100/demo` needs four more values in `.env`: `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` from a PayPal sandbox app, and its own mandate key pair, `DEMO_MANDATE_PRIVATE_KEY` and `DEMO_MANDATE_PUBLIC_KEY`. Make the pair with `pnpm keygen > private/demo-keys.env`, so the private key isn't printed, then copy the two values into `.env` under the `DEMO_` names. The demo won't run with the same key as `MANDATE_PRIVATE_KEY`. `pnpm receipt-ui` seeds the demo's shops itself. Open `http://localhost:4100/`, the front page, and press **Try the live demo**. Step 2 needs a US Personal sandbox buyer account to log in to PayPal. Without PayPal keys or `GEMINI_API_KEY`, the steps that need them say so and stay off.
+
+`pnpm screenshots` regenerates [`docs/screenshots/`](docs/screenshots/) from a real run of the demo, at desktop and phone width. It prints PayPal's link for step 2 and waits while you approve as the sandbox buyer. `pnpm screenshots --front-only` shoots the front page and the demo's start page, with no PayPal and no model.
 
 To call every route without a browser, import [`docs/postman/praman.postman_collection.json`](docs/postman/praman.postman_collection.json) into Postman with the local or hosted environment beside it, set `trace_id` from a demo trace link, and press **Run collection**: each request checks the status it should get, and none carries a key.
 

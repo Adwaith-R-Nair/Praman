@@ -122,7 +122,7 @@ Ping only `/healthz`. Any other path reads the database and would keep Neon awak
 Do this in a normal browser window, with a private window or a second browser ready for the PayPal checkout, the way `docs/DEMO_INSTRUCTIONS.md` describes.
 
 1. `https://<your address>/healthz` says `ok`.
-2. `https://<your address>/` sends you to `/demo` on a fresh database, and the start page loads with no "isn't configured" notes beside the buttons.
+2. `https://<your address>/` shows the front page. **Try the live demo** opens `/demo`, and the start page loads with no "isn't configured" notes beside the buttons.
 3. **Start a session**, **Connect PayPal** with the sandbox buyer, and come back connected.
 4. Step 3: approve. The money box says the saved PayPal account was charged with no buyer present.
 5. Step 4: charged at once, nobody approved it.
