@@ -15,6 +15,13 @@ describe("the front page's links", () => {
   });
 });
 
+describe("the recorded run", () => {
+  it("says the demo is out of sessions only after a refused start", () => {
+    expect(renderRecordedRunPage()).not.toContain("as many sessions today");
+    expect(renderRecordedRunPage(true)).toContain("as many sessions today");
+  });
+});
+
 describe("a visitor with no sandbox login", () => {
   it("is told where the login is and offered the recorded run", () => {
     const html = renderStartPage(null, { paypal: true, model: true });

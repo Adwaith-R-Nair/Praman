@@ -375,14 +375,14 @@ export function renderStartPage(notice: string | null, configured: { readonly pa
  * story. It is a screenshot of one complete session, made by the repo's screenshot
  * script, and says so before anything else. Nothing on it is live, and it has no buttons.
  */
-export function renderRecordedRunPage(): string {
+export function renderRecordedRunPage(outOfSessions = false): string {
   return demoLayout(
     "Recorded run",
     `<header class="masthead">
       <h1>An agent with a budget, and the one thing that can say yes</h1>
       <p class="lede">An AI agent buys lunch with a PayPal sandbox account. Every purchase it proposes goes to Praman, which checks it against a signed mandate and decides. The agent can't pay without that decision, and the ledger keeps a verifiable record of each one.</p>
     </header>
-    <p class="notice" role="status">The live demo has started as many sessions today as it allows, to stay within its free hosting and model limits. It opens again at 00:00 UTC. Until then, here is a recorded run.</p>
+    ${outOfSessions ? `<p class="notice" role="status">The live demo has started as many sessions today as it allows, to stay within its free hosting and model limits. It opens again at 00:00 UTC. Until then, here is a recorded run.</p>` : ""}
     <figure class="recording recorded-run">
       <figcaption><strong>Recorded run, not live.</strong> A screenshot of one complete session of this demo, taken by the repo's screenshot script against the PayPal sandbox. Nothing on this page runs, and nothing is charged.</figcaption>
       <img src="/demo/recorded-run.png" width="1280" alt="${escapeHtml(RECORDED_RUN_ALT)}">

@@ -120,7 +120,7 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       }
 
       if (path === "/demo/recorded" && method === "GET") {
-        send(res, 200, renderRecordedRunPage());
+        send(res, 200, renderRecordedRunPage(url.searchParams.get("reason") === "sessions"));
         return;
       }
       if (path === "/demo/recorded-run.png" && method === "GET") {
@@ -155,7 +155,7 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
         // Shared by every visitor and kept in the database, so a restart doesn't refill it.
         // Past the cap the visitor still sees the whole story, as a labelled recording (D-61).
         if (!(await deps.usage.take("session", now))) {
-          redirect(res, "/demo/recorded");
+          redirect(res, "/demo/recorded?reason=sessions");
           return;
         }
         if (session !== null) {

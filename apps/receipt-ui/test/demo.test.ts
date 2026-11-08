@@ -1215,12 +1215,12 @@ describe("the demo at its limits, and when what it depends on fails", () => {
     const late = visitor();
     const res = await late.post("/demo/start");
     expect(res.status).toBe(303);
-    expect(res.location).toBe("/demo/recorded");
+    expect(res.location).toBe("/demo/recorded?reason=sessions");
     expect(late.cookie).toBeNull();
     expect(deps.sessions.size).toBe(1);
 
     // The recorded run: labelled as one, the whole story in a screenshot, and when it opens again.
-    const page = await late.get("/demo/recorded");
+    const page = await late.get("/demo/recorded?reason=sessions");
     expect(page.status).toBe(200);
     expect(page.text).toContain("Recorded run, not live.");
     expect(page.text).toContain("opens again at 00:00 UTC");
