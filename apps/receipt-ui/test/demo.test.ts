@@ -152,6 +152,17 @@ async function ledgerFor(traceId: string | null) {
   return prisma.ledgerEntry.findMany({ where: { traceId }, orderBy: { seq: "asc" } });
 }
 
+describe("the live model step on the poisoned listing", () => {
+  it("says Praman would ask, not that it asked", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/step/injection");
+    const page = await v.page();
+    expect(page).toContain("Would ask you first");
+    expect(page).not.toContain("Asked you first");
+  });
+});
+
 describe("the fooled cart", () => {
   it("shows the items, their prices and the category refused, as the front page does", async () => {
     const v = visitor();
