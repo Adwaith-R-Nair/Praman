@@ -59,6 +59,8 @@ export interface TraceView {
   readonly orderStatus: string | null;
   /** The rail's own code when the latest outcome is a failure. Executor vocabulary, not a reason code (D-32). */
   readonly railFailureCode: string | null;
+  /** True when this trace's order went to the demo's simulated rail, so no payment provider was involved. */
+  readonly simulatedRail: boolean;
   readonly approvalVerdict: string | null;
   /**
    * Who resolved the step-up. "test_harness" when the intent came from the demo's
@@ -322,6 +324,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
     orderId: asString(latestOutcome?.["order_id"]) ?? asString(outcome?.["order_id"]),
     orderStatus: asString(latestOutcome?.["status"]),
     railFailureCode: railFailed ? asString(latestOutcome["failure_code"]) : null,
+    simulatedRail: latestOutcome?.["rail"] === "simulated",
     approvalVerdict: asString(stepUpResolved?.["verdict"]),
     payment: paymentOf(outcome, latestOutcome),
     approvedBy: stepUpResolved === null ? null : byHarness ? "test_harness" : "person",

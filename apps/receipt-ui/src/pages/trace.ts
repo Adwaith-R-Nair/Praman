@@ -221,6 +221,8 @@ export async function renderTracePage(traceId: string, ownerControl: ((trace: Tr
   ${amount ? `<div class="amount">${amount}</div>` : ""}
 </section>
 
+${trace.simulatedRail ? `<p class="notice" role="status">Simulated payment. This order went to the demo's simulated rail, so no payment provider was involved and no real or sandbox money moved. &quot;Payment provider called&quot; below means that simulated rail.</p>` : ""}
+
 ${
   trace.goal
     ? `<section><h2>Goal given to the agent</h2><p class="goal">${escFreeText(trace.goal)}</p></section>`

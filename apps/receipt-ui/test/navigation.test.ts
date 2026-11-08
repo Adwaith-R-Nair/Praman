@@ -86,6 +86,25 @@ describe("the index of recent traces", () => {
   });
 });
 
+describe("a trace on the simulated rail", () => {
+  it("says the payment was simulated", async () => {
+    await prisma.$transaction(async (tx) => {
+      await append(tx, { traceId: "trc_sim", ts: new Date(), actor: "agent", eventType: "intent", payload: { mandate_id: "mnd_s", model_id: "harness/no-model" } });
+      await append(tx, { traceId: "trc_sim", ts: new Date(), actor: "praman", eventType: "decision", payload: { mandate_id: "mnd_s", kind: "ALLOW", reason_code: "OK", amount_minor: "500", currency: "USD" } });
+      await append(tx, { traceId: "trc_sim", ts: new Date(), actor: "praman", eventType: "outcome", payload: { mandate_id: "mnd_s", rail: "simulated", order_id: "SIM1", status: "captured", amount_minor: "500", currency: "USD" } });
+    });
+    expect((await renderTracePage("trc_sim")).html).toContain("Simulated payment.");
+  });
+
+  it("doesn't say so on a real rail", async () => {
+    await prisma.$transaction(async (tx) => {
+      await append(tx, { traceId: "trc_pp", ts: new Date(), actor: "agent", eventType: "intent", payload: { mandate_id: "mnd_s" } });
+      await append(tx, { traceId: "trc_pp", ts: new Date(), actor: "praman", eventType: "outcome", payload: { mandate_id: "mnd_s", rail: "paypal", order_id: "PP1", status: "captured", amount_minor: "500", currency: "USD" } });
+    });
+    expect((await renderTracePage("trc_pp")).html).not.toContain("Simulated payment.");
+  });
+});
+
 describe("the site root and the index", () => {
   async function get(path: string, accept = "*/*"): Promise<Response> {
     const app = createApp({
