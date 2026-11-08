@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { prisma } from "@praman/db";
 
@@ -44,19 +43,6 @@ export class RateLimiter {
   }
 }
 
-// Temporary: shows which X-Forwarded-For entries change between requests, as salted
-// hashes so no address reaches the log. Removed once TRUST_PROXY is settled.
-const shapeSalt = randomBytes(16);
-const shapeTag = (value: string | string[] | undefined): string =>
-  value === undefined ? "-" : createHash("sha256").update(shapeSalt).update(String(value)).digest("hex").slice(0, 6);
-function logProxyHeaderShape(req: IncomingMessage): void {
-  const header = req.headers["x-forwarded-for"];
-  const entries = (Array.isArray(header) ? header.join(",") : (header ?? "")).split(",").map((e) => e.trim()).filter((e) => e !== "");
-  console.log(
-    `xff-shape n=${entries.length} entries=${entries.map(shapeTag).join(",")} cf=${shapeTag(req.headers["cf-connecting-ip"])} true=${shapeTag(req.headers["true-client-ip"])} socket=${shapeTag(req.socket.remoteAddress)}`,
-  );
-}
-
 /**
  * Who a request is from, for per-IP limits. `proxyHops` is how many proxies in front of
  * this server append the address they saw to X-Forwarded-For (TRUST_PROXY). Each one
@@ -66,7 +52,6 @@ function logProxyHeaderShape(req: IncomingMessage): void {
  * socket's own address.
  */
 export function clientIp(req: IncomingMessage, proxyHops: number): string {
-  logProxyHeaderShape(req);
   if (proxyHops > 0) {
     const header = req.headers["x-forwarded-for"];
     const entries = (Array.isArray(header) ? header.join(",") : (header ?? ""))
