@@ -270,6 +270,19 @@ describe("refundOrder", () => {
     expect(executor.refundCalls.at(-1)?.idempotency_key).toBe(refundRecordKey(order.key, paymentId, 1));
   });
 
+  it("says a capture with no answer yet is still being settled, not that nothing was paid", async () => {
+    const { executor, ctx, route } = await setup("mnd_ref_capture_pending");
+    const order = await placeOrder(executor, ctx, "int_ref_capture_pending");
+    executor.approve(order.orderId);
+    executor.captureAnswer = "throw_but_captured";
+    expect((await captureOrder(order.traceId, ctx.signed, ctx.publicKeyPem, route, LATER)).kind).toBe("IN_FLIGHT");
+
+    const result = await refundOrder(asOperator(order.traceId), route, AFTER);
+
+    expect(result.kind).toBe("IN_FLIGHT");
+    expect(executor.refundCalls).toHaveLength(0);
+  });
+
   it("still refunds after the mandate is revoked: money going back is not the agent spending", async () => {
     const { route, order, ctx } = await capturedCheckout("mnd_ref_revoked");
     await revokeMandate({ mandateId: ctx.mandateId, reason: "test", traceId: "trc_ref_revoke", now: LATER });

@@ -113,7 +113,8 @@ async function locateCaptured(tx: PrismaTx, ask: RefundAsk): Promise<Located> {
   if (other !== undefined) return cannot(ask.traceId, "several_orders", "This trace has more than one paid order, so Praman won't guess which to refund. A person should look at the ledger.");
   if (only !== undefined) return { kind: "order", order: only };
   if (mismatch) return cannot(ask.traceId, "mismatch", "The payment provider reported this order as different money than Praman asked for. A person needs to look at it with the provider before any refund.");
-  if (records.some((r) => r.status === "pending")) {
+  const capturesOpen = await tx.idempotencyRecord.count({ where: { kind: "capture", orderKey: { in: records.map((r) => r.key) }, status: "pending" } });
+  if (capturesOpen > 0 || records.some((r) => r.status === "pending")) {
     return { kind: "result", result: { kind: "IN_FLIGHT", trace_id: ask.traceId, detail: "The order on this trace is still being settled. Nothing was refunded." } };
   }
   return cannot(ask.traceId, "not_captured", "Nothing on this trace was paid, so there is nothing to refund.");
