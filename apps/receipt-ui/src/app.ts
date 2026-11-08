@@ -67,6 +67,21 @@ function page(res: ServerResponse, status: number, title: string, message: strin
   res.end(layout(title, `<h1 class="decision">${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p><p><a href="/demo">Go to the demo</a> or <a href="/">read what Praman is</a>.</p>`, "home"));
 }
 
+/**
+ * The trace id in a URL segment, or null when it can't be one: percent-encoding that
+ * doesn't decode, or a control character, which no trace id has and Postgres text
+ * can't hold (the same rule as the MCP gateway's id fields).
+ */
+function traceIdOf(segment: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+  return /\p{Cc}/u.test(decoded) ? null : decoded;
+}
+
 /** A trace id as a download name: letters, digits, underscore and hyphen only. */
 const fileNameOf = (traceId: string): string => traceId.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 120) || "trace";
 
@@ -180,26 +195,33 @@ export function createApp(deps: AppDeps): Handler {
         return;
       }
 
+      const rawTraceId = traceMatch?.[1] ?? verifyMatch?.[1] ?? disputeMatch?.[1];
+      if (rawTraceId !== undefined && traceIdOf(rawTraceId) === null) {
+        if (wantsHtml(req)) page(res, 404, "No such trace", "There is no trace at this address.");
+        else text(res, 404, "Not found");
+        return;
+      }
+
       const isIndex = url.pathname === "/traces" || url.pathname === "/traces/";
       // Each of these reads the database, and they are open to anyone with a trace id.
       if ((traceMatch?.[1] || verifyMatch?.[1] || disputeMatch?.[1] || isIndex) && !within(reads, req, res, TOO_MANY_READS)) return;
 
       if (traceMatch?.[1]) {
-        const { status, html } = await renderTracePage(decodeURIComponent(traceMatch[1]));
+        const { status, html } = await renderTracePage(traceIdOf(traceMatch[1]) ?? "");
         res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
         res.end(html);
         return;
       }
 
       if (verifyMatch?.[1]) {
-        const result = await verifyTrace(decodeURIComponent(verifyMatch[1]));
+        const result = await verifyTrace(traceIdOf(verifyMatch[1]) ?? "");
         res.writeHead(result ? 200 : 404, { "Content-Type": "application/json; charset=utf-8" });
         res.end(JSON.stringify(result));
         return;
       }
 
       if (disputeMatch?.[1]) {
-        const traceId = decodeURIComponent(disputeMatch[1]);
+        const traceId = traceIdOf(disputeMatch[1]) ?? "";
         const bundle = await buildBundleStandalone(traceId);
         if (!bundle) {
           text(res, 404, "Not found");

@@ -124,6 +124,14 @@ describe("the public server", () => {
     expect((await fetch(`${base}/healthz`)).status).toBe(200);
   });
 
+  it("answers a trace id that can't be one with a 404, and logs nothing", async () => {
+    const before = logs.length;
+    for (const path of ["/r/%E0%A4%A", "/verify/%ff", "/dispute/%ff", "/r/%00", "/verify/%00", "/dispute/%00"]) {
+      expect((await fetch(`${base}${path}`)).status).toBe(404);
+    }
+    expect(logs).toHaveLength(before);
+  });
+
   it("refuses a method a read-only route doesn't take", async () => {
     const res = await fetch(`${base}/r/trc_x`, { method: "POST" });
     expect(res.status).toBe(405);
