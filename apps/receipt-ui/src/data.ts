@@ -23,6 +23,23 @@ export interface SettlementLine {
   readonly at: Date;
 }
 
+/**
+ * A refund of this trace's payment, as the ledger records it (D-66). "requested" means a
+ * person asked and no answer has been recorded yet. Refunds give back no budget (D-67).
+ */
+export interface RefundLine {
+  readonly status: "requested" | "refunded" | "pending" | "failed" | "mismatch";
+  readonly refundId: string | null;
+  readonly amountMinor: string | null;
+  readonly currency: Currency;
+  /** Who asked: "operator" from `pnpm refund`, "demo_visitor" from the demo's trace page. */
+  readonly requestedBy: string | null;
+  readonly requestedAt: Date;
+  readonly failureCode: string | null;
+  /** What the rail said on a mismatch, in words. Empty otherwise. */
+  readonly railReported: string;
+}
+
 export interface TraceView {
   readonly traceId: string;
   readonly entries: readonly LedgerEntryRecord[];
@@ -62,6 +79,8 @@ export interface TraceView {
   readonly langfuseTraceId: string | null;
   /** Set when this trace withdraws a mandate: its own trace, with one mandate_revoked row and no purchase. */
   readonly revocation: { readonly mandateId: string | null; readonly reason: string | null } | null;
+  /** The latest refund of this trace's payment, or null when nobody asked for one. */
+  readonly refund: RefundLine | null;
 }
 
 /**
@@ -164,6 +183,35 @@ function paymentOf(first: Record<string, unknown> | null, last: Record<string, u
   if (firstStatus === "captured" && !("capture_key" in first)) return "saved_method";
   if (firstStatus === "created" && asString(last["status"]) === "captured") return "checkout";
   return null;
+}
+
+const REFUND_STATUSES: readonly RefundLine["status"][] = ["refunded", "pending", "failed", "mismatch"];
+
+/**
+ * The latest refund request and what became of it. A request with no outcome after it
+ * is still open. A failed refund moved no money, and a later request may follow it.
+ */
+export function refundOf(entries: readonly LedgerEntryRecord[]): RefundLine | null {
+  const requests = entries.filter((e) => e.eventType === "refund_requested");
+  const request = requests.at(-1);
+  if (request === undefined) return null;
+  const req = request.payload as Record<string, unknown>;
+  const key = asString(req["refund_key"]);
+  const answer = entries.filter((e) => e.eventType === "refund_outcome" && e.seq > request.seq && asString((e.payload as Record<string, unknown>)["refund_key"]) === key).at(-1);
+  const out = answer ? (answer.payload as Record<string, unknown>) : null;
+  const status = REFUND_STATUSES.find((s) => s === out?.["status"]) ?? "requested";
+  const source = out ?? req;
+  const currency = asString(source["currency"]);
+  return {
+    status,
+    refundId: asString(out?.["refund_id"]),
+    amountMinor: amountIfPresent(source),
+    currency: currency !== null && isCurrency(currency) ? currency : "USD",
+    requestedBy: asString(req["requested_by"]),
+    requestedAt: request.ts,
+    failureCode: status === "failed" || status === "mismatch" ? asString(out?.["failure_code"]) : null,
+    railReported: status === "mismatch" && out !== null ? railReported(out) : "",
+  };
 }
 
 function recordedModelOf(modelId: string | null): string | null {
@@ -289,6 +337,7 @@ export async function loadTrace(traceId: string): Promise<TraceView | null> {
         : null,
     langfuseTraceId: asString((transcriptPayload?.["observability"] as Record<string, unknown> | undefined)?.["langfuse_trace_id"]),
     revocation: revoked === null ? null : { mandateId: asString(revoked["mandate_id"]), reason: asString(revoked["reason"]) },
+    refund: refundOf(entries),
   };
 }
 

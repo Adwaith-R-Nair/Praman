@@ -1,6 +1,6 @@
 import { formatMoney, minorFromJSON, type ReasonCode } from "@praman/shared";
 import type { EventType } from "@praman/ledger";
-import { loadTrace, type SettlementLine } from "../data.js";
+import { loadTrace, type RefundLine, type SettlementLine } from "../data.js";
 import { DEMO_MERCHANTS } from "../demo/config.js";
 import { decisionClass, decisionLabel } from "../decision-display.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
@@ -71,6 +71,50 @@ function paymentHtml(trace: { readonly payment: "saved_method" | "checkout" | nu
   </section>`;
   }
   return "";
+}
+
+const REFUNDED_BY: Readonly<Record<string, string>> = {
+  operator: "an operator, with pnpm refund",
+  demo_visitor: "the demo visitor, on this trace page",
+};
+
+/**
+ * The refund of this trace's payment, in words. Only a person can ask for one, and it
+ * never gives the mandate's budget back (D-66, D-67), so the page says both.
+ */
+export function refundHtml(refund: RefundLine | null): string {
+  if (refund === null) return "";
+  const amount = refund.amountMinor !== null && /^\d+$/.test(refund.amountMinor) ? formatMoney(minorFromJSON(refund.amountMinor), refund.currency) : "the payment";
+  const who = refund.requestedBy === null ? "a person" : (REFUNDED_BY[refund.requestedBy] ?? refund.requestedBy);
+  let what: string;
+  switch (refund.status) {
+    case "refunded":
+      what = `Refunded in full. ${amount} went back to the buyer.`;
+      break;
+    case "pending":
+      what = `PayPal accepted the refund of ${amount} and hasn't finished it. The reconcile sweep records it when it does.`;
+      break;
+    case "requested":
+      what = `A refund of ${amount} was asked for and has no answer yet. Praman won't send another; the reconcile sweep settles it.`;
+      break;
+    case "mismatch":
+      what = `PayPal reported a refund of different money than Praman asked for${refund.railReported}. A person needs to look at it with PayPal.`;
+      break;
+    case "failed":
+      what =
+        refund.failureCode === "CAPTURE_FULLY_REFUNDED"
+          ? "PayPal says this payment was already refunded in full, so this refund moved no money."
+          : "PayPal refused the refund. No money went back, and it can be asked for again.";
+      break;
+  }
+  const ids = [refund.refundId ? `refund ${refund.refundId}` : null, refund.failureCode ? `PayPal said ${refund.failureCode}` : null].filter((x) => x !== null);
+  return `<section class="refund" id="refund">
+    <h2>Refund</h2>
+    <p>${escapeHtml(what)}</p>
+    <p>${escapeHtml(`Asked for by ${who}, at ${refund.requestedAt.toISOString()}. An agent can't ask for a refund.`)}</p>
+    <p>${escapeHtml("The mandate's budget still counts this purchase. A refund gives the money back to the buyer, not spending room back to the agent.")}</p>
+    ${ids.length > 0 ? `<p class="data">${escapeHtml(ids.join(" · "))}</p>` : ""}
+  </section>`;
 }
 
 /**
@@ -192,6 +236,8 @@ ${revocationHtml(trace.revocation)}
 ${paymentHtml(trace)}
 
 ${settlementHtml(trace.settlement)}
+
+${refundHtml(trace.refund)}
 
 ${
   trace.rationale

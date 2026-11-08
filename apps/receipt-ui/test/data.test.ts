@@ -397,3 +397,59 @@ describe("loadTrace on a revocation", () => {
     expect(html).toContain('href="/console#trace=trc_revoke_local"');
   });
 });
+
+describe("loadTrace and the trace page on a refunded purchase (D-66, D-67)", () => {
+  const order = { mandate_id: "mnd_test", merchant_id: "DEMO_CAFE", idempotency_key: "k_order", order_id: "VLT1", rail: "paypal", currency: "USD" };
+  const refund = { ...order, payment_id: "CAP9", refund_key: "r".repeat(64), amount_minor: "450" };
+  const paid: [EventType, Record<string, unknown>][] = [
+    ["intent", { mandate_id: "mnd_test", merchant_id: "DEMO_CAFE", model_id: "gemini-3.1-flash-lite", agent_rationale: "coffee" }],
+    ["decision", { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "450", currency: "USD" }],
+    ["outcome", { ...order, status: "captured", payment_id: "CAP9", amount_minor: "450" }],
+  ];
+  const requested: [EventType, Record<string, unknown>] = ["refund_requested", { ...refund, operation: "captures.refund", status: "attempted", requested_by: "demo_visitor" }];
+
+  it("says the money went back, who asked, and that the budget still counts it", async () => {
+    await writeRows("trace_refunded", [...paid, requested, ["refund_outcome", { ...refund, status: "refunded", refund_id: "2JV473619H1766245", failure_code: null }]]);
+    const view = await loadTrace("trace_refunded");
+    expect(view?.refund).toMatchObject({ status: "refunded", refundId: "2JV473619H1766245", amountMinor: "450", currency: "USD", requestedBy: "demo_visitor" });
+    // The purchase itself still reads as what it was: allowed and captured.
+    expect(view).toMatchObject({ decisionKind: "ALLOW", orderStatus: "captured" });
+
+    const { html } = await renderTracePage("trace_refunded");
+    expect(html).toContain("Refunded in full. $4.50 went back to the buyer.");
+    expect(html).toContain("Asked for by the demo visitor, on this trace page");
+    expect(html).toContain("The mandate&#39;s budget still counts this purchase");
+    expect(html).toContain("refund 2JV473619H1766245");
+  });
+
+  it("says a refund with no answer yet is open, not done", async () => {
+    await writeRows("trace_refund_open", [...paid, requested]);
+    expect((await loadTrace("trace_refund_open"))?.refund?.status).toBe("requested");
+    expect((await renderTracePage("trace_refund_open")).html).toContain("has no answer yet");
+  });
+
+  it("explains a refund PayPal refused because the payment was already refunded", async () => {
+    await writeRows("trace_refund_twice", [...paid, requested, ["refund_outcome", { ...refund, status: "failed", refund_id: null, failure_code: "CAPTURE_FULLY_REFUNDED" }]]);
+    const { html } = await renderTracePage("trace_refund_twice");
+    expect(html).toContain("already refunded in full, so this refund moved no money");
+    expect(html).toContain("PayPal said CAPTURE_FULLY_REFUNDED");
+  });
+
+  it("reads the latest request, so a retry after a refusal shows its own answer", async () => {
+    const retry = { ...refund, refund_key: "s".repeat(64) };
+    await writeRows("trace_refund_retry", [
+      ...paid,
+      requested,
+      ["refund_outcome", { ...refund, status: "failed", refund_id: null, failure_code: "REFUND_NOT_ALLOWED" }],
+      ["refund_requested", { ...retry, operation: "captures.refund", status: "attempted", requested_by: "operator" }],
+      ["refund_outcome", { ...retry, status: "pending", refund_id: "R2", failure_code: null }],
+    ]);
+    expect((await loadTrace("trace_refund_retry"))?.refund).toMatchObject({ status: "pending", refundId: "R2", requestedBy: "operator", failureCode: null });
+  });
+
+  it("shows no refund section when nobody asked for one", async () => {
+    await writeRows("trace_not_refunded", paid);
+    expect((await loadTrace("trace_not_refunded"))?.refund).toBeNull();
+    expect((await renderTracePage("trace_not_refunded")).html).not.toContain(`id="refund"`);
+  });
+});
