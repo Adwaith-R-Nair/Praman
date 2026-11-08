@@ -186,7 +186,7 @@ The rejected alternative was executing the stored intent directly on approval, w
   "trace_id": "trc_01J8XK4M2A",
   "ts": "2026-08-28T12:04:11.882Z",
   "actor": "agt_lunchbuyer",
-  "event_type": "decision",   // intent | decision | api_call | outcome | step_up_resolved | mandate_revoked | capture_decision | settlement
+  "event_type": "decision",   // intent | decision | api_call | outcome | step_up_resolved | mandate_revoked | capture_decision | settlement | refund_requested | refund_outcome
   "payload": { /* event-specific, canonicalised */ },
   "payload_hash": "sha256:...",
   "prev_hash": "sha256:...",
@@ -202,6 +202,7 @@ The rejected alternative was executing the stored intent directly on approval, w
 - A `mismatch` outcome is an order the rail reported with a different amount or currency from the request. Its `amount_minor` and `currency` are what was authorised, and `rail_status`, `rail_amount_minor` and `rail_currency` keep what the rail said. It holds budget and velocity, a release doesn't free it, and it earns the merchant no trust (D-33).
 - On a checkout rail, one order can have several `outcome` rows: `created`, then a capture's `captured` or `failed`, or a `released`. Every one of them carries the order's `idempotency_key` and `order_id`. A capture's rows also carry `capture_key`, the key of its own outbox record, which never appears as `idempotency_key`. A `failed` capture took no money and leaves the order held. A `capture_decision` row records the re-check at capture: `ALLOW_CAPTURE` with the ledger's amount, or `DENY` with a reason code. It is not a `decision`, so it doesn't count toward the denial-rate cap (D-31, D-40).
 - A `settlement` row records what a payment provider reported by a verified webhook: `rail`, the provider's `event_id` and `event_type`, `status` (`captured` or `declined`), `payment_id`, `amount_minor` and `currency`, with the order's `mandate_id`, `merchant_id`, `idempotency_key` and `order_id`. Its actor is `webhook`. It moves no money. When it tells the ledger something new, such as a capture with no `captured` row yet, an `outcome` row by actor `webhook` follows it, carrying `settlement_event_id` and, if it resolved a pending capture record, that record's `capture_key`. One `settlement` per event id, and per payment and status (D-45).
+- A refund is two rows, never an `outcome` (D-66). `refund_requested` is written before the call, by actor `operator` (`pnpm refund`) or `demo_visitor` (the demo's trace page), with `requested_by`, `operation: "captures.refund"`, `status: "attempted"`, the captured `amount_minor` and `currency`, the capture's `payment_id` and `refund_key`, the key of its own outbox record. `refund_outcome` follows with `status` `refunded`, `pending`, `failed` or `mismatch`, and the rail's `refund_id`. Both carry the order's `mandate_id`, `merchant_id`, `idempotency_key` and `order_id`. Neither moves spend, velocity or merchant trust, in any status: a refund gives no budget back (D-67).
 - `entry_hash` chains to `prev_hash`. Genesis entry uses 64 zeros.
 - Every 100 entries (or hourly), compute a Merkle root over `entry_hash` values and append a `checkpoint` entry containing it. The checkpoint is what you'd anchor externally in production — say this in the pitch, and be clear you didn't anchor it in the demo.
 - Immutability enforced in migration:
