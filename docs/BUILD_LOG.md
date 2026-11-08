@@ -3452,3 +3452,85 @@ regenerates them. You can open `/demo/recorded` any time to see it.
 
 **Tests.** 754, all passing (750 before; four new, one old test changed as explained in 2). None weakened or removed.
 `packages/policy` untouched. Every check ran with `TSX_DISABLE_CACHE=1`.
+
+### Phase P16 · 2026-11-08 · the ledger console, and revoking a mandate
+
+Not a plan task: you asked for it on 2026-11-08, for the design criterion and the "Best Use of AG Grid" prize. The number
+skips P15 because plan Task 15 is the submission. `packages/policy` is untouched and `pnpm lint:policy-freeze` passes.
+
+**What a visitor sees now.** The demo page has a link at the top, **Open your ledger console**. It opens `/demo/console`:
+
+- A **chain verdict** first: "Chain verified. All N rows of the ledger were rehashed from the first one, and every link holds",
+  or where the walk stopped and why, in words.
+- **Totals**: rows, traces, decisions, refusals, and what each of the session's two mandates has spent or holds against its
+  budget.
+- **Three charts** (AG Charts Community). Spend against budget over time for one mandate at a time, with the signed budget as
+  a dashed line; the line ends at the number `deriveState()` gives the policy engine. Decisions by reason code, stacked by
+  allowed, asked and refused. Orders by rail at their latest outcome. Selecting a bar filters the grid to that code or rail.
+- **The grid** (AG Grid Community). One row per ledger entry: seq, time, event, mandate, merchant, amount and currency,
+  decision, status, reason code and what it means, rail, order id, capture id, a hash-check column and a link to the trace.
+  Quick search over every column, a filter and a sort on each. Selecting a row shows its hash check underneath: the stored and
+  recomputed payload hash, the stored and recomputed entry hash, whether its prev hash is the entry hash of the row before,
+  and whether the walk from the first row reached it.
+
+Locally, with the demo off (`DEMO_MANDATE_PRIVATE_KEY= DEMO_MANDATE_PUBLIC_KEY= pnpm receipt-ui`), `/console` shows the same for
+the newest 2000 rows of the whole ledger. With the demo on, or in production, `/console` answers 404 and says why. Every trace
+page now ends with **See this trace in the ledger console**, which opens the console searched to that trace.
+
+**How a visitor is kept to their own rows (D-64).** The data route reads the session from the cookie, like every other demo
+route, and loads only traces in which a row names one of that session's two mandate ids. Nothing in the request names a
+mandate or a trace. Each load walks the whole chain, so loads are limited per session like button presses.
+
+**How it stays inside the strict policy (D-62, D-63).** Both libraries are pinned to exact versions (grid 36.2.0, charts
+14.2.0; the 36.3/14.3 releases were four days old) and served from this app's own `node_modules`. The server refuses to start
+if the installed version differs. Both libraries build their CSS in the browser and put it in `<style>` elements, which
+D-59's policy refused. The console page alone now allows a `<style>` element that carries a nonce made fresh for each
+response; script is still this origin only and nothing is `'unsafe-inline'`. The first run in headless Chrome still showed
+fourteen refusals: the grid's full build adds its old CSS themes as it loads, with no nonce. Switching to its noStyle build
+removed them, and the theme the console uses is built at runtime with the nonce.
+
+**Merchant text stays text.** The JSON has ids, codes, amounts, hashes and fixed sentences, never a payload, transcript or
+merchant description. The page puts every value in as text; the only cell renderer builds a link element. I checked it in
+headless Chrome against a copy of the console pointed at the test database, with one row whose merchant id was
+`<img src=x onerror=window.__pwned=1>` and whose order id was a `<script>` tag. Real output from the probe: no policy
+violations, 0 image, script or bold elements inside the grid, `window.__pwned` unset, and the cells read
+`"<img src=x onerror=window.__pwned=1>"` as text.
+
+**The revoke step (D-65).** Step 8 of the demo, **Revoke the mandate**. It appends one `mandate_revoked` row for the session's
+own mandate. Then **Ask the agent to buy a coffee** asks the live model with step 4's goal; Praman refuses it
+`MANDATE_REVOKED` and nothing reaches PayPal. The mandate box at step 1 now says it is revoked, and the step links to the
+revocation in the console. Ran live on the local server: Gemini proposed one iced coffee, Praman answered DENY
+`MANDATE_REVOKED`, "Nothing charged".
+
+To share one revocation path, the code `pnpm revoke` ran inline is now `revokeMandate()` in `packages/control-plane`, and the
+CLI calls it (`566ede1`). A revocation trace used to show "Unknown" on its trace page, since it has no purchase; it now says
+"Mandate revoked", names the mandate, shows `MANDATE_REVOKED`, and shows the reason escaped (`2cb4dd3`).
+
+**A flaky test, fixed in the test (`9224a0b`).** "does nothing while nobody has used the demo for 30 minutes" failed about one
+run in three once the revoke tests were added before it. The test moved the clock forward 31 minutes while a sweep pass that
+began while the demo was in use could still be running, and that pass then released the order at the new time. A real clock
+can't jump like that. `stop()` on the sweep schedule now waits for the pass under way, and the test stops the schedule, moves
+the clock, and starts it again with the same activity record. The assertion is unchanged.
+
+**Commits.** `566ede1` the shared revocation, `2cb4dd3` the revocation trace page, `9224a0b` the sweep test, `64d91d8` the
+revoke step, `240727c` the console's data, `a144609` the console page, routes and libraries, `096f282` the links.
+
+**Honest notes on order.** The revoke-step tests and the revocation trace-page tests were written and seen failing first. The
+`revokeMandate()` test, the console data tests and the console route tests were written after the code. To check they bite,
+I broke the code on purpose: turning the revocation row into a checkpoint failed two tests; dropping the release, the payload
+check and the mandate filter in the data layer failed four; giving a visitor the whole ledger failed the scope test. Each was
+put back.
+
+**Worth your look:**
+
+- The spend line is drawn by a small display fold in `console/data.ts` that follows deriveState's rules; the number it ends
+  at, and the totals, come from `deriveState()` itself. If the two ever disagree, the totals are the true one.
+- The operator console has no password. It exists only with the demo off and outside production, which is a property of how
+  the server is started, not of who is asking.
+- The recorded run's alt text in `pages/demo.ts` still describes seven steps, because the screenshot it describes has seven.
+  The final polish task should update it when it regenerates the screenshots, and add console screenshots.
+
+**Tests.** 783, all passing, up from 754: 3 for `revokeMandate()`, 5 for the revoke step, 4 for the revocation trace page, 11
+for the console's data layer, 6 for the console routes and page. One existing test's counts changed: "every disabled button
+says why" now finds 4 disabled buttons before connecting and 3 after, not 3 and 2, because step 8's retry is disabled until
+the mandate is revoked, and it says why. Nothing weakened or removed. Every check ran with `TSX_DISABLE_CACHE=1`.
