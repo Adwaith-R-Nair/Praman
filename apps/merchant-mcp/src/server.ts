@@ -6,7 +6,8 @@ import { z } from "zod";
 
 // Same reason as approve.ts/verify-ledger.ts — dotenv must load before any
 // dynamic import reaches @praman/db.
-config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
+// quiet: stdout is the MCP channel, and dotenv's banner there isn't JSON-RPC.
+config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)), quiet: true });
 
 const { prisma, listCatalogForAgent, checkStock } = await import("@praman/db");
 
