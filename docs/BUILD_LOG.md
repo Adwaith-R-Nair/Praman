@@ -3973,3 +3973,5 @@ A test round on the hosted site and the code left 34 confirmed findings. All 34 
 
 **Open.** GitHub's `main` still has none of this work, so the front page links to the `paypal-hackathon` branch until the builder merges or pushes it. The hosted site runs the code from before these commits until the builder redeploys. Nothing here pushed, merged or deployed.
 
+**Afterwards: three more fixes.** The public dispute bundle no longer reveals a mandate's limits, and the full mandate goes only to the owning demo session or `pnpm dispute` (D-84, closing D-79's limitation). Refusal and step-up rows now carry a random salt so their hashes can't confirm a guessed limit; rows from before this have none, and the ledger is append-only. Two identical gateway proposals arriving together after a throw now run one after another, so only one intent starts (D-83, amended). `reportFileStem` no longer sits between `generateBadge` and its comment. The gateway test and the bundle and demo tests were seen failing before the fixes. 1018 tests before, 1027 after, and `pnpm e2e` passes.
+
