@@ -37,7 +37,7 @@ export function renderLandingPage(): string {
 <section class="hero">
   <h1>An AI agent with a payment method can be talked into spending.</h1>
   <p class="lede">One line in a product listing can steer the model. Praman sits between the agent and PayPal so that it doesn't matter. The agent can only propose a purchase. Praman checks it against limits a person signed, and only Praman's yes moves money. Every decision goes on a ledger anyone can verify.</p>
-  <p class="cta"><a class="btn btn-primary" href="/demo">Try the live demo</a><span class="cta-note">PayPal sandbox. About five minutes. No real money.</span></p>
+  <p class="cta"><a class="btn btn-primary" href="/demo">Try the live demo</a><span class="cta-note">PayPal sandbox. About five minutes. No real money. The sandbox login is in the Devpost testing notes.</span></p>
 </section>
 
 <figure class="specimen" aria-labelledby="specimen-caption">

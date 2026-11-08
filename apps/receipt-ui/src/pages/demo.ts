@@ -352,7 +352,7 @@ export function renderStartPage(notice: string | null, configured: { readonly pa
     </header>
     ${notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}</p>`}
     <section class="start">
-      <p>You'll need the PayPal sandbox buyer login from the project's testing instructions. It's a US sandbox account with play money.</p>
+      <p>You'll need the PayPal sandbox buyer login. It's in the testing instructions on the project's Devpost page, and it's a US sandbox account with play money. No login? Steps 6 to 8 work without one, or <a href="/demo/recorded">look through a recorded run</a>.</p>
       <p>Paying at PayPal's checkout, as step 5 does, needs a window that is not logged in to PayPal: a private window if you opened this demo in a normal one, otherwise another browser, such as Firefox if you are in Chrome, or your phone. PayPal's sandbox declines a checkout in a session that has already logged in, and step 2 logs this window in.</p>
       ${missing.length > 0 ? `<p class="note">This server is missing ${escapeHtml(missing.join(" and "))}, so some steps won't run.</p>` : ""}
       ${action("/demo/start", "Start a session")}

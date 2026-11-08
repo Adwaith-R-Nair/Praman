@@ -15,6 +15,15 @@ describe("the front page's links", () => {
   });
 });
 
+describe("a visitor with no sandbox login", () => {
+  it("is told where the login is and offered the recorded run", () => {
+    const html = renderStartPage(null, { paypal: true, model: true });
+    expect(html).toContain("testing instructions on the project's Devpost page");
+    expect(html).toContain('href="/demo/recorded"');
+    expect(renderLandingPage()).toContain("Devpost testing notes");
+  });
+});
+
 describe("who signed the demo's mandate", () => {
   const session = () => {
     const { privateKeyPem, publicKeyPem } = generateKeypair();
