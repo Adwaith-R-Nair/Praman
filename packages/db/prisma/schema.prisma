@@ -68,11 +68,11 @@ model IdempotencyRecord {
   rail        String
   currency    String
   outcome     Json?
-  /// "order" or "capture". An order and its capture are separate outbox phases (D-40).
+  /// "order", "capture" or "refund". Each is its own outbox phase (D-40, D-66).
   kind        String   @default("order")
-  /// On a capture record: the key of the order it captures. The ledger only ever sees that key.
+  /// On a capture or refund record: the key of the order it belongs to. The ledger only ever sees that key.
   orderKey    String?  @map("order_key") @db.Char(64)
-  /// On a capture record: the order id a reconcile reads back.
+  /// On a capture or refund record: the order id a reconcile reads back.
   orderId     String?  @map("order_id")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
