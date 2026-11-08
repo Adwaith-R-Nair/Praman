@@ -16,6 +16,13 @@ describe("the front page's links", () => {
 });
 
 describe("the recorded run", () => {
+  it("describes all eight steps to a screen reader, ending with the revocation", () => {
+    const html = renderRecordedRunPage();
+    expect(html).toContain("after all eight steps");
+    expect(html).toContain("MANDATE_REVOKED");
+    expect(html).not.toContain("seven steps");
+  });
+
   it("links the screenshot to its full size, for phones", () => {
     expect(renderRecordedRunPage()).toContain('<a href="/demo/recorded-run.png"><img src="/demo/recorded-run.png"');
   });
