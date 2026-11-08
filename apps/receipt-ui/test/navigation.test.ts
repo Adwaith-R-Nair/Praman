@@ -8,6 +8,7 @@ import { createApp } from "../src/app.js";
 import { countTraces, listRecentTraceIds } from "../src/data.js";
 import { renderIndexPage } from "../src/pages/index.js";
 import { renderLandingPage } from "../src/pages/landing.js";
+import { renderCheckoutReturnPage, renderErrorPage, renderRecordedRunPage, renderStartPage } from "../src/pages/demo.js";
 import { renderTracePage } from "../src/pages/trace.js";
 
 // A visitor who opens a demo step's trace must be able to get back to the demo, and the
@@ -41,6 +42,14 @@ describe("getting back to the demo from a trace", () => {
     const { html } = await renderTracePage("trc_other");
     expect(html).toContain('href="/traces"');
     expect(html).not.toContain('href="/demo"');
+  });
+});
+
+describe("getting from the demo to the front page", () => {
+  it("every demo page links to the front page at /", () => {
+    for (const html of [renderStartPage(null, { paypal: true, model: true }), renderRecordedRunPage(), renderCheckoutReturnPage(false), renderErrorPage()]) {
+      expect(html).toContain('<a class="wordmark" href="/">Praman</a>');
+    }
   });
 });
 

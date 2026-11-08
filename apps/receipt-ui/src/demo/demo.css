@@ -48,7 +48,7 @@ body {
 .demo {
   max-width: 46rem;
   margin: 0 auto;
-  padding: var(--s4) 1rem var(--s4);
+  padding: var(--s3) 1rem var(--s4);
 }
 
 a {
@@ -76,6 +76,25 @@ input.link {
 code {
   font-size: 0.88em;
   overflow-wrap: anywhere;
+}
+
+/* ── Top line: the way back to the front page ─────────────────── */
+
+.demo-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s2);
+  padding-bottom: var(--s1);
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: var(--s4);
+  font-size: 0.95rem;
+}
+
+.demo-top .wordmark {
+  font-weight: 700;
+  font-size: 1.15rem;
+  text-decoration: none;
 }
 
 /* ── Masthead ─────────────────────────────────────────────────── */

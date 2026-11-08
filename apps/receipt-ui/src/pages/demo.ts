@@ -40,6 +40,7 @@ export function demoLayout(title: string, body: string): string {
 </head>
 <body>
 <main class="demo">
+<nav class="demo-top"><a class="wordmark" href="/">Praman</a><a href="/">What this is</a></nav>
 ${body}
 </main>
 <script src="/demo/client.js" defer></script>
