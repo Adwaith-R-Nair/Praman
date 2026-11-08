@@ -2881,3 +2881,17 @@ in the console.
 **Cost.** Anyone who bookmarked `/` for the trace list now has to go to `/traces`. The front page's figures come from
 `apps/receipt-ui/src/demo/config.ts`, so it changes only when the demo does; its copy describing the steps has to be
 kept true by hand.
+
+### D-78 · On Render the visitor is the third X-Forwarded-For entry from the right · Accepted
+
+An implementer's decision, made on 2026-11-08 from the header the hosted server really received. It settles the question D-60 left open.
+
+D-60 set `TRUST_PROXY=1` without having seen Render's header. On the live site, eight requests with made-up addresses got seven through, and refusals came and went for one client. `2` behaved the same.
+
+A temporary log (`d0be8c6`, since reverted) recorded each header as salted hashes, so no address reached the log. It showed three entries, or four with a made-up one in front. From the left: the made-up entry if any, the visitor (the same on every request and equal to `CF-Connecting-IP`), then two proxy entries that vary between a few values.
+
+**Decision: `TRUST_PROXY=3` on Render.** It uses the mechanism D-60 chose, with the value measured rather than assumed.
+
+**Rejected: reading `CF-Connecting-IP`.** It carries the same value here, but D-60's objection stands: it is only safe while Cloudflare is in front, and a position from the right needs no new code.
+
+**Cost.** If Render changes its proxy chain, the number has to change too. `docs/DEPLOY.md`'s smoke test catches that.

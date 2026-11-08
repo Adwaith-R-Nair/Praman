@@ -3939,3 +3939,18 @@ HTML and plain-text 404s; demo pages linking to `/`; the empty console. Each fai
 changed because the index moved: a non-demo trace's link now expects `/traces`, the catch-all 500 test asks `/traces`
 (the page that reads the database) instead of `/`, and the two root-redirect tests became tests of the front page and of
 `/traces`. Nothing was weakened or removed. Every check ran with `TSX_DISABLE_CACHE=1`.
+
+### Phase P21 · 2026-11-08 · hosted on Render and Neon, and run end to end by the builder
+
+The local run (ledger seq 672-686) and the hosted run are the first live runs of `captureOrder` after a real buyer approval and of the vault connect through the demo page. PayPal's GET confirmed each order.
+
+On https://praman-demo.onrender.com, session `mnd_demo_8c8c90c3397d`:
+
+- $12.50 (`5MG19146RR958134A`) and $4.50 (`7RE48587C6917830H`) from the saved account, $32.00 (`59196888JE911244N`) at checkout. PayPal shows each COMPLETED with one capture.
+- The builder pressed capture before paying. It was refused and recorded, and the capture after approval took the money once.
+- A real `PAYMENT.CAPTURE.COMPLETED` webhook reached the server, its signature verified, and the trace shows the Settlement box.
+- Two refunds went through ($12.50 `95233940VN0243426`, $32.00 `46D326693N7226817`). The mandate still counts $49.00.
+- Poisoned listing: the live model ignored it, and the fooled cart was refused `CATEGORY_OUT_OF_SCOPE`. Twenty at once: 5 paid, 15 refused, exactly $30.00. After revoke, the live model got `MANDATE_REVOKED`.
+- A phone on mobile data started a session. The per-address limit was reading a proxy's entry; D-78 records the measurement and the fix.
+
+Not yet run on the hosted site: the 11-minute release of an unpaid checkout, and an MCP gateway checkout paid by a real buyer.
