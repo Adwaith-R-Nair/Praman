@@ -348,7 +348,7 @@ export function renderStartPage(notice: string | null, configured: { readonly pa
     "Demo",
     `<header class="masthead">
       <h1>An agent with a budget, and the one thing that can say yes</h1>
-      <p class="lede">An AI agent buys lunch with a PayPal sandbox account. Every purchase it proposes goes to Praman, which checks it against a mandate you signed and decides. The agent can't pay without that decision, and the ledger keeps a verifiable record of each one.</p>
+      <p class="lede">An AI agent buys lunch with a PayPal sandbox account. Every purchase it proposes goes to Praman, which checks it against a signed mandate and decides. The agent can't pay without that decision, and the ledger keeps a verifiable record of each one.</p>
     </header>
     ${notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}</p>`}
     <section class="start">
@@ -371,7 +371,7 @@ export function renderRecordedRunPage(): string {
     "Recorded run",
     `<header class="masthead">
       <h1>An agent with a budget, and the one thing that can say yes</h1>
-      <p class="lede">An AI agent buys lunch with a PayPal sandbox account. Every purchase it proposes goes to Praman, which checks it against a mandate you signed and decides. The agent can't pay without that decision, and the ledger keeps a verifiable record of each one.</p>
+      <p class="lede">An AI agent buys lunch with a PayPal sandbox account. Every purchase it proposes goes to Praman, which checks it against a signed mandate and decides. The agent can't pay without that decision, and the ledger keeps a verifiable record of each one.</p>
     </header>
     <p class="notice" role="status">The live demo has started as many sessions today as it allows, to stay within its free hosting and model limits. It opens again at 00:00 UTC. Until then, here is a recorded run.</p>
     <figure class="recording recorded-run">
@@ -408,7 +408,7 @@ export function renderDemoPage(session: DemoSession, recording: Recording, confi
 </header>
 ${notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}</p>`}
 
-${step(1, "mandate", "Your mandate", p("This is what you've authorised the agent to do. Praman enforces it on every purchase."), mandateHtml(session), true)}
+${step(1, "mandate", "Your mandate", p("The demo gives the agent these fixed limits. The server signed them with a demo key when you started this session, so you didn't sign anything yourself. In real use, the person giving the agent authority reviews and signs their own. Praman enforces them on every purchase."), mandateHtml(session), true)}
 
 ${step(2, "connect", "Connect PayPal once", "", connectBody, session.connected)}
 

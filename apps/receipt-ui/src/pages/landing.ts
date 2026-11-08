@@ -75,7 +75,7 @@ export function renderLandingPage(): string {
     </div>
     <div>
       <h3>People who give an agent spending authority</h3>
-      <p>You sign the limits once. The agent never sees them and can't change them. In the demo, the mandate you sign says:</p>
+      <p>A person signs the limits once. The agent never sees them and can't change them. The demo uses a fixed mandate, signed for you by the server with a demo key. It says:</p>
       <ul class="mandate-terms">
         <li>up to ${limit(MAIN_LIMITS.max_per_txn_minor)} a purchase and ${limit(MAIN_LIMITS.max_total_minor)} in total</li>
         <li>ask me first at ${limit(MAIN_LIMITS.threshold_minor)} or more</li>
@@ -98,7 +98,7 @@ export function renderLandingPage(): string {
 
 <section class="closing" aria-labelledby="try">
   <h2 id="try">See it decide</h2>
-  <p>In the demo you sign a mandate, connect a PayPal sandbox account and let an agent shop. You approve what Praman asks you about, watch a poisoned listing fail, send twenty purchases at once into one budget, then revoke the mandate and see the agent stopped. Every step links to its ledger record.</p>
+  <p>In the demo you get a fixed mandate, signed for you with a demo key, connect a PayPal sandbox account and let an agent shop. You approve what Praman asks you about, watch a poisoned listing fail, send twenty purchases at once into one budget, then revoke the mandate and see the agent stopped. Every step links to its ledger record.</p>
   <p class="cta"><a class="btn btn-primary" href="/demo">Try the live demo</a></p>
 </section>
 
