@@ -58,7 +58,7 @@ export function checkEnv(env: NodeJS.ProcessEnv): string[] {
 
   const proxyHops = env["TRUST_PROXY"];
   if (proxyHops !== undefined && proxyHops !== "" && !/^\d$/.test(proxyHops)) {
-    reasons.push("TRUST_PROXY must be the number of proxies in front of this server, 0 to 9 (Render: 1).");
+    reasons.push("TRUST_PROXY must be the number of proxies in front of this server, 0 to 9 (Render: 3).");
   }
 
   const demoPrivate = env["DEMO_MANDATE_PRIVATE_KEY"];
