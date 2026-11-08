@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 880" width="1200" height="880" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif">
+  <title id="t">Praman architecture</title>
+  <desc id="d">A person signs a mandate. An agent proposes a SKU and quantity. Inside Praman's trust boundary, evaluate decides ALLOW, STEP_UP or DENY. ALLOW writes a pending outbox record, PayPal is called outside any transaction, and the outcome is appended. Verified PayPal webhooks and every decision land on an append-only ledger, which feeds the console, trace page and dispute bundle.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#33413c"/></marker>
+    <style>
+      .b{fill:#f6f8f5;stroke:#33413c;stroke-width:1.5}
+      .h{font-size:16px;font-weight:700;fill:#17211d}
+      .s{font-size:13px;fill:#3d4a45}
+      .l{font-size:12.5px;fill:#33413c}
+      .c{text-anchor:middle}
+      .w{fill:none;stroke:#33413c;stroke-width:1.6;marker-end:url(#a)}
+    </style>
+  </defs>
+  <rect width="1200" height="880" fill="#ffffff"/>
+  <text x="40" y="40" font-size="24" font-weight="700" fill="#17211d">The model proposes. The policy engine disposes. The ledger remembers.</text>
+
+  <rect class="b" x="40" y="70" width="240" height="80" rx="4"/>
+  <text class="h c" x="160" y="105">Person</text>
+  <text class="s c" x="160" y="127">signs limits with Ed25519</text>
+
+  <rect class="b" x="480" y="70" width="240" height="80" rx="4"/>
+  <text class="h c" x="600" y="105">AI agent</text>
+  <text class="s c" x="600" y="127">or any MCP client</text>
+
+  <rect x="920" y="70" width="240" height="80" rx="4" fill="#f8ece8" stroke="#a03a2e" stroke-width="1.5"/>
+  <text class="h c" x="1040" y="105">Merchant catalog</text>
+  <text class="s c" x="1040" y="127">untrusted text</text>
+
+  <path class="w" d="M280 110H478"/>
+  <text class="l c" x="380" y="100">signed mandate</text>
+  <path class="w" d="M920 110H722"/>
+  <text class="l c" x="820" y="100">delimited listing</text>
+
+  <rect x="40" y="225" width="800" height="470" rx="6" fill="#eef3ef" stroke="#1f4a70" stroke-width="2" stroke-dasharray="8 6"/>
+  <text x="60" y="252" font-size="14" font-weight="700" fill="#1f4a70">Trust boundary: no model runs in here</text>
+
+  <path class="w" d="M600 150V266"/>
+  <text class="l" x="612" y="192">PurchaseIntent: SKU and quantity only.</text>
+  <text class="l" x="612" y="209">No price field exists.</text>
+
+  <rect class="b" x="70" y="268" width="740" height="64" rx="4"/>
+  <text class="h c" x="440" y="294">T1, one database transaction, under a per-mandate lock</text>
+  <text class="s c" x="440" y="316">verify signature, replay spend from the ledger, price from the catalog, then evaluate()</text>
+
+  <path class="w" d="M180 332V368"/>
+  <path class="w" d="M415 332V368"/>
+  <path class="w" d="M675 332V368"/>
+
+  <rect x="70" y="370" width="220" height="82" rx="4" fill="#f8ece8" stroke="#a03a2e" stroke-width="1.5"/>
+  <text class="h c" x="180" y="400" fill="#a03a2e">DENY</text>
+  <text class="s c" x="180" y="424">closed reason code,</text>
+  <text class="s c" x="180" y="441">nothing runs</text>
+
+  <rect x="305" y="370" width="220" height="82" rx="4" fill="#f7f0df" stroke="#8a6224" stroke-width="1.5"/>
+  <text class="h c" x="415" y="400">STEP_UP</text>
+  <text class="s c" x="415" y="424">a person approves,</text>
+  <text class="s c" x="415" y="441">then evaluate() runs again</text>
+
+  <rect x="540" y="370" width="270" height="82" rx="4" fill="#e4f1e8" stroke="#2f6f50" stroke-width="1.5"/>
+  <text class="h c" x="675" y="400">ALLOW</text>
+  <text class="s c" x="675" y="424">write pending outbox record,</text>
+  <text class="s c" x="675" y="441">commit before any call</text>
+
+  <rect class="b" x="540" y="490" width="270" height="64" rx="4"/>
+  <text class="h c" x="675" y="516">T2, after the call</text>
+  <text class="s c" x="675" y="538">append outcome, resolve outbox</text>
+  <path class="w" d="M675 452V488"/>
+
+  <rect x="920" y="370" width="240" height="190" rx="4" fill="#e8eff7" stroke="#1f4a70" stroke-width="1.5"/>
+  <text class="h c" x="1040" y="402">PayPal sandbox</text>
+  <text class="s c" x="1040" y="432">Orders v2: create, capture</text>
+  <text class="s c" x="1040" y="456">Vault v3: saved account</text>
+  <text class="s c" x="1040" y="480">Captures: refund</text>
+  <text class="s c" x="1040" y="504">Webhooks: signature check</text>
+
+  <path class="w" d="M810 412H918"/>
+  <text class="l c" x="879" y="386">call outside</text>
+  <text class="l c" x="879" y="402">a transaction</text>
+  <path class="w" d="M920 522H812"/>
+  <text class="l c" x="880" y="512">result</text>
+
+  <rect x="70" y="600" width="740" height="72" rx="4" fill="#1f2c28"/>
+  <text class="c" x="440" y="629" font-size="16" font-weight="700" fill="#ffffff">Append-only, hash-chained ledger on Postgres</text>
+  <text class="c" x="440" y="652" font-size="13" fill="#dfe7e2">Every intent, decision, call and outcome. Triggers refuse UPDATE and DELETE.</text>
+
+  <path class="w" d="M180 452V598"/>
+  <path class="w" d="M415 452V598"/>
+  <path class="w" d="M675 554V598"/>
+  <path class="w" d="M1040 560V636H812"/>
+  <text class="l c" x="925" y="612">verified webhook</text>
+  <text class="l c" x="925" y="628">settles the capture</text>
+
+  <rect class="b" x="40" y="745" width="360" height="80" rx="4"/>
+  <text class="h c" x="220" y="778">Ledger console</text>
+  <text class="s c" x="220" y="801">AG Grid and AG Charts, per-row hash check</text>
+
+  <rect class="b" x="420" y="745" width="360" height="80" rx="4"/>
+  <text class="h c" x="600" y="778">Trace page</text>
+  <text class="s c" x="600" y="801">one decision, its evidence, verify the chain</text>
+
+  <rect class="b" x="800" y="745" width="360" height="80" rx="4"/>
+  <text class="h c" x="980" y="778">Dispute bundle</text>
+  <text class="s c" x="980" y="801">public copy hides limits, owner gets the mandate</text>
+
+  <path class="w" d="M220 672V743"/>
+  <path class="w" d="M600 672V743"/>
+  <path class="w" d="M760 672V716H980V743"/>
+
+  <text x="40" y="860" font-size="13" fill="#3d4a45">Hosted on Render from a Blueprint, with Postgres on Neon. Sandbox only, no real money.</text>
+</svg>
