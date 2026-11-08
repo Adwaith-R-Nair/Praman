@@ -1095,6 +1095,105 @@
               "protocolProfileBehavior": {
                 "followRedirects": false
               }
+            },
+            {
+              "name": "GET /demo/dispute/first",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/dispute/first",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "dispute",
+                    "first"
+                  ]
+                },
+                "description": "This session's own dispute bundle for the `first` purchase: the public bundle plus the signed mandate, its signature and the public key, so the holder can check it themselves. Redirects to `/demo` without this session's cookie or until the step has a trace."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"answers JSON or redirects to the demo\", () => pm.expect([200, 303]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "GET /demo/dispute/second",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/dispute/second",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "dispute",
+                    "second"
+                  ]
+                },
+                "description": "This session's own dispute bundle for the `second` purchase: the public bundle plus the signed mandate, its signature and the public key, so the holder can check it themselves. Redirects to `/demo` without this session's cookie or until the step has a trace."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"answers JSON or redirects to the demo\", () => pm.expect([200, 303]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "GET /demo/dispute/large",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/dispute/large",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "dispute",
+                    "large"
+                  ]
+                },
+                "description": "This session's own dispute bundle for the `large` purchase: the public bundle plus the signed mandate, its signature and the public key, so the holder can check it themselves. Redirects to `/demo` without this session's cookie or until the step has a trace."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"answers JSON or redirects to the demo\", () => pm.expect([200, 303]).to.include(pm.response.code));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
             }
           ]
         },
@@ -1460,7 +1559,7 @@
                 "{{trace_id}}"
               ]
             },
-            "description": "The dispute bundle for one trace as a JSON download: the mandate, the decision and reason code, what the agent read and proposed, the PayPal order and capture, any refund, and the hash chain check."
+            "description": "The public dispute bundle for one trace as a JSON download: the mandate id and key id, the server's signature verdict, a hash of the signed mandate, the decision and reason code, what the agent read and proposed, the PayPal order and capture, any refund, and the hash chain check. It carries no mandate limits; a step-up's reason, a refusal's text and the salts are withheld and named in `withheld_fields` on each row. The mandate itself, with its signature, is in the session's `/demo/dispute/<step>` or the operator's `pnpm dispute <trace_id>`."
           },
           "event": [
             {

@@ -6,6 +6,7 @@ import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/ma
 import { acceptOutcome, idempotencyKey, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
 import { canonical, minorFromDb, minorToJSON } from "@praman/shared";
 import { orderProgress } from "./order-view.js";
+import { redactionSalt } from "./redaction-salt.js";
 import { gateOnRail, routeMerchant } from "./route-merchant.js";
 
 /** Shared with resolve-approval.ts — the same mandate must serialise through the same lock regardless of which path is mutating its state. */
@@ -252,6 +253,8 @@ export async function runIntent(
         ...(decision.kind === "DENY"
           ? { detail: decision.detail }
           : { amount_minor: minorToJSON(decision.amount_minor), currency: mandate.scope.currency }),
+        // A refusal's detail can name a limit, and a step-up's reason hints at one. Both are withheld from public bundles, and this stops the row's hash confirming a guess.
+        ...(decision.kind === "ALLOW" ? {} : redactionSalt()),
       },
     });
 

@@ -13,7 +13,7 @@ The gateway is a local stdio MCP server, `apps/mcp-gateway`. It holds one signed
 | `propose_purchase` | `merchant_id`, `sku`, `qty` | Asks Praman to buy. Answers `EXECUTED`, `APPROVAL_REQUIRED` or `DENIED`. |
 | `check_approval` | `approval_id` | Where a purchase that needed a person stands now. |
 | `complete_checkout` | `trace_id` | After the buyer has paid at PayPal, asks Praman to capture. Praman re-checks the mandate first. |
-| `get_receipt` | `trace_id` | Where a purchase stands, its ledger events, and links to the trace page and the dispute bundle. |
+| `get_receipt` | `trace_id` | Where a purchase stands, its ledger events, and links to the trace page and the public dispute bundle, which shows no limits. |
 
 No tool has a field for a price, an amount, a currency, a rail or a mandate, and every input schema refuses extra fields. A call that adds `price_minor` is rejected before anything reaches the ledger, and a test checks it ([D-69](DECISIONS.md)). An id or query with a control character, such as a NUL byte, is rejected the same way, since Postgres can't store it ([D-75](DECISIONS.md)).
 

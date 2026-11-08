@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { buildOwnerBundleStandalone } from "@praman/dispute";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { loadRecording, refundControlHtml, renderCheckoutReturnPage, renderDemoPage, renderErrorPage, renderNotFoundPage, renderRecordedRunPage, renderStartPage } from "../pages/demo.js";
@@ -23,7 +24,7 @@ const SESSION_ENDED =
   "Your demo session has ended, because the server restarted or its hour ran out. Whatever you just pressed was not run. A PayPal checkout that wasn't captured can't be captured now, so nothing is charged for it. Everything already paid stays on the ledger. Start a new session to go on.";
 
 /** Routes that act on a session. Anything else under /demo with no session has nothing to send a visitor to. */
-const SESSION_PATHS = /^\/demo(\/end|\/connect(\/(return|cancel))?|\/(r|step|approve|reject|capture|refund)\/[^/]+)?$/;
+const SESSION_PATHS = /^\/demo(\/end|\/connect(\/(return|cancel))?|\/(r|dispute|step|approve|reject|capture|refund)\/[^/]+)?$/;
 
 const STEPS: readonly BeatId[] = ["first", "second", "large", "injection", "fixture", "concurrency", "revoke", "after_revoke"];
 /** The steps that buy at the cafe. Any of them can need approval or become a checkout. */
@@ -273,8 +274,31 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
         }
         const notice = session.notice;
         session.notice = null;
-        const page = await renderTracePage(record.traceId, (trace) => refundControlHtml(name, record, trace, notice));
+        const page = await renderTracePage(record.traceId, (trace) => refundControlHtml(name, record, trace, notice), `/demo/dispute/${name}`);
         send(res, page.status, page.html);
+        return;
+      }
+
+      // The session's own bundle, with its signed mandate (D-84). The cookie is the proof:
+      // the path names a step, never a trace, so it can only ever be this session's.
+      if (method === "GET" && verb === "dispute" && name !== undefined && isPurchase(name)) {
+        const record = session.beats.get(name);
+        if (record === undefined || record.traceId === null) {
+          redirect(res, "/demo");
+          return;
+        }
+        if (!traceLoads.take(session.ref, now)) {
+          res.writeHead(429, { "Content-Type": "text/plain; charset=utf-8", "Retry-After": traceLoads.retryAfterSeconds(session.ref, now).toString(), ...SECURITY_HEADERS });
+          res.end("Too many requests for this trace in the last minute. Wait a minute and try again.");
+          return;
+        }
+        const bundle = await buildOwnerBundleStandalone(record.traceId);
+        if (bundle === null) {
+          redirect(res, "/demo");
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Content-Disposition": `attachment; filename="${name}-bundle.json"`, ...SECURITY_HEADERS });
+        res.end(JSON.stringify(bundle, null, 2));
         return;
       }
 

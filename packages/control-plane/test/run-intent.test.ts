@@ -401,7 +401,7 @@ describe("runIntent routing", () => {
     expect(await prisma.idempotencyRecord.count({ where: { traceId: result.trace_id } })).toBe(0);
     const decisions = await prisma.ledgerEntry.findMany({ where: { traceId: result.trace_id, eventType: "decision" } });
     expect(decisions).toHaveLength(1);
-    expect(decisions[0]?.payload).toMatchObject({ kind: "DENY", reason_code: "MERCHANT_OUT_OF_SCOPE" });
+    expect(decisions[0]?.payload).toMatchObject({ kind: "DENY", reason_code: "MERCHANT_OUT_OF_SCOPE", redaction_salt: expect.stringMatching(/^[0-9a-f]{32}$/) });
   });
 
   it("a policy denial is reported as itself, even when the merchant has no executor", async () => {

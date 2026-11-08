@@ -2905,7 +2905,9 @@ The dispute bundle said `signature_verified: true` with no mandate in it, inferr
 
 **Decided.** After `verifyMandate()` passes, `runIntent` writes the signed mandate (document and signature) and the public key it verified against onto the `intent` row. The bundle reads them back, recomputes the Ed25519 signature, fills `issuer` from `issuer_id`, and says `signature_check: "recomputed"`. Traces from before this change say `"inferred"`, and that is all they can say.
 
-**What it opens.** Anyone holding a trace id can now read that mandate's limits in its bundle. The MCP gateway's answers never carry payloads (`traceEvents` strips them), so an agent with only the gateway still can't see limits. An agent that can also fetch the receipt server's `dispute_url` can read them, which D-08 doesn't cover. On the hosted demo the visitor sees those limits on the page anyway. A real deployment would put `/dispute` behind an access check.
+**Status.** The limitation below is closed by D-84: `/dispute/:id` no longer shows a mandate's limits, and the full mandate goes only to the owner.
+
+**What it opened, before D-84.** Anyone holding a trace id could read that mandate's limits in its bundle. The MCP gateway's answers never carry payloads (`traceEvents` strips them), so an agent with only the gateway still can't see limits. An agent that can also fetch the receipt server's `dispute_url` can read them, which D-08 doesn't cover. On the hosted demo the visitor sees those limits on the page anyway. A real deployment would put `/dispute` behind an access check.
 
 **Limit.** The public key travels with the bundle, so it proves the mandate wasn't altered after signing, not who holds the key. Tying a key to a person is a key registry, which Praman doesn't have.
 
@@ -2944,4 +2946,20 @@ D-71 kept each proposal's trace id for the retry window, but a run that threw le
 **Amended.** Identical proposals in one gateway process now run one after another, so two retries arriving together after a throw can't both start a fresh intent.
 
 **Rejected: answering every retry after an error with the same ERROR.** It would block a proposal that never reached T1 for the whole window for no gain.
+
+---
+
+### D-84 · The public dispute bundle shows no mandate limits, and the owner gets the full mandate · Accepted (implementer's decision, for the builder to check)
+
+D-79 let anyone holding a trace id read a mandate's limits from `/dispute/:id`, so an agent given `dispute_url` could read its own limits, which D-08 says it never does. Looking at what else could leak turned up more than the mandate field: the `intent` row in the bundle's chain carries the signed mandate, a refusal row's `detail` names the limit it hit, and a step-up's reason says a threshold was crossed.
+
+**Decided.** `/dispute/:id` serves a public bundle with the mandate id, the key id, the server's signature verdict and `signed_sha256`. Rows drop `signed_mandate`, `public_key_pem`, `detail` and `redaction_salt`, and step-up reason codes on `decision` and `step_up_resolved` rows, and list what was dropped in `withheld_fields`. `authorisation.reason_code` is null for a step-up, and the public trace page leaves the step-up reason out too, as `redact()` does for the agent.
+
+The full bundle, with the mandate, signature and public key, goes only to someone who shows ownership: the demo session that made the trace, at `/demo/dispute/<step>`, by its own cookie (the path names a step, never a trace), and an operator at `pnpm dispute <trace_id>`, which needs no web access and which an MCP agent has no tool for. The demo's page says each purchase's bundle is the visitor's own copy and can be checked with the signature.
+
+**The hash, and why it isn't a way back in.** A hash of a mandate could be used to confirm a guessed limit. `signed_sha256` covers `{ document, signature }`, and the signature is withheld, so a guess can't reproduce it. The same reasoning goes for the `intent` row's own hash. `decision` rows, `step_up_resolved` rows and capture refusals are different: their hashes cover short, guessable text, so new rows carry a random `redaction_salt`. The salt is not an idempotency key and nothing decides from it.
+
+**Rejected.** A shared secret in the URL: it lands in logs, browser history and any agent's context. A `?token=` on `/dispute/:id`: the same, and the demo's cookie is scoped to `/demo` anyway. Dropping `/dispute/:id`: a person without a session still needs a bundle to hand to someone. Dropping the hash: a holder of the full mandate needs a public value to match it against. Removing hashes from the public bundle: it would stop anyone checking the chain, which is the bundle's purpose.
+
+**Limits.** Rows written before this change have no salt, and the ledger is append-only, so a `detail` that named a limit on an old `decision` row can still be guessed at against its hash. Withholding `detail` stops it being read; it doesn't stop that guess. Rows with `withheld_fields` can't have their payload rehashed from the public copy; only the owner's copy can. The operator console at `/console` (local only, off when the demo runs) shows reason codes including step-up reasons and no limits. Demo steps that aren't purchases link to the public bundle.
 

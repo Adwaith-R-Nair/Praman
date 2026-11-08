@@ -13,9 +13,9 @@ if (!traceId) {
 }
 
 const { prisma } = await import("@praman/db");
-const { buildBundle } = await import("@praman/dispute");
+const { buildOwnerBundle } = await import("@praman/dispute");
 
-const bundle = await prisma.$transaction((tx) => buildBundle(tx, traceId));
+const bundle = await prisma.$transaction((tx) => buildOwnerBundle(tx, traceId));
 
 if (!bundle) {
   console.error(`✗ no such trace: ${traceId}`);
@@ -29,6 +29,7 @@ const outPath = fileURLToPath(new URL(`../disputes/${traceId}.json`, import.meta
 writeFileSync(outPath, JSON.stringify(bundle, null, 2));
 
 console.log(`✓ dispute bundle written: disputes/${traceId}.json`);
+console.log("  this is the operator's copy: it holds the signed mandate and its limits, so keep it away from the agent");
 console.log(`  decision: ${bundle.authorisation.decision ?? "unknown"} (${bundle.authorisation.reason_code ?? "n/a"})`);
 console.log(`  chain: ${bundle.chain.global_chain_ok ? "intact" : "BROKEN"}, trace fully verified: ${bundle.chain.trace_fully_verified.toString()}`);
 

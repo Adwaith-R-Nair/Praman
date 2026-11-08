@@ -151,7 +151,7 @@ pnpm revoke <mandate_id> "reason"           # withdraw authority
 pnpm refund <trace_id>                      # give a paid PayPal purchase back, in full
 pnpm verify-ledger                          # walk the chain, recompute every hash
 pnpm eval --layer1                          # deterministic corpus, writes eval/report.partial.md and leaves the committed report alone
-pnpm dispute <trace_id>                     # self-verifying evidence bundle
+pnpm dispute <trace_id>                     # operator's full bundle, with the signed mandate
 pnpm receipt-ui                             # front page, PayPal demo and trace viewer on :4100
 ```
 
@@ -236,7 +236,7 @@ The Razorpay submission was built solo in nine days. The PayPal work was added f
 - PayPal webhooks (`POST /webhooks/paypal`) verify each delivery's signature with PayPal. A real `PAYMENT.CAPTURE.COMPLETED` delivery reached the hosted server and verified on 8 Nov 2026 ([build log](docs/BUILD_LOG.md), P21); the other event types are tested only against synthetic events written from PayPal's published schemas. A webhook can settle a pending PayPal capture early, and the sweep still settles anything a webhook misses. Razorpay webhooks are not built ([D-45](docs/DECISIONS.md)).
 - Refunds are full only, PayPal only, and started by a person. PayPal's refund webhook is ignored, so a refund made in PayPal's dashboard doesn't reach the ledger ([D-66](docs/DECISIONS.md)).
 - Ledger appends are serialised by one global lock, since the chain is a single linked list. Per-mandate sub-chains would remove this.
-- Dispute bundles carry the signed mandate, its signature and the public key Praman verified against, so anyone can check them ([D-79](docs/DECISIONS.md)). That key is the one the server used, so it shows the mandate wasn't altered, not who holds the key. Traces from before this change have no mandate on them: `issuer` is `null` there and `signature_check` says `inferred`.
+- The public dispute bundle at `/dispute/<trace>` gives the mandate id, key id, the server's signature verdict and a hash of the signed mandate, and no limits ([D-84](docs/DECISIONS.md)). The full signed mandate and signature, which let you check it yourself, go only to the demo session that owns the trace (`/demo/dispute/<step>`) or an operator running `pnpm dispute <trace_id>`. The public key is the one the server used, so it shows the mandate wasn't altered, not who holds the key. Traces from before D-79 have no mandate on them: `signature_check` says `inferred`.
 
 **Defense only.** The adversarial corpus is a fixed set of fixtures exercised against this project's own sandbox. Praman ships no attack generator and nothing that generalises to third-party systems.
 
@@ -254,7 +254,7 @@ Three that changed the architecture:
 
 ## Decision records
 
-83 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
+84 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
 
 ## Documentation
 

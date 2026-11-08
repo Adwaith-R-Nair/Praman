@@ -1,9 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@praman/db";
 import { append, type EventType } from "@praman/ledger";
-import { generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { canonical } from "@praman/shared";
-import { buildBundle } from "../src/bundle.js";
+import { buildBundle, buildOwnerBundle } from "../src/bundle.js";
 
 beforeEach(async () => {
   await prisma.$executeRaw`TRUNCATE ledger_entry, idempotency_record RESTART IDENTITY`;
@@ -202,24 +202,67 @@ describe("buildBundle", () => {
 
     async function bundleWith(signedMandate: Record<string, unknown>) {
       await prisma.$transaction((tx) => append(tx, { traceId: "trc_signed", ts: new Date(), actor: "agent", eventType: "intent", payload: { mandate_id: "mnd_signed", signed_mandate: signedMandate, public_key_pem: publicKeyPem } }));
-      return prisma.$transaction((tx) => buildBundle(tx, "trc_signed"));
+      return prisma.$transaction((tx) => buildOwnerBundle(tx, "trc_signed"));
     }
 
     it("carries the mandate, signature and key so an outsider can check it, and recomputes the check", async () => {
       const bundle = await bundleWith({ document, signature });
-      expect(bundle?.mandate).toMatchObject({ id: "mnd_signed", issuer: "usr_issuer", signature_verified: true, signature_check: "recomputed" });
+      expect(bundle?.mandate).toMatchObject({ id: "mnd_signed", issuer: "usr_issuer", key_id: "k1", signature_verified: true, signature_check: "recomputed" });
       expect(bundle?.mandate.signed).toEqual({ document, signature, public_key_pem: publicKeyPem });
+      expect(bundle?.chain.entries[0]?.withheld_fields).toEqual([]);
+    });
+
+    it("gives the public bundle the verdict and a hash, and never the mandate, its signature or the key", async () => {
+      await bundleWith({ document, signature });
+      const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_signed"));
+      const expectedHash = createHash("sha256").update(canonical({ document, signature }), "utf8").digest("hex");
+      expect(bundle?.mandate).toEqual({ id: "mnd_signed", key_id: "k1", signature_verified: true, signature_check: "recomputed", signed_sha256: expectedHash });
+      const json = JSON.stringify(bundle);
+      expect(json).not.toContain("usr_issuer");
+      expect(json).not.toContain(signature.value);
+      expect(json).not.toContain("BEGIN PUBLIC KEY");
+      expect(bundle?.chain.entries[0]?.withheld_fields).toEqual(["public_key_pem", "signed_mandate"]);
+      // The hash covers the signature, so hashing a guessed document alone can't reproduce it.
+      const guess = createHash("sha256").update(canonical(document), "utf8").digest("hex");
+      expect(bundle?.mandate.signed_sha256).not.toBe(guess);
+    });
+
+    it("keeps limit text and a step-up reason out of the public bundle's rows and verdict", async () => {
+      await writeRows("trc_public_rows", [
+        ["intent", { mandate_id: "mnd_signed", merchant_id: "M" }],
+        ["decision", { mandate_id: "mnd_signed", kind: "DENY", reason_code: "MANDATE_BUDGET_EXHAUSTED", detail: "Amount 6000 minor units exceeds total budget 5000 minor units.", redaction_salt: "s1" }],
+        ["decision", { mandate_id: "mnd_signed", kind: "STEP_UP", reason_code: "STEP_UP_THRESHOLD", amount_minor: "4000", currency: "USD", redaction_salt: "s2" }],
+        ["step_up_resolved", { mandate_id: "mnd_signed", verdict: "approve", revalidated_kind: "STEP_UP", revalidated_reason: "STEP_UP_THRESHOLD", redaction_salt: "s3" }],
+      ]);
+      const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_public_rows"));
+      const json = JSON.stringify(bundle);
+      expect(json).not.toContain("5000 minor");
+      expect(json).not.toContain("STEP_UP_THRESHOLD");
+      expect(json).not.toContain("redaction_salt\":\"");
+      const fields = bundle?.chain.entries.map((e) => e.withheld_fields);
+      expect(fields?.[1]).toEqual(["detail", "redaction_salt"]);
+      expect(fields?.[2]).toEqual(["reason_code", "redaction_salt"]);
+      expect(fields?.[3]).toEqual(["redaction_salt", "revalidated_reason"]);
+    });
+
+    it("keeps the owner bundle's reason code and row text", async () => {
+      await writeRows("trc_owner_rows", [
+        ["decision", { mandate_id: "mnd_signed", kind: "STEP_UP", reason_code: "STEP_UP_THRESHOLD", amount_minor: "4000", currency: "USD", redaction_salt: "s" }],
+      ]);
+      const bundle = await prisma.$transaction((tx) => buildOwnerBundle(tx, "trc_owner_rows"));
+      expect(bundle?.authorisation.reason_code).toBe("STEP_UP_THRESHOLD");
+      expect(bundle?.chain.entries[0]?.payload).toMatchObject({ redaction_salt: "s", reason_code: "STEP_UP_THRESHOLD" });
     });
 
     it("says not verified when the mandate on the trace doesn't match its signature", async () => {
       const bundle = await bundleWith({ document: { ...document, issuer_id: "usr_other" }, signature });
-      expect(bundle?.mandate).toMatchObject({ issuer: "usr_other", signature_verified: false, signature_check: "recomputed" });
+      expect(bundle?.mandate).toMatchObject({ issuer: "usr_other", key_id: "k1", signature_verified: false, signature_check: "recomputed" });
     });
 
     it("says an older trace with no mandate on it was only inferred", async () => {
       await prisma.$transaction((tx) => append(tx, { traceId: "trc_old", ts: new Date(), actor: "agent", eventType: "intent", payload: { mandate_id: "mnd_old" } }));
-      const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_old"));
-      expect(bundle?.mandate).toEqual({ id: "mnd_old", issuer: null, signature_verified: true, signature_check: "inferred", signed: null });
+      expect((await prisma.$transaction((tx) => buildBundle(tx, "trc_old")))?.mandate).toEqual({ id: "mnd_old", key_id: null, signature_verified: true, signature_check: "inferred", signed_sha256: null });
+      expect((await prisma.$transaction((tx) => buildOwnerBundle(tx, "trc_old")))?.mandate).toMatchObject({ issuer: null, signature_check: "inferred", signed: null });
     });
   });
 

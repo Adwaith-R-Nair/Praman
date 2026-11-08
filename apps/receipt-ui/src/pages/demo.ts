@@ -64,13 +64,14 @@ function action(path: string, label: string, kind: "primary" | "quiet" = "primar
 
 /**
  * A purchase step's trace opens in the visitor's own view of it, /demo/r/<step>, which
- * is where a paid purchase can be refunded. Every other trace opens on the public page.
+ * is where a paid purchase can be refunded, and its bundle at /demo/dispute/<step> is the
+ * session's own copy, with the signed mandate. Every other trace opens on the public page.
  */
 function traceLinks(traceId: string | null, ownView: PurchaseBeat | null = null): string {
   if (traceId === null) return "";
   const id = encodeURIComponent(traceId);
   const href = ownView === null ? `/r/${id}` : `/demo/r/${ownView}`;
-  return `<p class="links"><a href="${href}">Ledger trace</a><a href="/dispute/${id}">Dispute bundle</a><span class="trace-id">${escapeHtml(traceId)}</span></p>`;
+  return `<p class="links"><a href="${href}">Ledger trace</a><a href="${ownView === null ? `/dispute/${id}` : `/demo/dispute/${ownView}`}">Dispute bundle</a><span class="trace-id">${escapeHtml(traceId)}</span></p>`;
 }
 
 /**
@@ -239,7 +240,7 @@ function mandateHtml(session: DemoSession): string {
       <li>Only at ${escapeHtml(merchants)}, and only food and drink.</li>
       <li>At most ${escapeHtml(doc.limits.max_txns_per_window.toString())} purchases an hour. Valid until ${escapeHtml(until.toUTCString())}.</li>
     </ul>
-    <p class="seal">Signed with the demo key <code>${escapeHtml(session.mandate.signature.key_id)}</code>. Mandate <code>${escapeHtml(doc.mandate_id)}</code>. The agent never sees these limits.</p>
+    <p class="seal">Signed with the demo key <code>${escapeHtml(session.mandate.signature.key_id)}</code>. Mandate <code>${escapeHtml(doc.mandate_id)}</code>. The agent never sees these limits. Each purchase's dispute bundle below is your own copy of this mandate and its signature, so you can check it yourself.</p>
     ${session.beats.get("revoke")?.state === "done" ? `<p class="revoked-line"><strong>Revoked.</strong> You took this authority back in step 8. Every purchase under it is now refused.</p>` : ""}
   </div>`;
 }

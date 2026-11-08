@@ -1,29 +1,34 @@
-import { createPublicKey, verify as cryptoVerify } from "node:crypto";
+import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { prisma, type PrismaTx } from "@praman/db";
 import { amountIfPresent, read, readCurrency, verifyChain, type LedgerEntryRecord } from "@praman/ledger";
 import { canonical, type Currency } from "@praman/shared";
 
+/**
+ * The bundle anyone holding a trace id can fetch at /dispute/:id. It says whether the
+ * mandate checked out and never shows what the mandate allows: an agent given
+ * dispute_url must not learn its own limits (D-08). The owner's copy, which has the
+ * mandate and its signature, is OwnerDisputeBundle.
+ */
 export interface DisputeBundle {
   readonly trace_id: string;
   readonly generated_at: string;
   readonly mandate: {
     readonly id: string;
-    /** issuer_id from the signed mandate. Null on traces recorded before the mandate went on the intent row (D-79). */
-    readonly issuer: string | null;
+    /** Which signing key verified it. Null on traces recorded before the mandate went on the intent row (D-79). */
+    readonly key_id: string | null;
     /**
-     * Whether the signature checks out. "recomputed": this bundle's own signed
-     * mandate was verified with Ed25519 just now. "inferred": an older trace with no
-     * mandate on it, so this is true unless its decision was MANDATE_SIGNATURE_INVALID.
+     * Whether the signature checks out. "recomputed": this trace's own signed mandate
+     * was verified with Ed25519 just now. "inferred": an older trace with no mandate on
+     * it, so this is true unless its decision was MANDATE_SIGNATURE_INVALID.
      */
     readonly signature_verified: boolean;
     readonly signature_check: "recomputed" | "inferred";
     /**
-     * What an outsider needs to check the mandate: Ed25519 over the canonical JSON of
-     * `document` (sorted keys, no whitespace), with `public_key_pem`. It is the key
-     * Praman verified against when it decided, so it shows the mandate wasn't altered,
-     * not who holds the key. Null on older traces.
+     * sha256 of the canonical JSON of { document, signature }. Lets a holder of the full
+     * mandate show it is the one decided under. It covers the signature, which is
+     * withheld here, so hashing a guessed mandate can't reproduce it. Null on older traces.
      */
-    readonly signed: { readonly document: unknown; readonly signature: SignatureBlock; readonly public_key_pem: string } | null;
+    readonly signed_sha256: string | null;
   };
   readonly authorisation: {
     readonly decision: string | null;
@@ -99,6 +104,12 @@ export interface DisputeBundle {
       readonly payload_hash: string;
       readonly prev_hash: string;
       readonly entry_hash: string;
+      /**
+       * Payload fields left out of this copy, in sorted order. With any listed, the
+       * payload can't be rehashed to payload_hash here, and entry_hash can still be
+       * recomputed from payload_hash. Empty on the owner's copy (D-84).
+       */
+      readonly withheld_fields: readonly string[];
     }[];
     /** The full ledger's own integrity as of build time — recomputed live, not cached. */
     readonly global_chain_ok: boolean;
@@ -106,6 +117,21 @@ export interface DisputeBundle {
     readonly head: string | null;
     /** Whether every one of THIS trace's own entries falls inside the verified range. */
     readonly trace_fully_verified: boolean;
+  };
+}
+
+/**
+ * The copy for someone who proved they own the trace: the demo session that made it,
+ * or an operator at the local CLI. To check the mandate yourself: Ed25519 over the
+ * canonical JSON of `document` (sorted keys, no whitespace), with `public_key_pem`.
+ * It is the key Praman verified against when it decided, so it shows the mandate
+ * wasn't altered, not who holds the key.
+ */
+export interface OwnerDisputeBundle extends Omit<DisputeBundle, "mandate"> {
+  readonly mandate: DisputeBundle["mandate"] & {
+    /** issuer_id from the signed mandate. Null on older traces. */
+    readonly issuer: string | null;
+    readonly signed: { readonly document: unknown; readonly signature: SignatureBlock; readonly public_key_pem: string } | null;
   };
 }
 
@@ -119,7 +145,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-function signedMandateOf(intent: Record<string, unknown> | null): NonNullable<DisputeBundle["mandate"]["signed"]> | null {
+function signedMandateOf(intent: Record<string, unknown> | null): NonNullable<OwnerDisputeBundle["mandate"]["signed"]> | null {
   const signed = intent?.["signed_mandate"];
   const publicKey = intent?.["public_key_pem"];
   if (!isRecord(signed) || typeof publicKey !== "string") return null;
@@ -131,13 +157,56 @@ function signedMandateOf(intent: Record<string, unknown> | null): NonNullable<Di
 }
 
 /** Checks the mandate on the bundle itself, the way an outsider would. Any malformed part counts as not verified. */
-function signatureHolds(signed: NonNullable<DisputeBundle["mandate"]["signed"]>): boolean {
+function signatureHolds(signed: NonNullable<OwnerDisputeBundle["mandate"]["signed"]>): boolean {
   if (signed.signature.alg !== "Ed25519") return false;
   try {
     return cryptoVerify(null, Buffer.from(canonical(signed.document), "utf8"), createPublicKey(signed.public_key_pem), Buffer.from(signed.signature.value, "base64url"));
   } catch {
     return false;
   }
+}
+
+function signedHash(signed: NonNullable<OwnerDisputeBundle["mandate"]["signed"]>): string {
+  return createHash("sha256").update(canonical({ document: signed.document, signature: signed.signature }), "utf8").digest("hex");
+}
+
+/**
+ * Fields no public copy of a row may carry. `signed_mandate` and `public_key_pem` are
+ * the mandate itself, `detail` can name a limit ("exceeds total budget 15000"), and
+ * `redaction_salt` is what keeps a row's hash from confirming a guess at those.
+ */
+const WITHHELD_FIELDS: ReadonlySet<string> = new Set(["signed_mandate", "public_key_pem", "detail", "redaction_salt"]);
+
+/** A step-up's reason says whether a threshold was crossed. The agent's own view drops it (redact), so the public one does too. */
+function isStepUpCode(v: unknown): boolean {
+  return typeof v === "string" && v.startsWith("STEP_UP_");
+}
+
+function publicPayload(payload: unknown): { payload: unknown; withheld: string[] } {
+  if (!isRecord(payload)) return { payload, withheld: [] };
+  const kept: Record<string, unknown> = {};
+  const withheld: string[] = [];
+  for (const [key, value] of Object.entries(payload)) {
+    if (WITHHELD_FIELDS.has(key) || ((key === "reason_code" || key === "revalidated_reason") && isStepUpCode(value))) withheld.push(key);
+    else kept[key] = value;
+  }
+  return { payload: kept, withheld: withheld.sort() };
+}
+
+function toPublicBundle(owner: OwnerDisputeBundle): DisputeBundle {
+  const { issuer: _issuer, signed: _signed, ...mandate } = owner.mandate;
+  return {
+    ...owner,
+    mandate,
+    authorisation: { ...owner.authorisation, reason_code: isStepUpCode(owner.authorisation.reason_code) ? null : owner.authorisation.reason_code },
+    chain: {
+      ...owner.chain,
+      entries: owner.chain.entries.map((e) => {
+        const { payload, withheld } = publicPayload(e.payload);
+        return { ...e, payload, withheld_fields: withheld };
+      }),
+    },
+  };
 }
 
 function payloadOf(entries: readonly LedgerEntryRecord[], eventType: string): Record<string, unknown> | null {
@@ -242,7 +311,7 @@ function parseMerchantReads(raw: readonly string[]): { sku: string; text: string
  * (computePayloadHash/computeEntryHash, packages/ledger/src/chain.ts), not
  * take this bundle's word for it.
  */
-export async function buildBundle(tx: PrismaTx, traceId: string): Promise<DisputeBundle | null> {
+export async function buildOwnerBundle(tx: PrismaTx, traceId: string): Promise<OwnerDisputeBundle | null> {
   const entries = await read(tx, traceId);
   if (entries.length === 0) return null;
 
@@ -328,9 +397,11 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
     generated_at: new Date().toISOString(),
     mandate: {
       id: asString(intent?.["mandate_id"]) ?? "unknown",
+      key_id: signed === null ? null : signed.signature.key_id,
       issuer,
       signature_verified: signed === null ? reasonCode !== "MANDATE_SIGNATURE_INVALID" : signatureHolds(signed),
       signature_check: signed === null ? "inferred" : "recomputed",
+      signed_sha256: signed === null ? null : signedHash(signed),
       signed,
     },
     authorisation: {
@@ -376,6 +447,7 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
         payload_hash: e.payloadHash,
         prev_hash: e.prevHash,
         entry_hash: e.entryHash,
+        withheld_fields: [],
       })),
       global_chain_ok: chainResult.ok,
       checked_through_seq: chainResult.ok ? chainResult.checked.toString() : null,
@@ -385,6 +457,16 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
   };
 }
 
+/** The copy /dispute/:id serves to anyone with the trace id. It carries no mandate limits (D-84). */
+export async function buildBundle(tx: PrismaTx, traceId: string): Promise<DisputeBundle | null> {
+  const owner = await buildOwnerBundle(tx, traceId);
+  return owner === null ? null : toPublicBundle(owner);
+}
+
 export async function buildBundleStandalone(traceId: string): Promise<DisputeBundle | null> {
   return prisma.$transaction((tx) => buildBundle(tx, traceId));
+}
+
+export async function buildOwnerBundleStandalone(traceId: string): Promise<OwnerDisputeBundle | null> {
+  return prisma.$transaction((tx) => buildOwnerBundle(tx, traceId));
 }

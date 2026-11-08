@@ -142,7 +142,7 @@ function entryLabel(eventType: string, approvedBy: "person" | "test_harness" | n
  * it renders what that visitor, and nobody else, may do with this trace, which is ask
  * for a refund. The public page at /r/<id> never has one.
  */
-export async function renderTracePage(traceId: string, ownerControl: ((trace: TraceView) => string) | null = null): Promise<{ status: number; html: string }> {
+export async function renderTracePage(traceId: string, ownerControl: ((trace: TraceView) => string) | null = null, ownerBundleHref: string | null = null): Promise<{ status: number; html: string }> {
   const trace = await loadTrace(traceId);
 
   if (!trace) {
@@ -165,9 +165,13 @@ export async function renderTracePage(traceId: string, ownerControl: ((trace: Tr
   // Suppressed for a plain OK: the hero already says "Allowed", and OK adds
   // no information beyond that — showing it anyway would be the page
   // repeating its own headline back to the reader.
+  //
+  // Only the owner's page names a step-up's reason: "threshold" says the amount crossed one,
+  // and the agent's own view leaves that out (D-08, D-84).
+  const reasonCode = ownerControl === null && trace.reasonCode !== null && trace.reasonCode.startsWith("STEP_UP_") ? null : trace.reasonCode;
   const reasonPlain =
     trace.refusalReason ??
-    (trace.reasonCode && trace.reasonCode !== "OK" ? (REASON_CODE_PLAIN[trace.reasonCode as ReasonCode] ?? trace.reasonCode) : null);
+    (reasonCode && reasonCode !== "OK" ? (REASON_CODE_PLAIN[reasonCode as ReasonCode] ?? reasonCode) : null);
   const amount = trace.amountMinor ? formatMoney(minorFromJSON(trace.amountMinor), trace.currency) : null;
 
   // One card per item, not one undifferentiated wall of text — the whole
@@ -233,7 +237,7 @@ ${
   reasonPlain
     ? `<section class="reason">
          <p class="reason-plain">${escapeHtml(reasonPlain)}</p>
-         ${trace.reasonCode ? `<span class="reason-code data">${escapeHtml(trace.reasonCode)}</span>` : ""}
+         ${reasonCode ? `<span class="reason-code data">${escapeHtml(reasonCode)}</span>` : ""}
          ${trace.railFailureCode ? `<span class="reason-code data">${escapeHtml(trace.railFailureCode)}</span>` : ""}
        </section>`
     : ""
@@ -283,7 +287,7 @@ ${(() => {
 
 <section>
   <p class="nav data">trace_id ${escapeHtml(traceId)}</p>
-  <p class="nav"><a href="/dispute/${escapeHtml(traceId)}">Download dispute bundle</a></p>
+  <p class="nav">${ownerBundleHref === null ? `<a href="/dispute/${escapeHtml(traceId)}">Download dispute bundle</a>` : `<a href="${escapeHtml(ownerBundleHref)}">Download your dispute bundle, with the signed mandate</a>`}</p>
   <p class="nav"><a href="${escapeHtml(consoleHref)}">See this trace in the ledger console</a></p>
 </section>
 

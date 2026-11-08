@@ -57,7 +57,7 @@ const EXPECTED = [
   "GET /demo/client.js",
   "GET /demo/demo.css",
   ...STEPS.map((s) => `POST /demo/step/${s}`),
-  ...PURCHASES.flatMap((p) => [`POST /demo/approve/${p}`, `POST /demo/reject/${p}`, `POST /demo/capture/${p}`, `POST /demo/refund/${p}`, `GET /demo/r/${p}`]),
+  ...PURCHASES.flatMap((p) => [`POST /demo/approve/${p}`, `POST /demo/reject/${p}`, `POST /demo/capture/${p}`, `POST /demo/refund/${p}`, `GET /demo/r/${p}`, `GET /demo/dispute/${p}`]),
 ];
 
 describe("the Postman collection", () => {

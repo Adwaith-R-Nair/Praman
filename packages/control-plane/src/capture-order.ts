@@ -6,6 +6,7 @@ import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/ma
 import { acceptOutcome, outcomeFields, receiptFor, type AcceptedOutcome, type ExecOutcome, type Executor, type ExecutorRouter } from "@praman/exec-core";
 import { currencyFromDb, isRail, minorFromDb, minorFromJSON, minorToJSON, type Currency, type DenyCode, type Minor } from "@praman/shared";
 import { readOrderView, type OrderView } from "./order-view.js";
+import { redactionSalt } from "./redaction-salt.js";
 import { MANDATE_LOCK_NS, parseCachedOutcome } from "./run-intent.js";
 
 /** How long a created checkout order holds budget before the release sweep may free it (D-30). */
@@ -285,7 +286,7 @@ export async function captureOrder(traceId: string, signed: SignedMandate, publi
         ts: now,
         actor: "praman",
         eventType: "capture_decision",
-        payload: { ...where, kind: "DENY", reason_code: gate.reason_code, detail: gate.detail },
+        payload: { ...where, kind: "DENY", reason_code: gate.reason_code, detail: gate.detail, ...redactionSalt() },
       });
       await maybeCheckpoint(tx, now);
       return { go: false as const, result: { kind: "REFUSED" as const, trace_id: traceId, reason_code: gate.reason_code, detail: gate.detail } };

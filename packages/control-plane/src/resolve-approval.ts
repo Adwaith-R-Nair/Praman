@@ -5,6 +5,7 @@ import { verifyFailureCode, verifyMandate, type SignedMandate } from "@praman/ma
 import { acceptOutcome, idempotencyKey, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
 import { minorFromDb, minorToJSON, type Currency, type DenyCode, type Minor } from "@praman/shared";
 import { orderProgress } from "./order-view.js";
+import { redactionSalt } from "./redaction-salt.js";
 import { gateOnRail, routeMerchant, type RailGate } from "./route-merchant.js";
 import { MANDATE_LOCK_NS, parseCachedOutcome } from "./run-intent.js";
 
@@ -206,6 +207,7 @@ export async function resolveApproval(
         revalidated_kind: decision.kind,
         revalidated_reason: decision.reason_code,
         ...(decision.kind === "DENY" ? { detail: decision.detail } : {}),
+        ...(decision.kind === "ALLOW" ? {} : redactionSalt()),
       },
     });
 

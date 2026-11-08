@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { releaseStaleOrders } from "@praman/control-plane";
 import { prisma } from "@praman/db";
+import { buildBundleStandalone } from "@praman/dispute";
 import { deriveState } from "@praman/ledger";
 import { generateKeypair } from "@praman/mandate";
 import { HARNESS_LIMITS } from "../src/demo/config.js";
@@ -317,6 +318,41 @@ describe("the demo story", () => {
     const page = await v.page();
     expect(page).toContain("STEP_UP_FIRST_MERCHANT");
     expect(page).toContain("Approve this purchase");
+  });
+
+  it("gives the full signed mandate only to the session that owns the trace", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    const traceId = sessionOf(v).beats.get("first")?.traceId ?? "";
+
+    const own = await v.get("/demo/dispute/first");
+    expect(own.status).toBe(200);
+    const bundle = JSON.parse(own.text) as { mandate: { signed: { document: { limits: unknown }; signature: { value: string } } | null; signature_check: string } };
+    expect(bundle.mandate.signature_check).toBe("recomputed");
+    expect(bundle.mandate.signed?.document.limits).toBeDefined();
+
+    const stranger = visitor();
+    await stranger.post("/demo/start");
+    expect((await stranger.get("/demo/dispute/first")).location).toBe("/demo");
+
+    // What /dispute/:id serves to anyone holding the trace id.
+    const pub = JSON.stringify(await buildBundleStandalone(traceId));
+    expect(pub).not.toContain("max_total_minor");
+    expect(pub).not.toContain("threshold_minor");
+    expect(pub).not.toContain("merchant_ids");
+    expect(pub).not.toContain(bundle.mandate.signed?.signature.value ?? "no-signature");
+    expect(pub).not.toContain("STEP_UP_FIRST_MERCHANT");
+
+    expect(await v.page()).toContain('href="/demo/dispute/first"');
+  });
+
+  it("hides a pending step-up's reason on the public trace page and keeps it on the owner's", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    const traceId = sessionOf(v).beats.get("first")?.traceId ?? "";
+
+    expect((await renderTracePage(traceId)).html).not.toContain("STEP_UP_FIRST_MERCHANT");
+    expect((await v.get("/demo/r/first")).text).toContain("STEP_UP_FIRST_MERCHANT");
   });
 
   it("charges a saved method with no buyer present only after evaluate returns ALLOW", async () => {

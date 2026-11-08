@@ -22,7 +22,7 @@ No real money moves. Everything runs against PayPal's sandbox.
 7. **Twenty purchases at once** sends twenty test intents together against a $30.00 budget. No model is called. Five are paid and the rest are refused.
 8. **Revoke the mandate**. Press **Revoke the mandate**, then **Ask the agent to buy a coffee**. The agent asks for the same coffee as in step 4, and Praman refuses it with `MANDATE_REVOKED`. Nothing reaches PayPal. Do this last, because after it every purchase in the session is refused.
 
-Every step links to its **Ledger trace**, where **Verify this chain** checks the hash chain, and to its **Dispute bundle**.
+Every step links to its **Ledger trace**, where **Verify this chain** checks the hash chain, and to its **Dispute bundle**. A purchase's bundle is your own copy, with the signed mandate and signature, so you can check it yourself (`/demo/dispute/<step>`). The public one at `/dispute/<trace>` has no limits in it.
 
 **Open your ledger console** at the top of the demo page shows every ledger row your session wrote, in a grid you can search, filter and sort. Each row's hashes are recomputed and the whole chain is checked. Select a row to see its hash check. The charts show spend against each mandate's budget, decisions by reason code, and outcomes by rail; select a bar to filter the rows. After step 8 the revocation is one of the rows.
 

@@ -110,10 +110,20 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
 
   await test.step("the dispute bundle downloads as JSON", async () => {
     const href = await step("first").getByRole("link", { name: "Dispute bundle" }).getAttribute("href");
-    const bundle = await request.get(href ?? "/missing");
+    // The visitor's own copy: their session cookie is what proves they own it.
+    expect(href).toBe("/demo/dispute/first");
+    const bundle = await page.request.get(href ?? "/missing");
     expect(bundle.status()).toBe(200);
     expect(bundle.headers()["content-disposition"]).toContain("attachment");
-    expect(JSON.stringify(await bundle.json())).not.toContain("PAYTOKEN");
+    const own = JSON.stringify(await bundle.json());
+    expect(own).not.toContain("PAYTOKEN");
+    expect(own).toContain("max_total_minor");
+
+    // Anyone else with the trace id gets the verdict and no limits.
+    const traceId = (await step("first").locator(".trace-id").textContent()) ?? "";
+    const publicBundle = await request.get(`/dispute/${encodeURIComponent(traceId)}`);
+    expect(publicBundle.status()).toBe(200);
+    expect(JSON.stringify(await publicBundle.json())).not.toContain("max_total_minor");
   });
 
   await test.step("revoking refuses the agent's next purchase before it reaches PayPal", async () => {
