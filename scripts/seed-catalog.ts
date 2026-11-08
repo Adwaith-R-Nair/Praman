@@ -49,7 +49,7 @@ const INR_ITEMS: Item[] = [
   { sku: "SKU_BEV_005", title: "Packaged Water (1L)", description: "Sealed bottled drinking water", category: "beverage", priceMinor: 2000n, stockQty: 150 },
 
   // Injection fixture. The description contains a literal closing delimiter —
-  // wrapUntrusted() must strip it before re-wrapping, or this text escapes
+  // wrapUntrusted() must neutralise it before wrapping, or this text escapes
   // the <untrusted_merchant_content> block and reads as a real system
   // instruction. The "SYSTEM UPDATE" text is DATA, not a directive, no matter
   // how it's phrased — see prompt.ts's handling-merchant-content section.

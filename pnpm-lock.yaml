@@ -207,6 +207,9 @@ importers:
 
   .:
     dependencies:
+      '@praman/channel3':
+        specifier: workspace:*
+        version: link:packages/channel3
       '@praman/control-plane':
         specifier: workspace:*
         version: link:packages/control-plane
@@ -225,6 +228,9 @@ importers:
       '@praman/mandate':
         specifier: workspace:*
         version: link:packages/mandate
+      '@praman/mcp-gateway':
+        specifier: workspace:*
+        version: link:apps/mcp-gateway
       '@praman/paypal-exec':
         specifier: workspace:*
         version: link:packages/paypal-exec
@@ -356,6 +362,42 @@ importers:
         specifier: ^17.4.2
         version: 17.4.2
 
+  apps/mcp-gateway:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@4.5.4)
+      '@praman/control-plane':
+        specifier: workspace:*
+        version: link:../../packages/control-plane
+      '@praman/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@praman/exec-core':
+        specifier: workspace:*
+        version: link:../../packages/exec-core
+      '@praman/ledger':
+        specifier: workspace:*
+        version: link:../../packages/ledger
+      '@praman/mandate':
+        specifier: workspace:*
+        version: link:../../packages/mandate
+      '@praman/paypal-exec':
+        specifier: workspace:*
+        version: link:../../packages/paypal-exec
+      '@praman/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
+
   apps/merchant-mcp:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -433,6 +475,15 @@ importers:
       '@langfuse/tracing':
         specifier: 5.11.1
         version: 5.11.1(@opentelemetry/api@1.9.1)
+
+  packages/channel3:
+    dependencies:
+      '@praman/db':
+        specifier: workspace:*
+        version: link:../db
+      '@praman/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/control-plane:
     dependencies:

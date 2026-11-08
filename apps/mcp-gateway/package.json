@@ -1,0 +1,21 @@
+{
+  "name": "@praman/mcp-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/gateway.ts",
+  "exports": { ".": "./src/gateway.ts" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@praman/control-plane": "workspace:*",
+    "@praman/db": "workspace:*",
+    "@praman/exec-core": "workspace:*",
+    "@praman/ledger": "workspace:*",
+    "@praman/mandate": "workspace:*",
+    "@praman/paypal-exec": "workspace:*",
+    "@praman/policy": "workspace:*",
+    "@praman/shared": "workspace:*",
+    "dotenv": "^17.4.2",
+    "zod": "^4.5.4"
+  }
+}
