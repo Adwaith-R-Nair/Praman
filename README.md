@@ -4,15 +4,17 @@
 
 **The model proposes. The policy engine disposes. The ledger remembers.**
 
-Praman is a control plane for agent-initiated payments. It sits between an AI buyer agent and a Razorpay merchant, and makes every rupee the agent moves bounded, explainable, and replayable.
+Praman is a control plane for agent-initiated payments on PayPal. It sits between an AI buyer agent and the payment provider, and makes every amount the agent moves bounded, explainable, and replayable. The provider is the PayPal sandbox or Razorpay test mode.
 
-Adwaith R Nair · Started at the Razorpay AI Buildathon 2026 (Track 01, AI Growth & Agentic Commerce) · Now being extended for the PayPal AI Hackathon. See [History](#history).
+**Live demo: <https://praman-demo.onrender.com>**, hosted on Render with Postgres on Neon. Sandbox only, no real money. It runs the PayPal Orders API, a saved PayPal account through the Vault API, refunds, and verified webhooks, through `packages/paypal-exec`.
+
+Adwaith R Nair · Entered in the PayPal AI Hackathon · Started at the Razorpay AI Buildathon 2026 (Track 01, AI Growth & Agentic Commerce). See [History](#history).
 
 ---
 
 ## The problem
 
-NPCI is building the Unified Agent Protocol so AI agents can transact over UPI. Razorpay and NPCI piloted agentic UPI payments in February 2026 with consent-based per-merchant limits. The rails are arriving.
+PayPal's Agent Toolkit gives a model tools that act on PayPal directly. NPCI is building the Unified Agent Protocol so AI agents can transact over UPI, and Razorpay and NPCI piloted agentic UPI payments in February 2026 with consent-based per-merchant limits. The rails are arriving.
 
 What isn't arriving is the layer that answers the question every risk team asks: **when an agent spends money it shouldn't have, how do you find out, prove it, and get it back?**
 
@@ -31,7 +33,7 @@ The `PurchaseIntent` an agent emits carries a SKU and a quantity. Nothing else.
 
 No price field exists. The amount is resolved server-side from the catalog *after* the SKU and its category have been validated against a human-signed mandate. A product page claiming an item costs ₹1 cannot influence the charge, because the model never handles the number.
 
-This is the same reason Razorpay's own Orders API exists: the browser receives an opaque `order_id`, never a price, so a customer cannot edit what they are charged. Praman applies that one layer up. Razorpay doesn't trust the browser; Praman doesn't trust the model.
+This is the same reason PayPal's and Razorpay's Orders APIs create the order on the server: the browser receives an opaque order id, never a price, so a customer cannot edit what they are charged. Praman applies that one layer up. The payment provider doesn't trust the browser; Praman doesn't trust the model.
 
 Injection can make the model *want* the wrong thing. It cannot make the system *charge* the wrong thing.
 
@@ -119,7 +121,7 @@ Three things a reviewer should weigh, stated here rather than buried:
         ╚═══════════════════════════════════════════════════╝
 ```
 
-Evaluation runs under a per-mandate advisory lock, so concurrent duplicate intents cannot race the budget. The Razorpay call sits between two transactions rather than inside one, because a database transaction and an external API call cannot be made atomic — see [D-22](docs/DECISIONS.md), which came out of discovering empirically that Razorpay does not enforce receipt uniqueness despite documenting it.
+Evaluation runs under a per-mandate advisory lock, so concurrent duplicate intents cannot race the budget. The payment call sits between two transactions rather than inside one, because a database transaction and an external API call cannot be made atomic — see [D-22](docs/DECISIONS.md), which came out of discovering empirically that Razorpay does not enforce receipt uniqueness despite documenting it.
 
 ## Quickstart
 
@@ -280,8 +282,8 @@ Live sandbox runs on 8 Nov 2026 captured approved orders, showed that a repeated
 
 To see what changed:
 
-- [Everything since the Buildathon submission](https://github.com/Adwaith-R-Nair/Praman/compare/v1.0-submission...main) (`v1.0-submission...main`)
-- [Everything since the last commit before 1 Oct 2026](https://github.com/Adwaith-R-Nair/Praman/compare/51012ef...main) (`51012ef...main`). Commits dated 30 Sep are not claimed as hackathon work.
+- [Everything since the Buildathon submission](https://github.com/Adwaith-R-Nair/Praman/compare/v1.0-submission...paypal-hackathon) (`v1.0-submission...paypal-hackathon`)
+- [Everything since the last commit before 1 Oct 2026](https://github.com/Adwaith-R-Nair/Praman/compare/51012ef...paypal-hackathon) (`51012ef...paypal-hackathon`). Commits dated 30 Sep are not claimed as hackathon work.
 
 ## Built with
 
