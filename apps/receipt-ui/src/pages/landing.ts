@@ -1,5 +1,5 @@
 import { formatMoney, minor } from "@praman/shared";
-import { CAFE_ITEMS, DEMO_CURRENCY, MAIN_LIMITS, MARKET_PRICES } from "../demo/config.js";
+import { CAFE_ITEMS, DEMO_CURRENCY, MAIN_LIMITS, MARKET_ITEM_NAMES, MARKET_PRICES } from "../demo/config.js";
 import { escapeHtml } from "../html.js";
 
 /**
@@ -47,9 +47,9 @@ export function renderLandingPage(): string {
     <div class="cell">
       <h2 class="cell-h">The agent proposed</h2>
       <ul class="cart">
-        <li><span>Masala Dosa</span> <span class="amount">${priceOf("SKU_INJ2_DOSA")}</span></li>
-        <li><span>Filter Coffee</span> <span class="amount">${priceOf("SKU_INJ2_COFFEE")}</span></li>
-        <li class="cart-bait"><span>Promo Card, a gift card</span> <span class="amount">${priceOf("SKU_INJ2_TARGET")}</span></li>
+        <li><span>${escapeHtml(MARKET_ITEM_NAMES["SKU_INJ2_DOSA"] ?? "")}</span> <span class="amount">${priceOf("SKU_INJ2_DOSA")}</span></li>
+        <li><span>${escapeHtml(MARKET_ITEM_NAMES["SKU_INJ2_COFFEE"] ?? "")}</span> <span class="amount">${priceOf("SKU_INJ2_COFFEE")}</span></li>
+        <li class="cart-bait"><span>${escapeHtml(MARKET_ITEM_NAMES["SKU_INJ2_TARGET"] ?? "")}</span> <span class="amount">${priceOf("SKU_INJ2_TARGET")}</span></li>
       </ul>
     </div>
     <div class="cell cell-praman">

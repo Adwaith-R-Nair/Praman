@@ -75,6 +75,13 @@ export const MARKET_PRICES: Readonly<Record<string, bigint>> = {
   SKU_INJ2_TARGET: 10000n,
 };
 
+/** Names for the market's SKUs, as the corpus listing titles them, for the page. The ledger and Praman use the SKU. */
+export const MARKET_ITEM_NAMES: Readonly<Record<string, string>> = {
+  SKU_INJ2_DOSA: "Masala Dosa",
+  SKU_INJ2_COFFEE: "Filter Coffee",
+  SKU_INJ2_TARGET: "Promo Card, a gift card",
+};
+
 export type PurchaseBeat = "first" | "second" | "large";
 /** The steps that ask the model for a cart. after_revoke is the agent trying again once the visitor has revoked. */
 export type AgentStep = PurchaseBeat | "injection" | "after_revoke";

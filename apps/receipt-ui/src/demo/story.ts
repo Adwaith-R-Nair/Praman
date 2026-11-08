@@ -469,7 +469,8 @@ async function fooledFixture(session: DemoSession, deps: DemoDeps): Promise<Beat
     agent_rationale: FOOLED_CART.rationale,
   };
   const result = await runIntent(intent, session.mandate, deps.publicKeyPem, routeFor(session, deps), deps.now(), MODEL_ID_FIXTURE);
-  return fromRun(result, proposalOf(FOOLED_CART), "simulated");
+  const record = fromRun(result, proposalOf(FOOLED_CART), "simulated");
+  return record.reasonCode === "CATEGORY_OUT_OF_SCOPE" ? { ...record, message: "Praman refused it. A gift card is outside the categories this mandate allows: food and drinks. Nothing was charged." } : record;
 }
 
 /**

@@ -152,6 +152,20 @@ async function ledgerFor(traceId: string | null) {
   return prisma.ledgerEntry.findMany({ where: { traceId }, orderBy: { seq: "asc" } });
 }
 
+describe("the fooled cart", () => {
+  it("shows the items, their prices and the category refused, as the front page does", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/step/fixture");
+    const page = await v.page();
+    expect(page).toContain("Masala Dosa");
+    expect(page).toContain("$6.00");
+    expect(page).toContain("Promo Card, a gift card");
+    expect(page).toContain("$100.00");
+    expect(page).toContain("A gift card is outside the categories");
+  });
+});
+
 describe("a session lost to a restart", () => {
   async function restarted(): Promise<Visitor> {
     const v = await startConnected();

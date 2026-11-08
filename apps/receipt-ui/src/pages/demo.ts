@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { formatMoney, minorFromJSON, REASON_CODES, type ReasonCode } from "@praman/shared";
 import type { AgentVisibleDecision } from "@praman/policy";
-import { CAFE, MARKET, type BeatId, type PurchaseBeat } from "../demo/config.js";
+import { CAFE, MARKET, MARKET_ITEM_NAMES, MARKET_PRICES, type BeatId, type PurchaseBeat } from "../demo/config.js";
 import { canAskAgain, refundable } from "../demo/story.js";
 import type { TraceView } from "../data.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
@@ -96,11 +96,18 @@ function agentViewHtml(view: AgentVisibleDecision | null): string {
   return `<div class="agent-view"><span class="agent-view-label">The agent was told</span> <code>${escapeHtml(told)}</code></div>`;
 }
 
+/** A known market item's name and price, for the page. The price is the catalog's, as on the front page. */
+function itemName(sku: string): string {
+  const name = MARKET_ITEM_NAMES[sku];
+  const price = MARKET_PRICES[sku];
+  return name === undefined || price === undefined ? "" : `<span>${escapeHtml(name)}</span> <span class="amount">${escapeHtml(usd(price.toString()))}</span> `;
+}
+
 function proposalHtml(record: BeatRecord): string {
   const p = record.proposal;
   if (p === null) return `<p class="cell-body">No cart.</p>`;
   const merchant = MERCHANT_NAMES[p.merchantId] ?? p.merchantId;
-  const items = p.lineItems.map((i) => `<li><code>${escapeHtml(`${i.qty.toString()} × ${i.sku}`)}</code></li>`).join("");
+  const items = p.lineItems.map((i) => `<li>${itemName(i.sku)}<code>${escapeHtml(`${i.qty.toString()} × ${i.sku}`)}</code></li>`).join("");
   return `<p class="cell-body">${escapeHtml(merchant)}</p><ul class="cart">${items}</ul><p class="rationale">${escapeHtml(p.rationale)}</p>`;
 }
 
