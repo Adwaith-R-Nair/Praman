@@ -21,6 +21,8 @@ export const EVENT_TYPE_PLAIN: Record<EventType, string> = {
   agent_transcript: "Agent's full transcript recorded",
   capture_decision: "Policy engine re-checked the mandate before capture",
   settlement: "Payment provider reported the final result",
+  refund_requested: "A person asked for a refund, and the payment provider was called",
+  refund_outcome: "Refund result recorded",
 };
 
 /**

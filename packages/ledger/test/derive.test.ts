@@ -777,3 +777,41 @@ describe("readCurrency", () => {
     expect(() => readCurrency({ amount_minor: "50000", currency: "JPY" })).toThrow(TypeError);
   });
 });
+
+describe("deriveState and refunds (D-67)", () => {
+  const TS = new Date("2026-11-08T10:00:00.000Z");
+
+  async function row(eventType: EventType, payload: Record<string, unknown>, ts: Date = TS): Promise<void> {
+    await prisma.$transaction((tx) => append(tx, { traceId: "t_refund", ts, actor: "praman", eventType, payload: { mandate_id: MANDATE, ...payload } }));
+  }
+
+  const order = { merchant_id: "MERCH_001", idempotency_key: "k_order", order_id: "ORDER_1", rail: "paypal", currency: "USD" };
+
+  async function capturedOrder(): Promise<void> {
+    await row("api_call", { ...order, operation: "orders.create", status: "attempted", amount_minor: "4500" });
+    await row("outcome", { ...order, status: "captured", payment_id: "CAP_1", amount_minor: "4500" });
+  }
+
+  it.each(["refunded", "pending", "failed", "mismatch"])("a %s refund gives back no budget and no velocity, and changes nothing else", async (status) => {
+    await capturedOrder();
+    const before = await deriveState(prisma, MANDATE);
+
+    const refund = { ...order, payment_id: "CAP_1", refund_key: "r".repeat(64), amount_minor: "4500" };
+    await row("refund_requested", { ...refund, operation: "captures.refund", status: "attempted", requested_by: "operator" }, new Date("2026-11-08T10:05:00.000Z"));
+    await row("refund_outcome", { ...refund, status, refund_id: status === "failed" ? null : "REF_1" }, new Date("2026-11-08T10:05:01.000Z"));
+    const after = await deriveState(prisma, MANDATE);
+
+    expect(after).toEqual(before);
+    expect(after.spent_minor).toBe(4500n);
+    expect(after.txn_timestamps).toHaveLength(1);
+    expect(after.merchants_transacted.has("MERCH_001")).toBe(true);
+  });
+
+  it("an unanswered refund request reserves nothing more, even with no outcome yet", async () => {
+    await capturedOrder();
+    await row("refund_requested", { ...order, payment_id: "CAP_1", refund_key: "r".repeat(64), amount_minor: "4500", operation: "captures.refund", status: "attempted" });
+    const s = await deriveState(prisma, MANDATE);
+    expect(s.spent_minor).toBe(4500n);
+    expect(s.txn_timestamps).toHaveLength(1);
+  });
+});

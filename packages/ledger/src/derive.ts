@@ -249,6 +249,16 @@ export async function deriveState(tx: PrismaTx, mandateId: string): Promise<Ledg
         break;
       }
 
+      case "refund_requested":
+      case "refund_outcome":
+        // A refund never gives budget or velocity back, whatever its status (D-67).
+        // The budget caps what may go out under this mandate, and money coming back
+        // doesn't raise that cap: a person who wants the agent to spend more signs a
+        // new mandate. So a buy, refund, buy loop can't take the agent past it, and a
+        // pending or unknown refund has nothing to free. Listed here so that stays a
+        // decision, not an accident of the default.
+        break;
+
       case "decision":
         // A signature-invalid DENY never proved the caller owns this mandate_id
         // — it's an unverified claim, not a real denied attempt by the holder.

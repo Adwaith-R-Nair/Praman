@@ -6,7 +6,8 @@ import { assertLedgerPayload } from "./payload.js";
 export type EventType =
   | "intent" | "decision" | "step_up_resolved"
   | "api_call" | "outcome" | "mandate_revoked" | "checkpoint"
-  | "agent_transcript" | "capture_decision" | "settlement";
+  | "agent_transcript" | "capture_decision" | "settlement"
+  | "refund_requested" | "refund_outcome";
 
 /** Arbitrary but fixed. One lock guards the whole chain. */
 const LEDGER_LOCK_ID = 918_273_645n;
