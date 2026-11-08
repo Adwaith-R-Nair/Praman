@@ -2389,3 +2389,104 @@ keeps one script from filling them; the recorded run is what keeps the cap from 
 
 **Rejected: a per-address share of the daily cap.** It would need per-address counts that survive a restart, and it is only
 as strong as the address it keys on.
+
+### D-62 · The ledger console uses AG Grid and AG Charts Community, served from this app · Accepted
+
+The builder decided on 2026-11-08 to build an operator console with AG Grid Community and AG Charts Community, both MIT
+licensed and free, and not AG Grid Enterprise or AG Studio. It aims at the design criterion and the "Best Use of AG Grid"
+prize, so it has to be a tool an operator would use, not a picture. The details below are the implementer's.
+
+**Decision: `ag-grid-community@36.2.0` and `ag-charts-community@14.2.0`, exact versions in `apps/receipt-ui/package.json`,
+served at `/assets/vendor/<package>-<version>.min.js` from `apps/receipt-ui/node_modules`.** `assets.ts` reads each package's
+own `package.json` at start and refuses to start if the installed version isn't the pinned one. The newest releases (36.3.0
+and 14.3.0) were four days old, so the previous minor of each was taken.
+
+- **The grid's noStyle build.** The full build adds the old CSS themes to the page as `<style>` elements the moment it loads,
+  with no nonce, and the page's policy blocks them. The noStyle build leaves them out. The theme the console uses, Quartz with
+  the site's paper, inks and fonts, is built at runtime and carries the nonce (D-63).
+- **The page carries no ledger data.** The script fetches JSON from the data route and puts every value in as text. The one
+  cell renderer, the trace link, returns an `<a>` element built with `textContent`, because AG Grid inserts a string a
+  renderer returns as HTML. Chart tooltips use the object form, never an HTML string.
+- **The server does the money and the hashing.** Amounts arrive formatted by `formatMoney`; the browser sorts minor units with
+  `BigInt` and uses them as numbers only to place chart points. Hash checks are recomputed on the server with the ledger's
+  `computePayloadHash` and `computeEntryHash`, and the chain is walked with `verifyChain()`.
+
+**Rejected: a CDN.** It would put a third party in `script-src`, and a CDN copy can change under a pinned URL only if the CDN
+misbehaves, but the policy would have to trust it anyway.
+
+**Rejected: hand-built tables and SVG charts.** Possible, but the builder asked for AG Grid, and its column filters, quick
+filter, sorting and virtualised rows are what an operator reading two thousand rows needs.
+
+### D-63 · The console page adds a per-response style nonce to the policy · Accepted
+
+An implementer's decision, made on 2026-11-08 while building D-62.
+
+AG Grid's theme and AG Charts both put their CSS into `<style>` elements in the browser. D-59's policy allows style only from
+this origin and Google's font stylesheet, so those elements were refused and the grid and charts drew unstyled.
+
+**Decision: the console page, and only that page, sends `style-src 'self' 'nonce-<n>' https://fonts.googleapis.com`, where
+`<n>` is 18 random bytes made fresh for every response.** The nonce goes to the browser as the `nonce` attribute of the
+console's own `<script>` tag, the script reads it from `document.currentScript.nonce` (which browsers hide from markup and
+selectors), and passes it to both libraries as `styleNonce`. Everything else in the policy is D-59's, unchanged:
+`script-src 'self'`, no `'unsafe-inline'`, no `'unsafe-eval'`. Tests check the console's policy is exactly D-59's plus the
+nonce, and that two responses get different nonces.
+
+Checked in headless Chrome against the running server: with the noStyle grid build, no policy violation is reported, every
+`<style>` element on the page carries the nonce, and a ledger row whose merchant id was `<img src=x onerror=...>` showed as
+that text, with no element created and no script run.
+
+**Rejected: `'unsafe-inline'` for style.** It would let any injected `<style>` apply, on the one page that shows ledger
+values.
+
+**Rejected: hashes of the injected CSS.** The CSS depends on the theme parameters and the library version, so the list would
+break on every change.
+
+**Rejected: extracting the libraries' CSS into served files.** AG Charts also adds small style elements as charts draw, and
+copying CSS out of a bundle by hand would break on the next version.
+
+A CSP nonce is not a credential: it lets a style element apply on one response and does nothing else.
+
+### D-64 · Who sees which ledger rows in the console · Accepted
+
+The builder decided on 2026-11-08 that on the hosted demo a visitor's console shows only their own session's mandates, and
+that locally, with the demo off, an operator mode shows everything. How that is enforced is the implementer's.
+
+**Decision: two routes with different scopes, chosen by the server, never by the request.**
+
+- **`/demo/console/data`** reads the visitor's session from its cookie, the same way every demo route does (D-51), and loads
+  every trace in which some row's `payload->>'mandate_id'` is one of that session's two mandate ids. That takes in the
+  purchases, the twenty-at-once test and the revocation, and nothing of anyone else's. No query value names a mandate or a
+  trace. With no session it answers 401. Each load walks the whole chain, so it is limited per session like a button press.
+- **`/console` and `/console/data`** exist only when `server.ts` passes `operatorConsole: true`, which it does only when the
+  demo is off (no demo key) and `NODE_ENV` isn't `production`. Otherwise both answer 404 with a sentence saying why. It shows
+  the newest 2000 rows and says when there are more.
+- **Budget lines.** A visitor's console draws each mandate's signed budget from the session's own signed documents. The
+  operator console holds no signed mandates, so it draws spend without a budget line and says so.
+
+**Rejected: an operator password or token.** It would be a secret to send to a browser and keep safe on a free host. With the
+demo on, the whole-ledger view simply doesn't exist.
+
+**Rejected: filtering by merchant.** Every visitor buys at the same demo merchants, so a merchant filter would show one
+visitor another's purchases.
+
+### D-65 · The demo's revoke step · Accepted
+
+The builder asked on 2026-11-08 for a demo step "Revoke the mandate": the visitor revokes, the agent tries again, and Praman
+answers DENY `MANDATE_REVOKED` with no charge, using the existing `mandate_revoked` ledger event. The details are the
+implementer's.
+
+**Decision: step 8 calls `revokeMandate()` in `packages/control-plane`, the same function `pnpm revoke` now calls.** It appends
+one `mandate_revoked` row under the per-mandate lock that `runIntent` and `resolveApproval` take, so a revocation racing a
+purchase commits first or not at all. Then **Ask the agent to buy a coffee** asks the live model with step 4's goal, so the
+only thing that changed is the revocation, and the intent goes through `runIntent` like any other.
+
+- **The reason is fixed text and the trace id is `trc_demo_<session ref>_revoke`.** Nothing a visitor sends reaches the
+  ledger, and the trace page leads back to the demo.
+- **It runs once.** Pressing it again shows the result; the ledger gets one row. The retry is not offered again after Praman
+  refuses it, because a second ask would spend a model call to be refused the same way.
+- **It is offered last and says so.** After it every purchase in the session is refused, and a checkout still waiting at
+  PayPal is refused at capture with `MANDATE_REVOKED` (D-31). A test covers that case.
+- **No policy change.** `evaluate()` already checks revocation second, after idempotency. `packages/policy` is untouched.
+
+**Rejected: a revoke route that takes a mandate id.** The session's own mandate is the only one a visitor may revoke, so the
+route names none.
