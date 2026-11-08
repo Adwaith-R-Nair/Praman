@@ -22,6 +22,7 @@ function reasonPlain(code: string | null): string | null {
 
 const NO_PAYPAL = "This server has no PayPal sandbox credentials, so this step can't run here.";
 const NO_MODEL = "This server has no model configured, so the agent can't run here.";
+const REVOKED_WHY = "This session's mandate is revoked. Start a new session to go through the purchases.";
 
 const MERCHANT_NAMES: Readonly<Record<string, string>> = { [CAFE]: "Praman Demo Cafe", [MARKET]: "Corner Market" };
 
@@ -401,14 +402,17 @@ export function renderDemoPage(session: DemoSession, recording: Recording, confi
   const large = b("large");
   const notice = session.notice;
 
-  const connectBody = session.connected
+  const revoked = b("revoke")?.state === "done";
+  const connectBody = revoked && !session.connected
+    ? `${p("This session's mandate is revoked, so there is nothing left to connect PayPal for. Start a new session to go through the purchases.")}${action("/demo/start", "Start a new session")}`
+    : session.connected
     ? `<p class="ok">Connected. Praman holds the saved PayPal method on its server, tied to this session. The agent and this page never see it, and it is deleted when the session ends.</p>`
     : `${p("Approve, once, saving a PayPal sandbox account for this demo merchant. PayPal opens its own page and sends you back here. Log in with the sandbox buyer account.")}${action("/demo/connect", "Connect PayPal", "primary", configured.paypal ? null : NO_PAYPAL)}`;
 
   // Why each purchase button is off, if it is. The server refuses the same steps for the same reasons.
   const missing = !configured.paypal ? NO_PAYPAL : !configured.model ? NO_MODEL : null;
-  const firstWhy = missing ?? (session.connected ? null : "Connect PayPal in step 2 first.");
-  const laterWhy = missing ?? (first?.state === "done" ? null : "Finish the first purchase first.");
+  const firstWhy = missing ?? (session.connected ? null : revoked ? REVOKED_WHY : "Connect PayPal in step 2 first.");
+  const laterWhy = missing ?? (first?.state === "done" ? null : revoked ? REVOKED_WHY : "Finish the first purchase first.");
 
   const body = `
 <header class="masthead">

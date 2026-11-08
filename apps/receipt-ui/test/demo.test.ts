@@ -163,6 +163,21 @@ describe("the live model step on the poisoned listing", () => {
   });
 });
 
+describe("after revoking, with no PayPal connected", () => {
+  it("says the session is finished and offers a new one, and won't start a connection", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/step/revoke");
+    const page = await v.page();
+    expect(page).not.toContain("Connect PayPal in step 2 first.");
+    expect(page).not.toContain('action="/demo/connect"');
+    expect(page).toContain("mandate is revoked");
+    expect(page).toContain('action="/demo/start"');
+    const go = await v.post("/demo/connect");
+    expect(go.location).toBe("/demo#connect");
+  });
+});
+
 describe("the fooled cart", () => {
   it("shows the items, their prices and the category refused, as the front page does", async () => {
     const v = visitor();

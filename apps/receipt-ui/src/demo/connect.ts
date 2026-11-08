@@ -58,6 +58,10 @@ export async function startConnect(session: DemoSession, deps: DemoDeps): Promis
     session.notice = "This server has no PayPal sandbox credentials, so it can't connect an account.";
     return null;
   }
+  if (session.beats.get("revoke")?.state === "done") {
+    session.notice = "This session's mandate is revoked. Start a new session to connect PayPal.";
+    return null;
+  }
   if (session.connected) {
     session.notice = "PayPal is already connected for this session.";
     return null;
