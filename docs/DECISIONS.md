@@ -2941,5 +2941,7 @@ D-71 kept each proposal's trace id for the retry window, but a run that threw le
 
 **Decided.** The trace id is known before the run (`trc_` plus the intent id), so it is kept either way. A retry reads that trace: a throw after T1 answers from the pending record, and a throw inside T1 wrote nothing, so `readPurchase` finds no trace and a fresh purchase starts.
 
+**Amended.** Identical proposals in one gateway process now run one after another, so two retries arriving together after a throw can't both start a fresh intent.
+
 **Rejected: answering every retry after an error with the same ERROR.** It would block a proposal that never reached T1 for the whole window for no gain.
 

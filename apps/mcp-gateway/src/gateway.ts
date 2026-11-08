@@ -135,6 +135,7 @@ export function createGateway(deps: GatewayDeps): McpServer {
   const mandateId = deps.signed.document.mandate_id;
   const reads: ReadRecord[] = [];
   const recent = new Map<string, { at: number; trace: Promise<string> }>();
+  const lanes = new Map<string, Promise<void>>();
   let readSeq = 0;
 
   function remember(name: string, input: Record<string, unknown>, content: string): void {
@@ -149,6 +150,24 @@ export function createGateway(deps: GatewayDeps): McpServer {
       for (const item of await listCatalogForAgent(prisma, merchant_id)) out.push({ ...item, merchant_id });
     }
     return out;
+  }
+
+  /**
+   * Runs identical proposals in this process one after another, so the second sees what
+   * the first left in `recent`. Without this, two retries arriving together after a run
+   * threw both read the same prior view and each started its own intent.
+   */
+  function oneAtATime<T>(key: string, work: (key: string) => Promise<T>): Promise<T> {
+    const turn = (lanes.get(key) ?? Promise.resolve()).then(() => work(key));
+    const settled = turn.then(
+      () => undefined,
+      () => undefined,
+    );
+    lanes.set(key, settled);
+    void settled.then(() => {
+      if (lanes.get(key) === settled) lanes.delete(key);
+    });
+    return turn;
   }
 
   /**
@@ -224,9 +243,8 @@ export function createGateway(deps: GatewayDeps): McpServer {
         "Ask Praman to buy qty of one product. You name only the merchant, the SKU and the quantity: the price comes from the catalog, the currency from the signed mandate, and the payment rail from the merchant's configuration. Praman answers EXECUTED (with a receipt), APPROVAL_REQUIRED (a person must approve first, nothing is bought yet) or DENIED (with a reason code). An identical proposal within two minutes is treated as a retry and returns the first answer.",
       inputSchema: z.strictObject({ merchant_id: idField(64), sku: idField(80), qty: z.number().int().min(1).max(100) }),
     },
-    async ({ merchant_id, sku, qty }) => guarded("propose_purchase", PROPOSE_FAILED, async () => {
+    async ({ merchant_id, sku, qty }) => guarded("propose_purchase", PROPOSE_FAILED, () => oneAtATime(JSON.stringify([merchant_id, sku, qty]), async (retryKey) => {
       const now = deps.now();
-      const retryKey = JSON.stringify([merchant_id, sku, qty]);
       const prior = recent.get(retryKey);
       if (prior !== undefined && now.getTime() - prior.at < RETRY_WINDOW_MS) {
         const priorTrace = await prior.trace;
@@ -245,7 +263,8 @@ export function createGateway(deps: GatewayDeps): McpServer {
       const run = runIntent(intent, deps.signed, deps.publicKeyPem, deps.route, now, clientLabel(server.server.getClientVersion()));
       // The trace id is known before the run, and kept even if it throws: a throw after T1
       // can leave an order at the rail, and only the trace can say so. A throw in T1 wrote
-      // nothing, so readPurchase finds no trace and the retry starts afresh.
+      // nothing, so readPurchase finds no trace and the next identical call starts afresh.
+      // oneAtATime means only one call can reach here at a time for this proposal.
       const started = `trc_${intent.intent_id}`;
       recent.set(retryKey, { at: now.getTime(), trace: run.then((r) => r.trace_id).catch(() => started) });
       const result = await run;
@@ -267,7 +286,7 @@ export function createGateway(deps: GatewayDeps): McpServer {
       // Only a mandate that failed verification leaves no intent under this mandate.
       const code = result.agent_visible.kind === "DENY" ? result.agent_visible.reason_code : null;
       return reply(`DENIED: ${code ?? "refused"}`, { status: "DENIED", trace_id: result.trace_id, reason_code: code, message: "The mandate this gateway holds was refused.", links: linksFor(deps.receiptBaseUrl, result.trace_id) });
-    }),
+    })),
   );
 
   server.registerTool(

@@ -359,6 +359,24 @@ describe("propose_purchase", () => {
     expect(h.rail.creates).toBe(createsBefore + 1);
   });
 
+  it("starts one intent when two identical retries arrive together after an internal error", async () => {
+    // The first proposal throws in T1, so the retries read a trace with nothing on it and both want a fresh start.
+    const h = await harness();
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce(() => Promise.reject(new Error("database down at T1")));
+    const failed = await call(h, "propose_purchase", { merchant_id: SHOP, sku: "C3_MUG", qty: 1 });
+    expect(failed.data).toMatchObject({ status: "ERROR" });
+
+    const [a, b] = await Promise.all([
+      call(h, "propose_purchase", { merchant_id: SHOP, sku: "C3_MUG", qty: 1 }),
+      call(h, "propose_purchase", { merchant_id: SHOP, sku: "C3_MUG", qty: 1 }),
+    ]);
+
+    expect(await prisma.ledgerEntry.count({ where: { eventType: "intent" } })).toBe(1);
+    expect(await prisma.approval.count()).toBe(1);
+    expect(a.data["trace_id"]).toBe(b.data["trace_id"]);
+    expect([a.data["retry_of"], b.data["retry_of"]].filter((v) => v !== undefined)).toHaveLength(1);
+  });
+
   it("charges the catalog price whatever the merchant text says", async () => {
     const h = await harness();
     const r = await call(h, "propose_purchase", { merchant_id: SHOP, sku: "C3_KETTLE", qty: 1 });
