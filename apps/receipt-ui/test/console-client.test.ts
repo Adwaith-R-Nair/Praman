@@ -24,7 +24,7 @@ function fakeNode(id: string): FakeNode {
     appendChild(c: unknown) { children.push(c); return c; },
     removeChild(c: unknown) { children.splice(children.indexOf(c), 1); return c; },
     setAttribute() {},
-    getAttribute(name: string) { return name === "data-src" ? "/demo/console.json" : null; },
+    getAttribute(name: string) { return name === "data-src" ? "/demo/console.json" : name === "data-mode" ? "visitor" : null; },
     addEventListener() {},
     scrollIntoView() { node.scrolled += 1; },
   };
@@ -41,6 +41,7 @@ function openConsole(hash: string, rows: Row[]) {
     return found;
   };
   const selected: string[] = [];
+  let gridOptions: Record<string, unknown> = {};
   const visible: number[] = [];
   let quick = "";
   const displayed = () => rows.filter((r) => quick === "" || r.traceId === quick);
@@ -73,7 +74,7 @@ function openConsole(hash: string, rows: Row[]) {
   };
   const window = {
     location: { hash },
-    agGrid: { themeQuartz: { withParams: () => ({}) }, createGrid: () => gridApi },
+    agGrid: { themeQuartz: { withParams: () => ({}) }, createGrid: (_el: unknown, options: Record<string, unknown>) => { gridOptions = options; return gridApi; } },
     agCharts: { AgCharts: { create: () => ({}) } },
   };
   const fetch = () => Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve(data) });
@@ -81,7 +82,7 @@ function openConsole(hash: string, rows: Row[]) {
   const source = readFileSync(new URL("../src/console/console.client.js", import.meta.url), "utf8");
   runInNewContext(source, { document, window, fetch, BigInt, Promise });
   setTimeout(settle, 20);
-  return done.then(() => ({ grid: byId("grid"), quick: byId("quick"), count: byId("count"), selected, visible }));
+  return done.then(() => ({ grid: byId("grid"), quick: byId("quick"), count: byId("count"), chainText: byId("chain-text"), gridOptions, selected, visible }));
 }
 
 const ROWS: Row[] = [
@@ -110,5 +111,14 @@ describe("the console opened from a trace link", () => {
     const page = await openConsole("#trace=trc_none", ROWS);
     expect(page.count.textContent).toBe("0 of 3 rows");
     expect(page.selected).toEqual([]);
+  });
+});
+
+describe("the console with nothing in it yet", () => {
+  it("says what to do instead of the grid's own message, and doesn't count zero rows", async () => {
+    const page = await openConsole("", []);
+    expect(page.gridOptions["localeText"]).toEqual({ noRowsToShow: "No rows yet. Run a step of the demo and its rows appear here." });
+    expect(page.chainText.textContent).toContain("There are no rows below yet.");
+    expect(page.chainText.textContent).not.toContain("Of the 0 rows");
   });
 });

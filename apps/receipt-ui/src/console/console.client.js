@@ -58,14 +58,15 @@
     var stamp = document.getElementById("chain-stamp");
     var text = document.getElementById("chain-text");
     var intact = rows.filter(function (r) { return r.hashVerdict === "intact"; }).length;
+    var own = rows.length === 0 ? " There are no rows below yet." : " Of the " + rows.length + " rows below, " + intact + " pass their own check.";
     if (chain.ok) {
       box.setAttribute("data-state", "ok");
       stamp.textContent = "Chain verified";
-      text.textContent = "All " + chain.checked + " rows of the ledger were rehashed from the first one, and every link holds. Head " + shortHash(chain.head) + ". Of the " + rows.length + " rows below, " + intact + " pass their own check.";
+      text.textContent = "All " + chain.checked + " rows of the ledger were rehashed from the first one, and every link holds. Head " + shortHash(chain.head) + "." + own;
     } else {
       box.setAttribute("data-state", "broken");
       stamp.textContent = "Chain broken";
-      text.textContent = "The walk from the first row stopped at seq " + chain.brokenAtSeq + ": " + (chain.breakReasonPlain || chain.breakReason) + " Rows from there on can't be trusted. Of the " + rows.length + " rows below, " + intact + " pass their own check.";
+      text.textContent = "The walk from the first row stopped at seq " + chain.brokenAtSeq + ": " + (chain.breakReasonPlain || chain.breakReason) + " Rows from there on can't be trusted." + own;
     }
   }
 
@@ -235,6 +236,10 @@
       ensureDomOrder: true,
       tooltipShowDelay: 300,
       animateRows: false,
+      // The grid's own empty message is "No Rows To Show". Say what to do instead.
+      localeText: {
+        noRowsToShow: root.getAttribute("data-mode") === "visitor" ? "No rows yet. Run a step of the demo and its rows appear here." : "No ledger rows yet.",
+      },
       onSelectionChanged: function (e) {
         var picked = e.api.getSelectedRows();
         showDetail(picked[0] || null);
