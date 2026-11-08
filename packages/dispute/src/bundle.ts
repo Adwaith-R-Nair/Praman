@@ -71,6 +71,23 @@ export interface DisputeBundle {
      */
     readonly by: "person" | "test_harness";
   } | null;
+  /**
+   * The latest refund of this trace's payment, when a person asked for one (D-66).
+   * "requested" means no answer is recorded yet. Same reading as refundOf in
+   * apps/receipt-ui/src/data.ts.
+   */
+  readonly refund: {
+    readonly status: "requested" | "refunded" | "pending" | "failed" | "mismatch";
+    readonly refund_id: string | null;
+    readonly amount_minor: string | null;
+    readonly currency: string | null;
+    /** "operator" from `pnpm refund`, "demo_visitor" from the demo's trace page. Never an agent. */
+    readonly requested_by: string | null;
+    readonly requested_at: string;
+    readonly failure_code: string | null;
+    /** Always false. A refund gives no budget back to the mandate, whatever its status (D-67). */
+    readonly budget_returned: false;
+  } | null;
   readonly chain: {
     readonly entries: readonly {
       readonly seq: string;
@@ -123,6 +140,30 @@ function finalState(entries: readonly LedgerEntryRecord[]): {
     first: outcomes[0] ? (outcomes[0].payload as Record<string, unknown>) : null,
     last: lastOutcome ? (lastOutcome.payload as Record<string, unknown>) : null,
     captureRefusal: stands ? lastDecision : null,
+  };
+}
+
+const REFUND_STATUSES = ["refunded", "pending", "failed", "mismatch"] as const;
+
+/** Same reading as refundOf in apps/receipt-ui/src/data.ts: the latest request, and what became of it. */
+function refundOf(entries: readonly LedgerEntryRecord[]): DisputeBundle["refund"] {
+  const request = entries.filter((e) => e.eventType === "refund_requested").at(-1);
+  if (request === undefined) return null;
+  const req = request.payload as Record<string, unknown>;
+  const key = asString(req["refund_key"]);
+  const answer = entries.filter((e) => e.eventType === "refund_outcome" && e.seq > request.seq && asString((e.payload as Record<string, unknown>)["refund_key"]) === key).at(-1);
+  const out = answer ? (answer.payload as Record<string, unknown>) : null;
+  const status = REFUND_STATUSES.find((s) => s === out?.["status"]) ?? "requested";
+  const source = out ?? req;
+  return {
+    status,
+    refund_id: asString(out?.["refund_id"]),
+    amount_minor: amountIfPresent(source),
+    currency: asString(source["currency"]),
+    requested_by: asString(req["requested_by"]),
+    requested_at: request.ts.toISOString(),
+    failure_code: status === "failed" || status === "mismatch" ? asString(out?.["failure_code"]) : null,
+    budget_returned: false,
   };
 }
 
@@ -287,6 +328,7 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
     approval: stepUpResolved
       ? { verdict: asString(stepUpResolved["verdict"]), by: (asString(intent?.["model_id"]) ?? "").startsWith("harness/") ? "test_harness" : "person" }
       : null,
+    refund: refundOf(entries),
     chain: {
       entries: entries.map((e) => ({
         seq: e.seq.toString(),

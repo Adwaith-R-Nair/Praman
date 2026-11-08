@@ -318,3 +318,43 @@ describe("buildBundle says what the trace page says", () => {
     expect(bundle?.execution).toMatchObject({ status: "failed", failed: true, failure_code: "ORDER_NOT_APPROVED", paid_by: null });
   });
 });
+
+describe("buildBundle on a refunded purchase (D-66, D-67)", () => {
+  const order = { mandate_id: "mnd_test", idempotency_key: "k_order", order_id: "VLT1", rail: "paypal", currency: "USD" };
+  const refund = { ...order, payment_id: "CAP9", refund_key: "r".repeat(64), amount_minor: "450" };
+
+  it("records the refund, who asked, and that it gave no budget back, and keeps the purchase as it was", async () => {
+    await writeRows("trc_bundle_refund", [
+      ["intent", { mandate_id: "mnd_test", merchant_id: "DEMO_CAFE", model_id: "gemini-3.1-flash-lite" }],
+      ["decision", { mandate_id: "mnd_test", kind: "ALLOW", reason_code: "OK", amount_minor: "450", currency: "USD" }],
+      ["outcome", { ...order, status: "captured", payment_id: "CAP9", amount_minor: "450" }],
+      ["refund_requested", { ...refund, operation: "captures.refund", status: "attempted", requested_by: "operator" }],
+      ["refund_outcome", { ...refund, status: "refunded", refund_id: "2JV473619H1766245", failure_code: null }],
+    ]);
+    const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_refund"));
+    expect(bundle?.refund).toEqual({
+      status: "refunded",
+      refund_id: "2JV473619H1766245",
+      amount_minor: "450",
+      currency: "USD",
+      requested_by: "operator",
+      requested_at: "2026-11-08T10:00:00.000Z",
+      failure_code: null,
+      budget_returned: false,
+    });
+    expect(bundle?.authorisation).toMatchObject({ decision: "ALLOW", reason_code: "OK" });
+    expect(bundle?.execution).toMatchObject({ status: "captured", failed: false, paid_by: "saved_method_no_buyer" });
+    expect(bundle?.chain.entries.map((e) => e.event_type)).toEqual(["intent", "decision", "outcome", "refund_requested", "refund_outcome"]);
+  });
+
+  it("shows a refund with no answer as requested, and none at all as null", async () => {
+    await writeRows("trc_bundle_refund_open", [
+      ["outcome", { ...order, status: "captured", payment_id: "CAP9", amount_minor: "450" }],
+      ["refund_requested", { ...refund, operation: "captures.refund", status: "attempted", requested_by: "demo_visitor" }],
+    ]);
+    expect((await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_refund_open")))?.refund).toMatchObject({ status: "requested", refund_id: null, requested_by: "demo_visitor" });
+
+    await writeRows("trc_bundle_no_refund", [["outcome", { ...order, status: "captured", payment_id: "CAP9", amount_minor: "450" }]]);
+    expect((await prisma.$transaction((tx) => buildBundle(tx, "trc_bundle_no_refund")))?.refund).toBeNull();
+  });
+});
