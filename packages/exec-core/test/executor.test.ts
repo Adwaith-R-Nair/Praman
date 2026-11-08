@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { minor, type Rail } from "@praman/shared";
-import { acceptOutcome, outcomeFields, routeAllTo, routeByRail, type ExecOutcome, type Executor } from "../src/index.js";
+import { acceptOutcome, acceptRefund, outcomeFields, refundFields, routeAllTo, routeByRail, type ExecOutcome, type Executor, type RefundOutcome } from "../src/index.js";
 import { SimulatedExecutor } from "../src/simulated.js";
 
 const OUTCOME: ExecOutcome = {
@@ -127,5 +127,45 @@ describe("outcomeFields", () => {
       rail_amount_minor: "1250",
       rail_currency: "USD",
     });
+  });
+});
+
+const REFUND: RefundOutcome = {
+  rail: "paypal",
+  payment_id: "CAP_1",
+  refund_id: "REF_1",
+  status: "refunded",
+  amount_minor: minor(1250n),
+  currency: "USD",
+  failure_code: null,
+};
+
+describe("acceptRefund", () => {
+  it("passes a refund of the money asked for through unchanged", () => {
+    expect(acceptRefund(REFUND, { amount_minor: minor(1250n), currency: "USD" })).toEqual(REFUND);
+  });
+
+  it("turns a refund of other money into a mismatch that keeps what the rail said", () => {
+    // PayPal answers a reused key with the first refund, whatever the new amount (D-68).
+    const accepted = acceptRefund({ ...REFUND, amount_minor: minor(200n) }, { amount_minor: minor(1250n), currency: "USD" });
+    expect(accepted).toMatchObject({ status: "mismatch", failure_code: "RAIL_AMOUNT_MISMATCH", amount_minor: 1250n, rail_status: "refunded", rail_amount_minor: 200n, rail_currency: "USD" });
+  });
+
+  it("calls a refund in another currency a currency mismatch, and a pending one too", () => {
+    const accepted = acceptRefund({ ...REFUND, status: "pending", currency: "INR" }, { amount_minor: minor(1250n), currency: "USD" });
+    expect(accepted).toMatchObject({ status: "mismatch", failure_code: "RAIL_CURRENCY_MISMATCH", currency: "USD", rail_status: "pending", rail_currency: "INR" });
+  });
+
+  it("passes a failure through, whatever it reports about money", () => {
+    const failed: RefundOutcome = { ...REFUND, status: "failed", refund_id: null, amount_minor: minor(1n), failure_code: "CAPTURE_FULLY_REFUNDED" };
+    expect(acceptRefund(failed, { amount_minor: minor(1250n), currency: "USD" })).toEqual(failed);
+  });
+});
+
+describe("refundFields", () => {
+  it("writes amounts as decimal strings, and the rail's own figures only on a mismatch", () => {
+    expect(refundFields(REFUND)).toEqual({ rail: "paypal", status: "refunded", payment_id: "CAP_1", refund_id: "REF_1", failure_code: null, amount_minor: "1250", currency: "USD" });
+    const mismatch = acceptRefund({ ...REFUND, amount_minor: minor(200n) }, { amount_minor: minor(1250n), currency: "USD" });
+    expect(refundFields(mismatch)).toMatchObject({ status: "mismatch", amount_minor: "1250", rail_amount_minor: "200", rail_currency: "USD", rail_status: "refunded" });
   });
 });

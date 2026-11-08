@@ -38,12 +38,44 @@ export interface CaptureRequest {
   readonly idempotency_key: string;
 }
 
+/** A full refund of one captured payment. The amount is the one the ledger recorded as captured. */
+export interface RefundRequest {
+  /** The rail's id for the captured payment: PayPal's capture id. */
+  readonly payment_id: string;
+  readonly amount_minor: Minor;
+  readonly currency: Currency;
+  /** Derived by the control plane, never random. PayPal receives it as PayPal-Request-Id. */
+  readonly idempotency_key: string;
+}
+
+/**
+ * What the rail said about a refund. "refunded": the money went back to the buyer.
+ * "pending": the rail accepted it and hasn't finished. "failed": this refund moved no
+ * money. Like ExecOutcome, the amount and currency are what the rail said.
+ */
+export interface RefundOutcome {
+  readonly rail: Rail;
+  readonly payment_id: string;
+  /** The rail's id for the refund. Null when the rail made no refund at all. */
+  readonly refund_id: string | null;
+  readonly status: "refunded" | "pending" | "failed";
+  readonly amount_minor: Minor;
+  readonly currency: Currency;
+  readonly failure_code: string | null;
+}
+
 /** A throw from any of these means the outcome is unknown, so the caller leaves its record pending. */
 export interface Executor {
   readonly rail: Rail;
   createOrder(req: CreateOrderRequest): Promise<ExecOutcome>;
   findOrder(lookup: OrderLookup): Promise<ExecOutcome | null>;
   capture(req: CaptureRequest): Promise<ExecOutcome>;
+  /**
+   * Only on a rail that can give money back. Razorpay stops at order creation in this
+   * repo, and the simulator has nothing to refund, so neither has it. Only a person
+   * starts a refund, through the control plane's refundOrder (D-66).
+   */
+  refund?(req: RefundRequest): Promise<RefundOutcome>;
 }
 
 /** Null means this process can't pay on that rail. The caller denies. It never falls back to another rail. */
@@ -106,6 +138,55 @@ export function outcomeFields(outcome: AcceptedOutcome) {
     status: outcome.status,
     order_id: outcome.order_id,
     payment_id: outcome.payment_id,
+    failure_code: outcome.failure_code,
+    amount_minor: minorToJSON(outcome.amount_minor),
+    currency: outcome.currency,
+    ...(outcome.status === "mismatch"
+      ? { rail_status: outcome.rail_status, rail_amount_minor: minorToJSON(outcome.rail_amount_minor), rail_currency: outcome.rail_currency }
+      : {}),
+  };
+}
+
+/**
+ * A refund the rail says it made, but not for the money Praman asked to give back.
+ * PayPal answers a reused PayPal-Request-Id with the first refund, whatever the new
+ * amount (D-68). amount_minor and currency stay what Praman asked for; the rail_ fields
+ * keep what the rail said, for the person who has to look.
+ */
+export interface MismatchedRefund extends Omit<RefundOutcome, "status" | "failure_code"> {
+  readonly status: "mismatch";
+  readonly failure_code: "RAIL_CURRENCY_MISMATCH" | "RAIL_AMOUNT_MISMATCH";
+  readonly rail_status: "refunded" | "pending";
+  readonly rail_amount_minor: Minor;
+  readonly rail_currency: Currency;
+}
+
+export type AcceptedRefund = RefundOutcome | MismatchedRefund;
+
+/** The same comparison as acceptOutcome, for a refund. A failure passes through: no refund exists. */
+export function acceptRefund(outcome: RefundOutcome, requested: { readonly amount_minor: Minor; readonly currency: Currency }): AcceptedRefund {
+  if (outcome.status === "failed") return outcome;
+  const currencyDiffers = outcome.currency !== requested.currency;
+  if (!currencyDiffers && outcome.amount_minor === requested.amount_minor) return outcome;
+  return {
+    ...outcome,
+    status: "mismatch",
+    amount_minor: requested.amount_minor,
+    currency: requested.currency,
+    failure_code: currencyDiffers ? "RAIL_CURRENCY_MISMATCH" : "RAIL_AMOUNT_MISMATCH",
+    rail_status: outcome.status,
+    rail_amount_minor: outcome.amount_minor,
+    rail_currency: outcome.currency,
+  };
+}
+
+/** The ledger fields for a refund outcome. One place, so T2 and the reconciler record a refund the same way. */
+export function refundFields(outcome: AcceptedRefund) {
+  return {
+    rail: outcome.rail,
+    status: outcome.status,
+    payment_id: outcome.payment_id,
+    refund_id: outcome.refund_id,
     failure_code: outcome.failure_code,
     amount_minor: minorToJSON(outcome.amount_minor),
     currency: outcome.currency,
