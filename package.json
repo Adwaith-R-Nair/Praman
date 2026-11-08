@@ -27,6 +27,7 @@
     "reconcile": "tsx scripts/reconcile.ts",
     "ablation": "tsx apps/eval/src/ablation-cli.ts",
     "receipt-ui": "tsx apps/receipt-ui/src/server.ts",
+    "screenshots": "tsx scripts/screenshots.ts",
     "eval:check-coverage": "tsx apps/eval/src/check-coverage.ts",
     "lint:boundary": "tsx scripts/check-import-boundary.ts",
     "lint:policy-freeze": "tsx scripts/check-policy-freeze.ts"
