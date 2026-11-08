@@ -1,0 +1,421 @@
+/* Praman front page. The same security paper, inks and type as the demo and the trace
+   pages, so the first click lands somewhere that already looks like the product. The one
+   loud thing on the page is the specimen: a real refusal from the demo, shown in the
+   demo's own agent, Praman, money layout, with Praman's cell raised and stamped. The
+   mandate's terms use the seal blue, which in the demo belongs to the signed mandate. */
+
+:root {
+  --paper: #edf1ee;
+  --paper-raised: #f6f8f6;
+  --ink: #172420;
+  --ink-muted: #4b5b55;
+  --hairline: #c7d0c9;
+  --seal: #24496b;
+  --step-up: #8a5f22;
+  --deny: #9e3b2e;
+  --deny-wash: #f2e3df;
+
+  --serif: "PT Serif", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  --s1: 0.5rem;
+  --s2: 1rem;
+  --s3: 1.75rem;
+  --s4: 2.75rem;
+  --s5: 4.5rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--paper);
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+
+a {
+  color: var(--ink);
+  text-underline-offset: 0.18em;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: 3px;
+}
+
+code,
+.amount {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.landing {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: var(--s3) 1rem var(--s4);
+}
+
+/* Text keeps a reading measure; only the specimen uses the full width. */
+.hero,
+.audience,
+.flow,
+.closing,
+.foot {
+  max-width: 44rem;
+}
+
+/* ── Top line ─────────────────────────────────────────────────── */
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s2);
+  padding-bottom: var(--s1);
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: var(--s5);
+}
+
+.wordmark {
+  font-weight: 700;
+  font-size: 1.25rem;
+  text-decoration: none;
+  letter-spacing: 0.01em;
+}
+
+.top-demo {
+  font-weight: 700;
+}
+
+/* ── Hero ─────────────────────────────────────────────────────── */
+
+.hero h1 {
+  font-size: clamp(2.2rem, 6.4vw, 3.6rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  margin: 0 0 var(--s3);
+  max-width: 17ch;
+}
+
+.lede {
+  font-size: 1.22rem;
+  line-height: 1.55;
+  color: var(--ink-muted);
+  margin: 0 0 var(--s3);
+}
+
+.cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s2);
+  margin: 0;
+}
+
+.cta-note {
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+}
+
+.btn {
+  display: inline-block;
+  font: inherit;
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  padding: 0.7rem 1.3rem;
+  border-radius: 3px;
+  border: 2px solid var(--ink);
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn-primary:hover {
+  background: var(--seal);
+  border-color: var(--seal);
+}
+
+/* ── The specimen: one real refusal ───────────────────────────── */
+
+.specimen {
+  margin: var(--s5) 0;
+  padding: var(--s3) var(--s3) var(--s2);
+  background: var(--paper-raised);
+  border: 1px solid var(--hairline);
+}
+
+.specimen figcaption {
+  font-style: italic;
+  color: var(--ink-muted);
+  margin: 0 0 var(--s1);
+}
+
+/* Merchant text, shown as the demo shows it: monospace, set off, never mistaken for ours. */
+.listing {
+  margin: 0 0 var(--s3);
+  padding: var(--s1) var(--s2);
+  border-left: 3px solid var(--step-up);
+  background: var(--paper);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.listing p {
+  margin: 0;
+}
+
+.gate {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr;
+  align-items: stretch;
+}
+
+.cell {
+  padding: var(--s2);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  min-width: 0;
+}
+
+.cell-h {
+  margin: 0 0 var(--s1);
+  font-size: 0.95rem;
+  font-weight: 400;
+  font-style: italic;
+  color: var(--ink-muted);
+}
+
+.cell-body {
+  margin: 0.25rem 0;
+}
+
+/* Raised over the two quiet cells beside it, in the colour of what it decided. */
+.cell-praman {
+  background: var(--paper);
+  border: 2px solid var(--deny);
+  box-shadow: 0 3px 0 var(--deny);
+  margin: -0.6rem 0;
+  padding: calc(var(--s2) + 0.6rem) var(--s2);
+  position: relative;
+  z-index: 1;
+}
+
+.stamp {
+  display: inline-block;
+  margin: 0 0 var(--s1);
+  padding: 0.15rem 0.6rem;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--deny);
+  background: var(--deny-wash);
+  border: 2px solid currentColor;
+  border-radius: 2px;
+  transform: rotate(-2deg);
+}
+
+.code {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.cart {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cart li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s1);
+  padding: 0.2rem 0;
+}
+
+.cart .amount {
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+/* The item the poisoned line pushed. */
+.cart-bait {
+  color: var(--deny);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.money-none {
+  font-weight: 700;
+}
+
+.specimen-note {
+  margin: var(--s3) 0 0;
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+  max-width: 44rem;
+}
+
+/* ── Sections ─────────────────────────────────────────────────── */
+
+.audience,
+.flow,
+.closing {
+  margin: 0 0 var(--s5);
+}
+
+.landing h2:not(.cell-h) {
+  font-size: 1.7rem;
+  line-height: 1.2;
+  margin: 0 0 var(--s3);
+}
+
+h3 {
+  font-size: 1.15rem;
+  line-height: 1.3;
+  margin: 0 0 var(--s1);
+}
+
+.audience {
+  max-width: 60rem;
+}
+
+.audience-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s4);
+}
+
+.audience-grid p {
+  margin: 0 0 var(--s2);
+}
+
+/* The demo mandate's terms, in the seal blue of a signed mandate. */
+.mandate-terms {
+  margin: 0 4px;
+  padding: var(--s2) var(--s2) var(--s2) 2.2rem;
+  border: 1px solid var(--seal);
+  outline: 1px solid var(--seal);
+  outline-offset: 3px;
+  background: var(--paper-raised);
+  color: var(--seal);
+}
+
+.mandate-terms li {
+  margin: 0.2rem 0;
+}
+
+/* A real sequence, so it is numbered. */
+.flow-steps {
+  list-style: none;
+  counter-reset: step;
+  margin: 0;
+  padding: 0;
+}
+
+.flow-steps li {
+  counter-increment: step;
+  position: relative;
+  padding: 0 0 var(--s3) 3.25rem;
+}
+
+.flow-steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+/* The path from one step to the next, as on the demo page. */
+.flow-steps li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: calc(1.125rem - 1px);
+  top: 2.25rem;
+  bottom: 0;
+  width: 2px;
+  background: var(--hairline);
+}
+
+.flow-steps h3 {
+  padding-top: 0.3rem;
+}
+
+.flow-steps p {
+  margin: 0;
+}
+
+.closing p {
+  margin: 0 0 var(--s2);
+}
+
+.foot {
+  border-top: 1px solid var(--hairline);
+  padding-top: var(--s2);
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+}
+
+.foot p {
+  margin: 0 0 var(--s1);
+}
+
+.foot a {
+  color: var(--ink-muted);
+}
+
+/* ── Phone width ──────────────────────────────────────────────── */
+
+@media (max-width: 40rem) {
+  .top {
+    margin-bottom: var(--s4);
+  }
+
+  .specimen {
+    margin: var(--s4) -1rem;
+    padding: var(--s2) 1rem;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .gate {
+    grid-template-columns: 1fr;
+  }
+
+  .cell-praman {
+    margin: 0;
+  }
+
+  .audience-grid {
+    grid-template-columns: 1fr;
+    gap: var(--s3);
+  }
+}

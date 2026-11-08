@@ -41,6 +41,7 @@ function vendorFile(v: (typeof VENDOR)[keyof typeof VENDOR]): string {
  */
 export const ASSETS: ReadonlyMap<string, Asset> = new Map([
   ["/assets/style.css", { contentType: "text/css; charset=utf-8", body: read("./style.css") }],
+  ["/assets/landing.css", { contentType: "text/css; charset=utf-8", body: read("./landing.css") }],
   ["/assets/print.js", { contentType: "text/javascript; charset=utf-8", body: read("./layout.print.js") }],
   ["/assets/index.js", { contentType: "text/javascript; charset=utf-8", body: read("./pages/index.client.js") }],
   ["/assets/trace.js", { contentType: "text/javascript; charset=utf-8", body: read("./pages/trace.client.js") }],

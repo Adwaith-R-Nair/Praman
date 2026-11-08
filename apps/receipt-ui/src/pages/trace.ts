@@ -151,7 +151,8 @@ export async function renderTracePage(traceId: string, ownerControl: ((trace: Tr
       html: layout(
         "Not found",
         `<h1 class="decision">No such trace</h1>
-         <p>There is no ledger record for <code>${escapeHtml(traceId)}</code>. Check the trace id and try again.</p>`,
+         <p>There is no ledger record for <code>${escapeHtml(traceId)}</code>. Check the trace id and try again, or <a href="/demo">go to the demo</a>, where every step links to its own trace.</p>`,
+        "home",
       ),
     };
   }

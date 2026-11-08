@@ -52,8 +52,17 @@ describe("the public server", () => {
     expect(dbCalls.count).toBe(before);
   });
 
-  it("the catch-all 500 shows a plain message and never the error's text", async () => {
+  it("the landing page at / answers without touching the database", async () => {
+    const before = dbCalls.count;
     const res = await fetch(`${base}/`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('href="/demo"');
+    expect(dbCalls.count).toBe(before);
+  });
+
+  it("the catch-all 500 shows a plain message and never the error's text", async () => {
+    // The index of traces moved from / to /traces, and it is the page here that reads the database.
+    const res = await fetch(`${base}/traces`);
     expect(res.status).toBe(500);
     const body = await res.text();
     expect(body).not.toContain("ECONNREFUSED");
@@ -65,7 +74,7 @@ describe("the public server", () => {
   });
 
   it("every response carries a strict content security policy and the other security headers", async () => {
-    for (const path of ["/healthz", "/", "/assets/style.css", "/assets/trace.js", "/nope", "/demo"]) {
+    for (const path of ["/healthz", "/", "/traces", "/assets/style.css", "/assets/trace.js", "/nope", "/demo"]) {
       const res = await fetch(`${base}${path}`);
       await res.text();
       expect(res.headers.get("content-security-policy"), path).toBe(CONTENT_SECURITY_POLICY);

@@ -1337,7 +1337,7 @@
               ],
               "path": []
             },
-            "description": "The index of recent traces. On a database with no traces it redirects to `/demo`."
+            "description": "The front page: what Praman is, and a button into the demo. Fixed text, so it never reads the database."
           },
           "event": [
             {
@@ -1345,7 +1345,38 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status is one of 200, 302\", () => pm.expect(pm.response.code).to.be.oneOf([200, 302]));"
+                  "pm.test(\"status is 200\", () => pm.expect(pm.response.code).to.equal(200));"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "GET /traces",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/traces",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "traces"
+              ]
+            },
+            "description": "The index of recent traces outside the demo. Demo visitors' traces are never listed, so on the hosted server it says there are none and links to the demo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.expect(pm.response.code).to.equal(200));"
                 ]
               }
             }

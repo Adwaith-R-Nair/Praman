@@ -4,9 +4,11 @@ import { ASSETS } from "./assets.js";
 import { loadConsoleData } from "./console/data.js";
 import { newStyleNonce, OPERATOR_CONSOLE_OFF, renderConsolePage } from "./console/page.js";
 import { CONTENT_SECURITY_POLICY } from "./csp.js";
-import { countTraces } from "./data.js";
 import { clientIp, LIMITS, RateLimiter } from "./demo/limits.js";
+import { escapeHtml } from "./html.js";
+import { layout } from "./layout.js";
 import { renderIndexPage } from "./pages/index.js";
+import { renderLandingPage } from "./pages/landing.js";
 import { renderTracePage } from "./pages/trace.js";
 import { verifyTrace } from "./verify.js";
 import { handlePayPalWebhook, readRawBody, type PayPalWebhookDeps } from "./webhooks.js";
@@ -52,6 +54,17 @@ const text = (res: ServerResponse, status: number, body: string, extra: Record<s
   res.end(body);
 };
 
+/** A browser that asked for a page gets one, with a way back to the demo. A script or Postman gets plain text. */
+const wantsHtml = (req: IncomingMessage): boolean => (req.headers.accept ?? "").includes("text/html");
+
+/** The front page never changes while the server runs, so it is rendered once. */
+const LANDING = renderLandingPage();
+
+function page(res: ServerResponse, status: number, title: string, message: string, extra: Record<string, string> = {}): void {
+  res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", ...extra });
+  res.end(layout(title, `<h1 class="decision">${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p><p><a href="/demo">Go to the demo</a> or <a href="/">read what Praman is</a>.</p>`, "home"));
+}
+
 /** A trace id as a download name: letters, digits, underscore and hyphen only. */
 const fileNameOf = (traceId: string): string => traceId.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 120) || "trace";
 
@@ -70,7 +83,9 @@ export function createApp(deps: AppDeps): Handler {
     const ip = clientIp(req, deps.proxyHops);
     const at = now();
     if (limiter.take(ip, at)) return true;
-    text(res, 429, message, { "Retry-After": limiter.retryAfterSeconds(ip, at).toString(), "Cache-Control": "no-store" });
+    const headers = { "Retry-After": limiter.retryAfterSeconds(ip, at).toString(), "Cache-Control": "no-store" };
+    if (wantsHtml(req)) page(res, 429, "Too many requests", message, headers);
+    else text(res, 429, message, headers);
     return false;
   };
   const TOO_MANY_READS = "Too many requests from your address in the last minute. Wait a minute and try again.";
@@ -155,8 +170,16 @@ export function createApp(deps: AppDeps): Handler {
         return;
       }
 
+      // The front page is fixed text and reads nothing, so it answers even with the database asleep.
+      if (url.pathname === "/") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300" });
+        res.end(LANDING);
+        return;
+      }
+
+      const isIndex = url.pathname === "/traces" || url.pathname === "/traces/";
       // Each of these reads the database, and they are open to anyone with a trace id.
-      if ((traceMatch?.[1] || verifyMatch?.[1] || disputeMatch?.[1] || url.pathname === "/") && !within(reads, req, res, TOO_MANY_READS)) return;
+      if ((traceMatch?.[1] || verifyMatch?.[1] || disputeMatch?.[1] || isIndex) && !within(reads, req, res, TOO_MANY_READS)) return;
 
       if (traceMatch?.[1]) {
         const { status, html } = await renderTracePage(decodeURIComponent(traceMatch[1]));
@@ -187,28 +210,25 @@ export function createApp(deps: AppDeps): Handler {
         return;
       }
 
-      if (url.pathname === "/") {
-        // The index never lists demo visitors' traces, so on a fresh hosted database it
-        // would always be empty. A visitor there is sent to the demo instead.
-        if ((await countTraces()) === 0) {
-          res.writeHead(302, { Location: "/demo" });
-          res.end();
-          return;
-        }
-        // Rendered before the status goes out, so a failure here is still a 500 page.
+      if (isIndex) {
+        // The index never lists demo visitors' traces. With none to list it says so and
+        // links to the demo. Rendered before the status goes out, so a failure is still a 500.
         const html = await renderIndexPage();
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(html);
         return;
       }
 
-      text(res, 404, "Not found");
+      if (wantsHtml(req)) page(res, 404, "Page not found", "There is nothing at this address.");
+      else text(res, 404, "Not found");
     } catch (err) {
       // The operator log gets the error. The visitor gets no stack trace and no
       // message: an error's text can carry a query, a URL or a provider's reply.
       deps.log(`receipt-ui: ${method} ${url.pathname} failed: ${err instanceof Error ? `${err.name}: ${err.message}` : "unknown error"}`);
-      if (!res.headersSent) text(res, 500, "Something went wrong on this server. The error is logged. Try again in a moment.");
-      else res.end();
+      const failed = "Something went wrong on this server. The error is logged. Try again in a moment.";
+      if (res.headersSent) res.end();
+      else if (wantsHtml(req)) page(res, 500, "Something went wrong", failed);
+      else text(res, 500, failed);
     }
   };
 }

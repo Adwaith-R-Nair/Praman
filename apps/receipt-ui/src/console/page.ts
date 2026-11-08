@@ -26,7 +26,7 @@ const COPY: Readonly<Record<ConsoleMode, { readonly back: string; readonly backL
     data: "/demo/console/data",
   },
   operator: {
-    back: "/",
+    back: "/traces",
     backLabel: "← all traces",
     title: "Operator console",
     lede: "The newest rows of the whole ledger, every mandate and every rail. This view exists only on a server with the demo turned off, which in practice means your own machine.",

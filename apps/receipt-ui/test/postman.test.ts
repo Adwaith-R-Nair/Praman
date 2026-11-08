@@ -35,6 +35,7 @@ const PURCHASES = ["first", "second", "large"];
 const EXPECTED = [
   "GET /healthz",
   "GET /",
+  "GET /traces",
   "GET /r/{{trace_id}}",
   "GET /verify/{{trace_id}}",
   "GET /dispute/{{trace_id}}",

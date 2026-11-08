@@ -24,11 +24,11 @@ export async function renderIndexPage(): Promise<string> {
   const traceIds = await listRecentTraceIds(RECENT_LIMIT);
 
   if (traceIds.length === 0) {
-    // The server sends a visitor to /demo before this page is reached; this copy is for
-    // anything that renders it directly.
+    // On the hosted server every trace is a demo visitor's, so this is what /traces shows there.
     return layout(
       "Recent traces",
       `<h1 class="decision"><a href="/demo">Start the demo</a></h1><p>There are no purchases outside the demo to list yet. In the demo an agent buys from sandbox merchants through PayPal, and each step links to its own trace.</p>`,
+      "home",
     );
   }
 
@@ -94,5 +94,5 @@ ${DEMO_LINK}
 <script src="/assets/index.js" defer></script>
 `;
 
-  return layout("Recent traces", body);
+  return layout("Recent traces", body, "home");
 }

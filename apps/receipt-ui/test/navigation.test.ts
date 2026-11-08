@@ -7,6 +7,7 @@ import { append, type EventType } from "@praman/ledger";
 import { createApp } from "../src/app.js";
 import { countTraces, listRecentTraceIds } from "../src/data.js";
 import { renderIndexPage } from "../src/pages/index.js";
+import { renderLandingPage } from "../src/pages/landing.js";
 import { renderTracePage } from "../src/pages/trace.js";
 
 // A visitor who opens a demo step's trace must be able to get back to the demo, and the
@@ -35,10 +36,10 @@ describe("getting back to the demo from a trace", () => {
     expect(html).not.toContain("all traces");
   });
 
-  it("a trace that isn't from the demo keeps its link to the index", async () => {
+  it("a trace that isn't from the demo keeps its link to the index, which now lives at /traces", async () => {
     await writeTrace("trc_other", "MERCHANT_FOOD_01");
     const { html } = await renderTracePage("trc_other");
-    expect(html).toContain('href="/"');
+    expect(html).toContain('href="/traces"');
     expect(html).not.toContain('href="/demo"');
   });
 });
@@ -76,8 +77,8 @@ describe("the index of recent traces", () => {
   });
 });
 
-describe("the site root", () => {
-  async function getRoot(): Promise<Response> {
+describe("the site root and the index", () => {
+  async function get(path: string, accept = "*/*"): Promise<Response> {
     const app = createApp({
       demo: null,
       webhooks: { webhookId: null, verify: async () => false, apply: async () => ({ kind: "ignored", reason: "test" }) as never, now: () => new Date() },
@@ -92,25 +93,62 @@ describe("the site root", () => {
     server.listen(0);
     await once(server, "listening");
     try {
-      return await fetch(`http://127.0.0.1:${String((server.address() as AddressInfo).port)}/`, { redirect: "manual" });
+      return await fetch(`http://127.0.0.1:${String((server.address() as AddressInfo).port)}${path}`, { redirect: "manual", headers: { accept } });
     } finally {
       server.close();
     }
   }
 
-  it("sends a visitor to the demo when there are no traces to list, as on a fresh hosted database", async () => {
-    await writeTrace("trc_cafe", "DEMO_CAFE");
-    const res = await getRoot();
-    await res.text();
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/demo");
+  it.each([
+    ["no traces at all", null],
+    ["only demo traces, as on a fresh hosted database", "DEMO_CAFE"],
+    ["traces outside the demo", "MERCHANT_FOOD_01"],
+  ])("/ is the landing page with %s, and leads into the demo", async (_label, merchant) => {
+    if (merchant !== null) await writeTrace("trc_root", merchant);
+    const res = await get("/");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toMatch(/<a class="btn[^"]*" href="\/demo">/);
+    expect(html).not.toContain("trc_root");
   });
 
-  it("shows the index when there are traces to list", async () => {
+  it("the landing page says the problem, who it is for, and what Praman does, in plain words", async () => {
+    const html = await (await get("/")).text();
+    expect(html).toContain("can be talked into spending");
+    expect(html).toContain("Merchants and platforms");
+    expect(html).toContain("give an agent spending authority");
+    expect(html).toContain("CATEGORY_OUT_OF_SCOPE");
+    expect(html).not.toContain("\u2014");
+    expect(html).not.toContain("pnpm");
+  });
+
+  it("/traces shows the index when there are traces outside the demo", async () => {
     await writeTrace("trc_real", "MERCHANT_FOOD_01");
-    const res = await getRoot();
+    const res = await get("/traces");
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("trc_real");
+  });
+
+  it("/traces with nothing to list says so and links to the demo, instead of redirecting", async () => {
+    await writeTrace("trc_cafe", "DEMO_CAFE");
+    const res = await get("/traces");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('href="/demo"');
+    expect(html).not.toContain("trc_cafe");
+  });
+
+  it("a browser asking for an unknown path gets a page that leads back to the demo", async () => {
+    const res = await get("/nope", "text/html,application/xhtml+xml");
+    expect(res.status).toBe(404);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(await res.text()).toContain('href="/demo"');
+  });
+
+  it("a script asking for an unknown path still gets plain text", async () => {
+    const res = await get("/nope");
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe("Not found");
   });
 });
 
@@ -131,6 +169,7 @@ describe("pages work under a content security policy with no inline code", () =>
     expect(trace.html).toContain('<script src="/assets/trace.js" defer></script>');
     expect(trace.html).toContain('data-trace-id="trc_csp"');
     expect(inlineCode(await renderIndexPage())).toEqual([]);
+    expect(inlineCode(renderLandingPage())).toEqual([]);
     expect(inlineCode((await renderTracePage("trc_missing")).html)).toEqual([]);
   });
 
