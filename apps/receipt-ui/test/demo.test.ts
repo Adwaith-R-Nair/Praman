@@ -578,6 +578,8 @@ describe("revoking the mandate", () => {
     expect(page).toContain("This mandate has been revoked.");
     expect(page).toContain("Nothing charged.");
     expect(page).toContain(`/r/${encodeURIComponent(rows[0]?.traceId ?? "")}`);
+    expect(page).toContain('href="/demo/console"');
+    expect(page).toContain(`/demo/console#trace=${encodeURIComponent(rows[0]?.traceId ?? "")}`);
   });
 
   it("revokes once, however many times it is pressed", async () => {

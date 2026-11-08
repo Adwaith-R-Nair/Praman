@@ -290,9 +290,11 @@ function harnessHtml(record: BeatRecord | undefined): string {
 /** The revocation, once it is on the ledger: what it did and where to see the row. */
 function revokeHtml(record: BeatRecord | undefined): string {
   if (record === undefined) return "";
+  const inConsole = record.traceId === null ? "" : `<p class="links"><a href="/demo/console#trace=${encodeURIComponent(record.traceId)}">See the revocation in your ledger console</a></p>`;
   return `<div class="result" data-state="${escapeHtml(record.state)}">
     <p class="message">${escapeHtml(record.message)}</p>
     ${traceLinks(record.traceId)}
+    ${inConsole}
   </div>`;
 }
 
@@ -370,6 +372,7 @@ export function renderDemoPage(session: DemoSession, recording: Recording, confi
 <header class="masthead">
   <h1>An agent with a budget, and the one thing that can say yes</h1>
   <p class="lede">Each step below asks a real model for a cart, or sends a labelled test intent. Praman decides, and every decision lands on a hash-chained ledger you can open.</p>
+  <p class="console-link"><a href="/demo/console">Open your ledger console</a>: every row this session wrote, each hash checked, with charts of spend, decisions and rails.</p>
 </header>
 ${notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}</p>`}
 

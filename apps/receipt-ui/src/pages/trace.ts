@@ -107,6 +107,11 @@ export async function renderTracePage(traceId: string): Promise<{ status: number
     };
   }
 
+  // A demo visitor's revocation has no merchant, and its trace id says whose it is.
+  const fromDemo = (trace.merchantId !== null && DEMO_MERCHANTS.includes(trace.merchantId)) || traceId.startsWith("trc_demo_");
+  // A demo visitor's console shows only their own session; the whole-ledger console is local only.
+  const consoleHref = `${fromDemo ? "/demo/console" : "/console"}#trace=${encodeURIComponent(traceId)}`;
+
   // Suppressed for a plain OK: the hero already says "Allowed", and OK adds
   // no information beyond that — showing it anyway would be the page
   // repeating its own headline back to the reader.
@@ -223,12 +228,12 @@ ${(() => {
 <section>
   <p class="nav data">trace_id ${escapeHtml(traceId)}</p>
   <p class="nav"><a href="/dispute/${escapeHtml(traceId)}">Download dispute bundle</a></p>
+  <p class="nav"><a href="${escapeHtml(consoleHref)}">See this trace in the ledger console</a></p>
 </section>
 
 <script src="/assets/trace.js" defer></script>
 `;
 
-  // A demo visitor's revocation has no merchant, and its trace id says whose it is.
-  const fromDemo = (trace.merchantId !== null && DEMO_MERCHANTS.includes(trace.merchantId)) || traceId.startsWith("trc_demo_");
+
   return { status: 200, html: layout(`Trace ${traceId}`, body, fromDemo ? "demo" : "index") };
 }

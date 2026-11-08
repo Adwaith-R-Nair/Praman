@@ -388,5 +388,12 @@ describe("loadTrace on a revocation", () => {
     await revoke("trc_demo_abc123abc123_revoke", "Revoked by the demo visitor from the demo page.");
     const { html } = await renderTracePage("trc_demo_abc123abc123_revoke");
     expect(html).toContain('href="/demo"');
+    expect(html).toContain('href="/demo/console#trace=trc_demo_abc123abc123_revoke"');
+  });
+
+  it("links a trace that isn't a demo visitor's to the local operator console", async () => {
+    await revoke("trc_revoke_local", "x");
+    const { html } = await renderTracePage("trc_revoke_local");
+    expect(html).toContain('href="/console#trace=trc_revoke_local"');
   });
 });

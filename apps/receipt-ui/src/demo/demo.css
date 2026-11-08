@@ -207,6 +207,16 @@ code {
   font-style: italic;
 }
 
+.console-link {
+  margin: var(--s1) 0 0;
+  font-size: 0.95rem;
+}
+
+.console-link a {
+  color: var(--seal);
+  font-weight: 700;
+}
+
 /* A revoked mandate keeps its terms on screen, with the revocation said under them in the refusal ink. */
 .revoked-line {
   margin: var(--s1) 0 0;
