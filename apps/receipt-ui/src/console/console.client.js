@@ -433,6 +433,14 @@
     if (match) {
       quick.value = decodeURIComponent(match[1]);
       gridApi.setGridOption("quickFilterText", quick.value);
+      // Take the reader to those rows and open the first one's hash check, so the link
+      // lands on the trace rather than on the charts at the top of the page.
+      var firstRow = gridApi.getDisplayedRowAtIndex(0);
+      if (firstRow) {
+        firstRow.setSelected(true);
+        gridApi.ensureIndexVisible(0);
+      }
+      document.getElementById("grid").scrollIntoView({ block: "start" });
     }
     updateCount();
   }
