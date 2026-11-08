@@ -19,7 +19,8 @@ export interface OrderView {
   readonly currency: Currency;
   /** Whether a created row exists, so an order really was made on this key. */
   readonly created: boolean;
-  readonly captured: { readonly paymentId: string | null } | null;
+  /** The first captured row: the rail's payment id and the amount it recorded. */
+  readonly captured: { readonly paymentId: string | null; readonly amountMinor: string } | null;
   readonly released: boolean;
   /** The rail's failure code on a mismatch row (D-33). */
   readonly mismatch: { readonly failureCode: string | null } | null;
@@ -74,7 +75,7 @@ export async function readOrderView(tx: PrismaTx, key: string, orderId: string):
       currency ??= readCurrency(p);
     }
     if (status === "captured") {
-      captured ??= { paymentId: str(p["payment_id"]) };
+      captured ??= { paymentId: str(p["payment_id"]), amountMinor: readAmount(p, row.seq) };
       currency ??= readCurrency(p);
     }
     if (status === "mismatch") mismatch ??= { failureCode: str(p["failure_code"]) };

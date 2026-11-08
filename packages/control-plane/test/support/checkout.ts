@@ -3,7 +3,7 @@ import { prisma } from "@praman/db";
 import { append } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
-import { routeByRail, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup } from "@praman/exec-core";
+import { routeByRail, type CaptureRequest, type CreateOrderRequest, type ExecOutcome, type Executor, type OrderLookup, type RefundOutcome, type RefundRequest } from "@praman/exec-core";
 import type { Minor, Rail } from "@praman/shared";
 import { runIntent } from "../../src/run-intent.js";
 
@@ -45,6 +45,20 @@ export class CheckoutExecutor implements Executor {
   findThrows = false;
   /** Lets two captures overlap. */
   captureDelayMs = 0;
+  /** A charge to a saved method: PayPal captures as it creates, with no checkout (D-49). */
+  captureOnCreate = false;
+
+  readonly refundCalls: RefundRequest[] = [];
+  /** How refund answers. "throw_but_refunded": PayPal made the refund and the answer was lost. */
+  refundAnswer: "refund" | "pending" | "refuse" | "throw" | "throw_but_refunded" = "refund";
+  refuseRefundCode = "REFUND_NOT_ALLOWED";
+  /** What a refund reports as its amount, when it should misreport. */
+  refundAmount: Minor | null = null;
+  /** Lets two refunds overlap. */
+  refundDelayMs = 0;
+  /** Refunds by PayPal-Request-Id, and which captures are refunded in full. */
+  readonly #refunds = new Map<string, { id: string; paymentId: string; amount: Minor; status: "refunded" | "pending" }>();
+  readonly #refundedCaptures = new Set<string>();
 
   #view(o: FakeOrder): ExecOutcome {
     return {
@@ -64,7 +78,7 @@ export class CheckoutExecutor implements Executor {
     const id = existing ?? `PP${String(++this.#n).padStart(6, "0")}`;
     if (existing === undefined) {
       this.#byKey.set(req.idempotency_key, id);
-      this.#orders.set(id, { id, amount: this.createAmount ?? req.amount_minor, approved: false, captured: false, completing: false });
+      this.#orders.set(id, { id, amount: this.createAmount ?? req.amount_minor, approved: this.captureOnCreate, captured: this.captureOnCreate, completing: false });
     }
     return this.#view(this.order(id));
   }
@@ -103,6 +117,57 @@ export class CheckoutExecutor implements Executor {
         o.captured = true;
         return this.#view(o);
     }
+  }
+
+  /**
+   * Like PayPal (D-68): the same key answers with the same refund, whatever the amount;
+   * a new key on a capture already refunded in full is CAPTURE_FULLY_REFUNDED.
+   */
+  async refund(req: RefundRequest): Promise<RefundOutcome> {
+    this.refundCalls.push(req);
+    if (this.refundDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.refundDelayMs));
+    const answer = (r: { id: string; paymentId: string; amount: Minor; status: "refunded" | "pending" }): RefundOutcome => ({
+      rail: this.rail,
+      payment_id: r.paymentId,
+      refund_id: r.id,
+      status: r.status,
+      amount_minor: this.refundAmount ?? r.amount,
+      currency: "USD",
+      failure_code: null,
+    });
+    const failed = (code: string): RefundOutcome => ({ rail: this.rail, payment_id: req.payment_id, refund_id: null, status: "failed", amount_minor: req.amount_minor, currency: req.currency, failure_code: code });
+    const existing = this.#refunds.get(req.idempotency_key);
+    if (existing !== undefined) return answer(existing);
+    if (this.#refundedCaptures.has(req.payment_id)) return failed("CAPTURE_FULLY_REFUNDED");
+    const make = (status: "refunded" | "pending") => {
+      const r = { id: `REF${String(this.#refunds.size + 1).padStart(4, "0")}`, paymentId: req.payment_id, amount: req.amount_minor, status };
+      this.#refunds.set(req.idempotency_key, r);
+      this.#refundedCaptures.add(req.payment_id);
+      return r;
+    };
+    switch (this.refundAnswer) {
+      case "throw":
+        throw new Error("ECONNRESET");
+      case "throw_but_refunded":
+        make("refunded");
+        throw new Error("ECONNRESET");
+      case "refuse":
+        return failed(this.refuseRefundCode);
+      case "pending":
+        return answer(make("pending"));
+      case "refund":
+        return answer(make("refunded"));
+    }
+  }
+
+  /** PayPal finishes every pending refund. */
+  finishRefunds(): void {
+    for (const r of this.#refunds.values()) r.status = "refunded";
+  }
+
+  /** How many refunds PayPal holds, across all keys. */
+  get refundsMade(): number {
+    return this.#refunds.size;
   }
 
   order(id: string): FakeOrder {

@@ -4,6 +4,7 @@ import { currencyFromDb, isRail, minorFromDb, minorToJSON } from "@praman/shared
 import { acceptOutcome, outcomeFields, receiptFor, type AcceptedOutcome, type ExecutorRouter } from "@praman/exec-core";
 import { executorFor, sendCapture } from "./capture-order.js";
 import { readOrderView } from "./order-view.js";
+import { reconcileRefund } from "./refund-order.js";
 import { MANDATE_LOCK_NS, RECONCILE_MIN_AGE_MS } from "./run-intent.js";
 
 type PendingRecord = Awaited<ReturnType<typeof prisma.idempotencyRecord.findMany>>[number];
@@ -98,7 +99,8 @@ async function reconcileCapture(rec: PendingRecord, route: ExecutorRouter, now: 
  * this whole structure exists to prevent. Waiting is the correct behaviour.
  *
  * An order record is checked by repeating the create with its key (D-26). A capture
- * record is checked by reading its order by id, in reconcileCapture.
+ * record is checked by reading its order by id, in reconcileCapture. A refund record
+ * is sent again under its own key, in reconcileRefund (D-66).
  *
  * Asks the rail named on the record, which is the one that was called. A record
  * whose rail has no executor here, or whose router hands back another rail, stays
@@ -114,6 +116,10 @@ export async function reconcilePending(route: ExecutorRouter, now: Date): Promis
     try {
       if (rec.kind === "capture") {
         if (await reconcileCapture(rec, route, now)) resolved += 1;
+        continue;
+      }
+      if (rec.kind === "refund") {
+        if (await reconcileRefund(rec, route, now)) resolved += 1;
         continue;
       }
       if (rec.kind !== "order") throw new TypeError(`record ${rec.key} has an unknown kind: ${rec.kind}`);
