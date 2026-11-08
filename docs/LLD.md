@@ -90,7 +90,7 @@ export function wrapUntrusted(text: string): string {
 }
 ```
 
-That neutralising line is the whole defence. Without it, a product description containing `</untrusted_merchant_content>` breaks out. The first version removed the delimiters with one split and join pass instead, which a nested tag (`</untrusted_merchant_</untrusted_merchant_content>content>`) rebuilt. Replacing a character never joins two pieces of text, so nothing can rebuild. The tests cover nesting, case, whitespace, invisible characters and lookalike brackets.
+That neutralising line is the whole defence. Without it, a product description containing `</untrusted_merchant_content>` breaks out. The first version removed the delimiters with one split and join pass instead, which a nested tag (`</untrusted_merchant_</untrusted_merchant_content>content>`) rebuilt. Replacing a character never joins two pieces of text, so nothing can rebuild. The tests cover nesting, case, whitespace, invisible characters and lookalike brackets. See D-76, which supersedes D-11's mechanism.
 
 ---
 

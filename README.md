@@ -174,6 +174,21 @@ In the injection cases this is where a reviewer can *see* the attack sitting ins
 
 With Langfuse keys set, the demo and the eval send each agent run to Langfuse, so a developer can see every model call, its tokens and latency, and the merchant text the model read. That trace is for debugging and is not evidence: it can be edited, expired or lost, and nothing in Praman reads it back into a decision, a prompt or a reported number. The ledger is the record, and it holds anything an audit could need, such as the hash of the system prompt that was active, plus a link to the Langfuse trace marked as non-evidentiary. Tests check that a run with no keys, or with a Langfuse host that is down, writes the same ledger rows in the same order ([D-47](docs/DECISIONS.md)).
 
+## MCP gateway: any agent shops within a mandate
+
+`apps/mcp-gateway` is a local MCP server over stdio. Claude Desktop, Claude Code or any other MCP client can search real products, propose a purchase and read its receipt through it, and spend only what one signed mandate allows. [`docs/MCP.md`](docs/MCP.md) has the setup and a recorded session against the PayPal sandbox.
+
+- **The agent names a merchant, a SKU and a quantity.** No tool has a field for a price, a currency, a rail or a mandate, and every input schema refuses extra fields. The gateway loads its one mandate from a file when it starts, and each proposal goes through `runIntent` and `evaluate()` like any other ([D-69](docs/DECISIONS.md)).
+- **The catalog is real.** `pnpm catalog:channel3` takes 18 products from [Channel3](https://trychannel3.com)'s product search and pins each price in integer cents, read from the JSON's own text so no float touches it, with where and when it was fetched. Decisions use the stored price and nothing is fetched at decision time ([D-73](docs/DECISIONS.md)). The products and prices are real; paying `DEMO_SHOP` pays this repo's PayPal sandbox account, not the retailer.
+- **A person stays in the loop.** A step-up gives a `pnpm mcp:approve` command that refuses to run without a terminal, and the agent is told not to run it. A PayPal checkout moves nothing until the buyer approves it at PayPal, and `complete_checkout` re-checks the mandate before it captures ([D-70](docs/DECISIONS.md), [D-72](docs/DECISIONS.md)).
+- **Every answer is read back from the ledger.** Status, rail and order come from the outbox record and the ledger, not from what a call returned. Product text reaches the agent inside `<untrusted_merchant_content>` with its angle brackets neutralised ([D-76](docs/DECISIONS.md)), and the products the agent read are recorded on the trace ([D-74](docs/DECISIONS.md)).
+
+```
+claude mcp add praman -- pnpm --silent --dir /absolute/path/to/praman mcp
+```
+
+The gateway is the agent's only route to money only if it has no other: an agent that also holds PayPal keys, or a shell in this repo, has more. Claude Desktop with only this server has none.
+
 ## Merchant MCP server
 
 `apps/merchant-mcp` exposes one merchant's catalog (`list_catalog`, `get_sku`, `check_stock`, `get_refund_policy`) as an [MCP](https://modelcontextprotocol.io) server over stdio. Any MCP client can browse it — this is a protocol, not a private integration.
@@ -231,7 +246,7 @@ Three that changed the architecture:
 
 ## Decision records
 
-68 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
+76 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
 
 ## Documentation
 
@@ -239,6 +254,7 @@ Three that changed the architecture:
 - [High Level Design](docs/HLD.md) · [Low Level Design](docs/LLD.md)
 - [Mandate and ledger specification](docs/MANDATE_SPEC.md)
 - [Evaluation harness](docs/EVAL_CORPUS.md) · [Report](eval/report.md)
+- [MCP gateway](docs/MCP.md): any MCP agent shopping within a signed mandate
 - [Decision records](docs/DECISIONS.md) · [Engineering invariants](docs/INVARIANTS.md)
 - [Build log](docs/BUILD_LOG.md) · [Roadmap](docs/ROADMAP.md)
 
@@ -248,7 +264,7 @@ Three that changed the architecture:
 
 **Independent learning, 30 Sep to 2 Oct 2026.** With no deadline, I kept working on it: fixed a lockout caused by forged-signature intents ([D-25](docs/DECISIONS.md)), added a cast lint and an import-boundary check to CI, and traced agent runs through Langfuse.
 
-**PayPal AI Hackathon, from 4 Nov 2026.** Same repo, entered as an update to this existing project. The aim is to run the same mandate format, policy engine and ledger on PayPal as a second payment rail, with INR and USD taken from the signed mandate. What is built so far: I tested how the PayPal sandbox really behaves before writing any rail code ([D-26](docs/DECISIONS.md)). `packages/paypal-exec` creates real sandbox orders. The control plane captures and releases a PayPal order, holding its budget until then ([D-40](docs/DECISIONS.md)), and `pnpm reconcile` settles PayPal calls whose outcome is unknown. `POST /webhooks/paypal` verifies and records PayPal's capture events ([D-45](docs/DECISIONS.md)). A person, and never the agent, can refund a paid PayPal purchase in full, through the same two-phase outbox, and a refund gives no budget back to the mandate ([D-66](docs/DECISIONS.md), [D-67](docs/DECISIONS.md)). The policy engine did not change to add the rail, and CI checks that ([D-43](docs/DECISIONS.md) says what that check does and doesn't prove). The eval runs every Layer 1 case on both rails, on the simulated executor.
+**PayPal AI Hackathon, from 4 Nov 2026.** Same repo, entered as an update to this existing project. The aim is to run the same mandate format, policy engine and ledger on PayPal as a second payment rail, with INR and USD taken from the signed mandate. What is built so far: I tested how the PayPal sandbox really behaves before writing any rail code ([D-26](docs/DECISIONS.md)). `packages/paypal-exec` creates real sandbox orders. The control plane captures and releases a PayPal order, holding its budget until then ([D-40](docs/DECISIONS.md)), and `pnpm reconcile` settles PayPal calls whose outcome is unknown. `POST /webhooks/paypal` verifies and records PayPal's capture events ([D-45](docs/DECISIONS.md)). A person, and never the agent, can refund a paid PayPal purchase in full, through the same two-phase outbox, and a refund gives no budget back to the mandate ([D-66](docs/DECISIONS.md), [D-67](docs/DECISIONS.md)). The policy engine did not change to add the rail, and CI checks that ([D-43](docs/DECISIONS.md) says what that check does and doesn't prove). The eval runs every Layer 1 case on both rails, on the simulated executor. Any MCP agent can now shop through Praman, over real Channel3 products with pinned prices, and pay on the PayPal sandbox within a signed mandate ([MCP gateway](docs/MCP.md)).
 
 Live sandbox runs on 8 Nov 2026 captured approved orders, showed that a repeated capture key returns the same capture, and charged a saved PayPal account with no buyer present ([D-49](docs/DECISIONS.md)). `paypal-exec` read those real captures back correctly. What is not yet true: the control plane's own capture has not run after a live approval, so its tests use a stand-in rail. No real webhook delivery has arrived, because nothing is hosted. The `pnpm demo` and `pnpm approve` commands still pay through Razorpay only. The demo page at `/demo` in `pnpm receipt-ui` now runs the PayPal story, including a purchase charged to a saved PayPal account with no buyer present, which has run against the sandbox through the control plane ([D-50](docs/DECISIONS.md)).
 

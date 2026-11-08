@@ -15,7 +15,7 @@ The gateway is a local stdio MCP server, `apps/mcp-gateway`. It holds one signed
 | `complete_checkout` | `trace_id` | After the buyer has paid at PayPal, asks Praman to capture. Praman re-checks the mandate first. |
 | `get_receipt` | `trace_id` | Where a purchase stands, its ledger events, and links to the trace page and the dispute bundle. |
 
-No tool has a field for a price, an amount, a currency, a rail or a mandate, and every input schema refuses extra fields. A call that adds `price_minor` is rejected before anything reaches the ledger, and a test checks it. An id or query with a control character, such as a NUL byte, is rejected the same way, since Postgres can't store it.
+No tool has a field for a price, an amount, a currency, a rail or a mandate, and every input schema refuses extra fields. A call that adds `price_minor` is rejected before anything reaches the ledger, and a test checks it ([D-69](DECISIONS.md)). An id or query with a control character, such as a NUL byte, is rejected the same way, since Postgres can't store it ([D-75](DECISIONS.md)).
 
 - **Price** comes from the catalog snapshot.
 - **Currency** comes from the signed mandate.
@@ -33,7 +33,7 @@ No tool has a field for a price, an amount, a currency, a rail or a mandate, and
 | `PENDING`, `FAILED`, `RELEASED` | The rail hasn't answered yet, refused the order, or the buyer didn't pay within 10 minutes. No success is claimed. |
 | `ERROR` | Something inside Praman failed, such as the database. No decision is claimed. The agent gets one plain line; the details go to the server's stderr, never to the agent. |
 
-An identical proposal (same merchant, SKU and quantity) within two minutes is treated as a retry, and gets the first answer back with `retry_of`. So an MCP client that resends a call after a timeout doesn't buy twice.
+An identical proposal (same merchant, SKU and quantity) within two minutes is treated as a retry, and gets the first answer back with `retry_of`. So an MCP client that resends a call after a timeout doesn't buy twice ([D-71](DECISIONS.md)).
 
 ## Setting it up
 
@@ -92,12 +92,14 @@ If Claude Desktop can't find `pnpm`, use the full path that `which pnpm` prints.
 - **Category** is the second level of Channel3's taxonomy, such as `kitchen-dining` or `audio`, which is what a mandate names.
 - **Stock** is a stand-in. Channel3 says whether an offer is in stock, not how many, so an in-stock item gets 25.
 
+Why it works this way is in [D-73](DECISIONS.md).
+
 `DEMO_SHOP` is a sandbox merchant. The products and prices are real, but paying `DEMO_SHOP` pays this repo's PayPal sandbox account, not the retailer, and no retailer order is placed.
 
 ## What this does and doesn't protect
 
 - **The agent's only route to money is this gateway, if you make it so.** An agent that also holds PayPal credentials, or has a shell in this repo and can edit `.env` or the database, has other routes. Claude Desktop with only this server has none.
-- **A step-up needs a terminal.** `pnpm mcp:approve` refuses to run without one, so an agent running shell commands through a tool (Claude Code's Bash has no TTY) can't approve its own purchase. An agent that fakes a terminal could. On PayPal there is a second person in the loop anyway: a checkout order moves no money until the buyer logs in at PayPal and approves it.
+- **A step-up needs a terminal.** `pnpm mcp:approve` refuses to run without one, so an agent running shell commands through a tool (Claude Code's Bash has no TTY) can't approve its own purchase. An agent that fakes a terminal could ([D-72](DECISIONS.md)). On PayPal there is a second person in the loop anyway: a checkout order moves no money until the buyer logs in at PayPal and approves it.
 - **The model never decides.** It picks a SKU and a quantity. Everything else is the catalog, the mandate, the merchant config and `evaluate()`.
 
 ## A recorded session

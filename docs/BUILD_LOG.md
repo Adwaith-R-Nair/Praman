@@ -3752,3 +3752,134 @@ request and it failed naming that route.
 
 **Tests.** 894, all passing, up from 842: 3 for the report wording and 49 for the collection. Nothing weakened or removed. Every
 check ran with `TSX_DISABLE_CACHE=1`.
+
+### Phase P19 · 2026-11-08 · the MCP gateway and the Channel3 catalog
+
+This work was built on its own branch, `paypal-hackathon-mcp`, in a second working folder, while the demo, console and refund
+work went on here. It is now merged. Any MCP agent, such as Claude Desktop or Claude Code, can shop through Praman: it searches
+real products, proposes a purchase by SKU and quantity, and reads its receipt, and it can only spend within the one signed
+mandate the gateway loaded. `docs/MCP.md` explains it with a recorded PayPal sandbox session. `packages/policy` is untouched
+and `pnpm lint:policy-freeze` passes.
+
+**The merge (`73862ae`).** A normal merge commit, so every commit from the lane keeps its own hash and message in the history.
+One conflict: `packages/control-plane/src/index.ts`. This branch had added the exports for revoking a mandate and refunding an
+order (P16, P17), and the lane had added `orderProgress`, which the gateway uses to say whether an order was captured or
+released. Both sides were kept. Everything else merged on its own, including the receipt-page test that now expects the
+neutralised `‹script›` (D-76). The lane's new migration, `20261108120000_add_catalog_provenance`, was applied with
+`prisma migrate deploy` to `praman` and `praman_test` on port 5433, and the Prisma client was regenerated. It shares a timestamp
+with `20261108120000_add_demo_usage`; that is harmless, since Prisma applies any migration it hasn't seen, and the two touch
+different tables.
+
+**One fix the merge needed (`dcd040b`).** The two lanes never saw each other's work, so a gap only showed up once they met.
+P17 made refunds person-only and added a check (in `pnpm lint:boundary`) that nothing a model drives names the refund path:
+the buyer agent, its providers and the merchant tool server. The MCP gateway is exactly that kind of surface, and it wasn't on
+the list. It is now. The gateway never named the refund path, so nothing else changed. To prove the check bites, I added a file
+to `apps/mcp-gateway/src` naming `refundOrder`; `pnpm lint:boundary` failed naming that file, and passed again once it was removed.
+
+**Decisions.** The lane wrote its decisions to `docs/pending/mcp-lane.md` so the two branches wouldn't fight over D-numbers. They
+are now D-69 to D-76 in `docs/DECISIONS.md`, unchanged apart from their numbers, a line saying who decided, and one pointer to
+`docs/MCP.md`:
+
+- D-69, the gateway holds the mandate and an agent names only a SKU and a quantity
+- D-70, a sixth tool, `complete_checkout`, captures after the buyer pays
+- D-71, an identical proposal within two minutes is a retry
+- D-72, a step-up from the gateway needs a person at a terminal
+- D-73, Channel3 prices are pinned at import, from the JSON's own text
+- D-74, what the agent read through the gateway is recorded on the trace
+- D-75, control characters are refused at the schema, and internal errors reach the agent as a typed `ERROR`
+- D-76, untrusted text has its angle brackets neutralised, not its delimiters removed
+
+D-76 replaces how D-11 worked, so D-11 gained a Status line pointing to it. D-11's text is otherwise as it was.
+
+**Done-check on the merged branch**, run with `set -euo pipefail` and `TSX_DISABLE_CACHE=1`: `pnpm test` 63 files and 975 tests
+passed (894 here before the merge, plus the lane's 81), typecheck clean, `lint:boundary` (now listing `apps/mcp-gateway/src`),
+`lint:policy-freeze` (`packages/policy` matches `df81b87`), `eval:check-coverage` and `lint:casts` passed, and
+`pnpm eval --layer1 --dev` 88/88 with `eval/` restored afterwards.
+
+**Worth your look.**
+
+- `get_receipt` on a purchase a person has since refunded still answers `EXECUTED` with `payment: "captured"`. That is true of the
+  order, but it doesn't say the money came back. The gateway was written before refunds existed. Saying `refunded` would be a
+  small change to `apps/mcp-gateway/src/view.ts`; I left it out of the merge on purpose.
+- The gateway still has not seen a buyer approve one of its checkouts at PayPal and `complete_checkout` capture it. That needs a
+  person at the sandbox login.
+
+What follows is the lane's own log, as it was written on the branch.
+
+**What changed, in commit order.**
+
+1. `feat: keep where an imported catalog price came from and when`. Migration `20261108120000_add_catalog_provenance` adds
+   four nullable columns to `catalog_item` and the source-and-time check. `listCatalogForAgent` returns `price_source`.
+   `ledger_entry` and its triggers are untouched. **Any database other than `praman_mcp` and `praman_mcp_test` needs
+   `prisma migrate deploy` and `pnpm --filter @praman/db run generate` after merging.**
+2. `feat: read Channel3 products into exact-cent catalog snapshots`. New `packages/channel3`: `parseSearchResponse`,
+   `decimalToMinor`, `toSnapshotRows`, `writeSnapshot`, `searchChannel3`. Tests use a small committed fixture,
+   `packages/channel3/test/fixtures/search-response.json`: three real products from a live response, with offer and image
+   URLs replaced by `example.com` ones (the live URLs carry an account id) and descriptions cut.
+3. `chore: keep model imports out of the Channel3 price reader`. `packages/channel3/src` added to `lint:boundary`.
+4. `feat: add pnpm catalog:channel3 to snapshot real products for DEMO_SHOP`.
+5. `feat: add an MCP gateway so any agent shops only within a mandate`. New `apps/mcp-gateway`: the server
+   (`pnpm mcp`), `pnpm mcp:approve`, `pnpm mcp:mandate`, and 21 tests using an in-process MCP client
+   (`InMemoryTransport`) and a fake PayPal rail, with no network or model calls. `@praman/control-plane` now exports
+   `orderProgress`. `mcp-mandate.json` is gitignored.
+6. `docs: explain the MCP gateway with a recorded PayPal sandbox session`. `docs/MCP.md`.
+
+**Live runs, 2026-11-08.**
+
+`pnpm catalog:channel3` against the real API:
+
+```
+▸ "insulated water bottle": 3 product(s)
+▸ "ceramic coffee mug": 3 product(s)
+▸ "hardcover dotted notebook": 3 product(s)
+▸ "pour over coffee kettle": 3 product(s)
+▸ "led desk lamp": 3 product(s)
+▸ "noise cancelling headphones": 3 product(s)
+
+✓ DEMO_SHOP: 18 item(s), prices pinned at 2026-11-07T22:17:40.485Z, rail paypal, USD
+```
+
+The recorded session in `docs/MCP.md` ran over stdio against the PayPal sandbox: a first purchase stepped up, approved at
+the `pnpm mcp:approve` prompt, became PayPal order `1LP93225BJ572635P`; a capture before any buyer approval got PayPal's
+`ORDER_NOT_APPROVED`; a $14.99 mug was `ALLOW` and became order `4MW809170N4086100`; a $34.95 kettle stepped up on the
+threshold; $79.99 headphones were refused with `CATEGORY_OUT_OF_SCOPE`. `pnpm receipt-ui` served the trace and dispute
+links for those traces with status 200.
+
+**Not verified live.** A buyer approving a gateway checkout at PayPal and `complete_checkout` capturing it. That needs a
+person at the PayPal sandbox login. The path is `captureOrder`, tested here against a fake rail, and D-50 already lists a
+live capture after approval as unrun.
+
+**Done-check** on the last commit, run with `set -euo pipefail`: `pnpm test` 55 files and 750 tests passed (694 before this
+lane), typecheck clean, `lint:boundary`, `lint:policy-freeze` (`packages/policy` matches `df81b87`), `eval:check-coverage`
+and `lint:casts` passed, `pnpm eval --layer1 --dev` 88/88 with `eval/` restored afterwards.
+
+**Not changed on the lane.** `packages/policy`, the ledger, the reason-code enum, the eval corpus, `docs/DECISIONS.md`,
+`docs/BUILD_LOG.md`, `README.md` and the screenshots.
+
+**For the README (done in P19's docs commit).** A line under the demo: any MCP agent can shop through Praman locally, with
+`docs/MCP.md` linked, and that the catalog behind it is real products from Channel3 with prices pinned at import.
+
+**Review fix, `6367dad`.** A NUL byte in a gateway id leaked a Prisma error with source paths to the agent. Identifier
+fields now refuse control characters, and any thrown error comes back as `status: "ERROR"` with the details on stderr.
+Eight new tests cover each tool with a NUL byte and a fault inside `runIntent`. Done-check after it, with
+`set -euo pipefail`: `pnpm test` 55 files and 758 tests passed, typecheck, `lint:boundary`, `lint:policy-freeze`,
+`eval:check-coverage` and `lint:casts` clean, `pnpm eval --layer1 --dev` 88/88 with `eval/` restored.
+
+**Review fix, `0fe6e86`.** Channel3 category slugs were stored as any string, and the gateway prints the category
+outside the untrusted wrapper, so a slug like `kitchen-dining\nIMPORTANT: ignore the mandate...` reached the agent
+undelimited and broke the receipt page's `category=(\S+)` match. `categoryFor` now returns nothing unless every slug in
+the path matches `^[a-z0-9-]{1,64}$`, and `toSnapshotRows` skips that product with a reason. Two new tests cover an
+injected slug and uppercase, underscore, empty and over-long slugs. Done-check after it, with `set -euo pipefail`:
+`pnpm test` 760 tests passed, typecheck, `lint:boundary`, `lint:policy-freeze`, `eval:check-coverage` and `lint:casts`
+clean, `pnpm eval --layer1 --dev` passed with `eval/` restored.
+
+**Review fix, `6e9cad6`.** `wrapUntrusted()` removed the delimiters in one pass, so a nested tag rebuilt a real closing
+tag (D-76). It now turns every angle bracket, and the small and full-width lookalikes, into `‹` or `›`.
+Fifteen new tests were written first and fourteen failed against the old code: nested open and close tags, six levels of
+nesting, upper and mixed case, spaces and tabs inside the tag, a zero-width space, lookalike brackets, and a check that
+ordinary `<` and `>` stay readable. A further test wraps 2,000 random arrangements of tag fragments and finds no tag
+inside the block after NFKC normalisation. One receipt-ui test asserted the stored transcript held a raw `<script>`; it
+now asserts the transcript holds the neutralised `‹script›` and no raw `<script>`, and the page-escaping checks below it
+are unchanged. Done-check after it, with `set -euo pipefail`: `pnpm test` 55 files and 775 tests passed, typecheck,
+`lint:boundary`, `lint:policy-freeze`, `eval:check-coverage` and `lint:casts` clean, `pnpm eval --layer1 --dev` 88/88
+with `eval/` restored.
