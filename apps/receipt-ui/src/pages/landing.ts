@@ -23,7 +23,9 @@ const priceOf = (sku: string): string => {
 
 const bowl = CAFE_ITEMS.find((i) => i.sku === "SKU_CAFE_BOWL");
 
-const GITHUB = "https://github.com/Adwaith-R-Nair/Praman";
+/** The branch with the PayPal work. The repo's main branch still holds the earlier Razorpay entry. */
+const CODE = "https://github.com/Adwaith-R-Nair/Praman/tree/paypal-hackathon";
+const MCP_GUIDE = "https://github.com/Adwaith-R-Nair/Praman/blob/paypal-hackathon/docs/MCP.md";
 
 export function renderLandingPage(): string {
   const body = `
@@ -101,7 +103,7 @@ export function renderLandingPage(): string {
 </section>
 
 <footer class="foot">
-  <p>Praman is open source. <a href="${GITHUB}">Read the code and the design decisions on GitHub</a>. Any MCP agent, such as Claude Desktop, can also shop through it locally: <a href="${GITHUB}/blob/main/docs/MCP.md">how to connect one</a>.</p>
+  <p>Praman is open source. <a href="${CODE}">Read the code and the design decisions on GitHub</a>. Any MCP agent, such as Claude Desktop, can also shop through it locally: <a href="${MCP_GUIDE}">how to connect one</a>.</p>
   <p>Sandbox only. The PayPal accounts here hold play money.</p>
 </footer>
 `;
