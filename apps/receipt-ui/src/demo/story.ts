@@ -23,6 +23,8 @@ class DailyModelCapReached extends Error {
 }
 
 const MODEL_ANSWERS = loadModelAnswers();
+/** Above the provider's own 30s timeout, so that one normally ends the call first. */
+const MODEL_DEADLINE_MS = 45_000;
 
 /**
  * Counts model calls, for this session and for the whole demo today, and stops at
@@ -41,7 +43,16 @@ class CountedProvider implements ModelProvider {
     if (this.session.modelCalls >= MODEL_CALLS_PER_SESSION) throw new ModelCapReached("model call cap reached for this session");
     if (!(await this.deps.usage.take("model_call", this.deps.now()))) throw new DailyModelCapReached("the demo's daily model calls are used up");
     this.session.modelCalls += 1;
-    return this.inner.send(system, history, tools);
+    // A call that never answers would hold the session's one running step forever.
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("model call timed out")), this.deps.modelDeadlineMs ?? MODEL_DEADLINE_MS);
+    });
+    try {
+      return await Promise.race([this.inner.send(system, history, tools), deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 

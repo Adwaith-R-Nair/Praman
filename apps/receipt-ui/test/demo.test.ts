@@ -20,6 +20,7 @@ import { renderTracePage } from "../src/pages/trace.js";
 import { readFileSync } from "node:fs";
 import { CONTENT_SECURITY_POLICY } from "../src/csp.js";
 import { VENDOR, vendorPath } from "../src/assets.js";
+import type { ModelProvider } from "@praman/agent-core";
 import { FakePayPal, PAYMENT_TOKEN, ScriptedModel, SETUP_TOKEN } from "./stand-ins.js";
 
 // Lets one test make the transcript write fail once, after the payment has gone through.
@@ -211,6 +212,22 @@ describe("a session ended while PayPal answers the connect", () => {
     expect(paypal.deleted).toEqual([PAYMENT_TOKEN]);
     await sweepExpiredSessions(deps);
     expect(deps.savedMethods.takeAll()).toEqual([]);
+  });
+});
+
+describe("a model call that never answers", () => {
+  it("ends the step as no answer and leaves the session usable", async () => {
+    const hung: ModelProvider = { id: "test/hung", send: () => new Promise(() => {}) };
+    deps = { ...makeDeps(), provider: hung, modelDeadlineMs: 30 };
+    handler = createDemoHandler(deps);
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/step/injection");
+    const page = await v.page();
+    expect(page).toContain("The model didn&#39;t answer");
+    expect(page).not.toContain("A step is still running");
+    await v.post("/demo/step/revoke");
+    expect(sessionOf(v).beats.get("revoke")).toMatchObject({ state: "done" });
   });
 });
 

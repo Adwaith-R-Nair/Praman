@@ -11,6 +11,8 @@ import {
 import type { ConversationItem, ModelProvider, ProviderTurn, TokenUsage, ToolSpec } from "./provider.js";
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
+/** One model call's deadline, the same as a payment provider's. */
+const CALL_TIMEOUT_MS = 30_000;
 
 function isRetryable(err: unknown): boolean {
   return err instanceof ApiError && (err.status === 429 || err.status === 503);
@@ -85,7 +87,7 @@ export class GeminiProvider implements ModelProvider {
   readonly #model: string;
 
   constructor(apiKey: string, model: string) {
-    this.#ai = new GoogleGenAI({ apiKey });
+    this.#ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: CALL_TIMEOUT_MS } });
     this.#model = model;
     this.id = `google/${model}`;
   }

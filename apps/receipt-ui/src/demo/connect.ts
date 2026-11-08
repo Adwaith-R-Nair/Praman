@@ -20,6 +20,8 @@ export interface DemoDeps {
   readonly publicKeyPem: string;
   /** Null when this server has no PayPal sandbox credentials. */
   readonly paypal: { readonly executor: SavedMethodCharger; readonly vault: VaultApi } | null;
+  /** How long one model call may take before the step gives up. Defaults to MODEL_DEADLINE_MS. */
+  readonly modelDeadlineMs?: number;
   /** Null when this server has no model configured. */
   readonly provider: ModelProvider | null;
   /** Today's allowance of new sessions and model calls, shared by every visitor. */
