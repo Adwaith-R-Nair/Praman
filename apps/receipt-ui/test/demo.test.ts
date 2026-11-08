@@ -194,6 +194,26 @@ describe("addresses that don't exist", () => {
   });
 });
 
+describe("a session ended while PayPal answers the connect", () => {
+  it("deletes the saved method at PayPal instead of leaving it", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/connect");
+    const original = paypal.createPaymentToken.bind(paypal);
+    paypal.createPaymentToken = async (id) => {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      return original(id);
+    };
+    const returning = v.get(`/demo/connect/return?approval_token_id=${SETUP_TOKEN}`);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await v.post("/demo/end");
+    await returning;
+    expect(paypal.deleted).toEqual([PAYMENT_TOKEN]);
+    await sweepExpiredSessions(deps);
+    expect(deps.savedMethods.takeAll()).toEqual([]);
+  });
+});
+
 describe("the fooled cart", () => {
   it("shows the items, their prices and the category refused, as the front page does", async () => {
     const v = visitor();

@@ -101,20 +101,31 @@ export async function finishConnect(session: DemoSession, approvalTokenId: strin
     session.notice = `PayPal didn't confirm the approval (${result.code}). Nothing was saved. Try connecting again.`;
     return;
   }
+  // The visitor may have ended the session while PayPal answered. Nothing holds the
+  // token any more, so it is deleted at PayPal now rather than left there for good.
+  if (deps.sessions.get(session.id, deps.now()) !== session) {
+    await deletePaymentToken(result.value.id, deps);
+    return;
+  }
   deps.savedMethods.put(session.id, result.value.id, session.expiresAt);
   session.connected = true;
   session.notice = "PayPal connected. Praman holds the saved method on the server. The agent and this page never see it.";
 }
 
-/** Gives up the session's saved PayPal method, at PayPal too. Called when a session ends or expires. */
-export async function releaseSession(session: DemoSession, deps: DemoDeps): Promise<void> {
-  const tokenId = deps.savedMethods.take(session.id);
-  session.connected = false;
-  if (tokenId === null || deps.paypal === null) return;
+async function deletePaymentToken(tokenId: string, deps: DemoDeps): Promise<void> {
+  if (deps.paypal === null) return;
   try {
     const result = await deps.paypal.vault.deletePaymentToken(tokenId);
     deps.log(`demo: released a saved PayPal method for an ended session: ${result.ok ? "deleted at PayPal" : result.code}`);
   } catch (err) {
     deps.log(`demo: couldn't delete a saved PayPal method at PayPal: ${err instanceof Error ? err.name : "unknown error"}. It is no longer held here.`);
   }
+}
+
+/** Gives up the session's saved PayPal method, at PayPal too. Called when a session ends or expires. */
+export async function releaseSession(session: DemoSession, deps: DemoDeps): Promise<void> {
+  const tokenId = deps.savedMethods.take(session.id);
+  session.connected = false;
+  if (tokenId === null) return;
+  await deletePaymentToken(tokenId, deps);
 }
