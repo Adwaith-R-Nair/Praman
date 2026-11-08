@@ -385,7 +385,8 @@ export function renderRecordedRunPage(outOfSessions = false): string {
     ${outOfSessions ? `<p class="notice" role="status">The live demo has started as many sessions today as it allows, to stay within its free hosting and model limits. It opens again at 00:00 UTC. Until then, here is a recorded run.</p>` : ""}
     <figure class="recording recorded-run">
       <figcaption><strong>Recorded run, not live.</strong> A screenshot of one complete session of this demo, taken by the repo's screenshot script against the PayPal sandbox. Nothing on this page runs, and nothing is charged.</figcaption>
-      <img src="/demo/recorded-run.png" width="1280" alt="${escapeHtml(RECORDED_RUN_ALT)}">
+      <a href="/demo/recorded-run.png"><img src="/demo/recorded-run.png" width="1280" alt="${escapeHtml(RECORDED_RUN_ALT)}"></a>
+      <p class="small">Open the image to read it at full size.</p>
     </figure>`,
   );
 }

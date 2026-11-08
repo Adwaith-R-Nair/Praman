@@ -16,6 +16,10 @@ describe("the front page's links", () => {
 });
 
 describe("the recorded run", () => {
+  it("links the screenshot to its full size, for phones", () => {
+    expect(renderRecordedRunPage()).toContain('<a href="/demo/recorded-run.png"><img src="/demo/recorded-run.png"');
+  });
+
   it("says the demo is out of sessions only after a refused start", () => {
     expect(renderRecordedRunPage()).not.toContain("as many sessions today");
     expect(renderRecordedRunPage(true)).toContain("as many sessions today");
