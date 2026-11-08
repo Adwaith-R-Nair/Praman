@@ -1,10 +1,10 @@
 import type { ConversationItem, ModelProvider, ProviderTurn, ToolSpec } from "@praman/agent-core";
 import { recordAgentTranscript, runAgent } from "@praman/buyer-agent";
-import { captureOrder, resolveApproval, runIntent, type CaptureResult, type ResolveResult, type RunResult } from "@praman/control-plane";
+import { captureOrder, resolveApproval, revokeMandate, runIntent, type CaptureResult, type ResolveResult, type RunResult } from "@praman/control-plane";
 import { routeByRail, SimulatedExecutor } from "@praman/exec-core";
 import type { PurchaseIntent } from "@praman/policy";
 import { addMinor, minorFromJSON, minorToJSON, ZERO_MINOR, type Minor } from "@praman/shared";
-import { FOOLED_CART, GOALS, HARNESS, HARNESS_INTENTS, HARNESS_ITEMS, MODEL_CALLS_PER_SESSION, type BeatId, type PurchaseBeat } from "./config.js";
+import { FOOLED_CART, GOALS, HARNESS, HARNESS_INTENTS, HARNESS_ITEMS, MODEL_CALLS_PER_SESSION, REVOKE_REASON, type AgentStep, type BeatId, type PurchaseBeat } from "./config.js";
 import { routeFor, type DemoDeps } from "./connect.js";
 import { loadModelAnswers, RecordedProvider } from "./recorded-model.js";
 import type { BeatRecord, DemoSession, HarnessSummary } from "./session.js";
@@ -157,7 +157,7 @@ function shownProposal(cart: { readonly merchant_id: unknown; readonly line_item
  * server's. What the model proposes is an intent like any other: Praman prices it from
  * the catalog and decides (invariant 1).
  */
-async function agentPurchase(session: DemoSession, deps: DemoDeps, step: PurchaseBeat | "injection", mandate: DemoSession["mandate"]): Promise<BeatRecord> {
+async function agentPurchase(session: DemoSession, deps: DemoDeps, step: AgentStep, mandate: DemoSession["mandate"]): Promise<BeatRecord> {
   if (deps.provider === null) return { ...empty, state: "no_proposal", message: "This server has no model configured, so the agent can't run. Nothing was proposed and no money moved." };
   const plan = GOALS[step];
   const provider = new CountedProvider(deps.provider, session, deps);
@@ -170,7 +170,8 @@ async function agentPurchase(session: DemoSession, deps: DemoDeps, step: Purchas
       if (!(err instanceof DailyModelCapReached)) throw err;
       // Today's model calls are used up. The story goes on with what the live model
       // answered to this same goal in a recorded run, labelled as such everywhere.
-      const recorded = MODEL_ANSWERS.answers[step];
+      // The retry after revoking has the second purchase's goal, so it replays that answer.
+      const recorded = MODEL_ANSWERS.answers[step === "after_revoke" ? "second" : step];
       deps.log(`demo: daily model cap reached; step ${step} replays the recorded answer from ${recorded.traceId}`);
       recordedModel = { model: MODEL_ANSWERS.model, recordedAt: recorded.recordedAt };
       agent = await runAgent(new RecordedProvider(MODEL_ANSWERS.model, recorded), plan.goal, plan.merchant);
@@ -244,7 +245,11 @@ async function agentPurchase(session: DemoSession, deps: DemoDeps, step: Purchas
  */
 export function canAskAgain(beat: BeatId, record: BeatRecord): boolean {
   if (record.state === "no_proposal") return true;
-  return record.state === "refused" && (beat === "first" || beat === "second" || beat === "large" || beat === "injection");
+  if (record.state !== "refused") return false;
+  // After revoking, a refusal is the point of the step, and asking again would only
+  // spend a model call to be refused again. Only a cart Praman never saw is asked again.
+  if (beat === "after_revoke") return record.traceId === null;
+  return beat === "first" || beat === "second" || beat === "large" || beat === "injection";
 }
 
 const PRECONDITIONS: Readonly<Record<BeatId, (s: DemoSession) => string | null>> = {
@@ -254,6 +259,8 @@ const PRECONDITIONS: Readonly<Record<BeatId, (s: DemoSession) => string | null>>
   injection: () => null,
   fixture: () => null,
   concurrency: () => null,
+  revoke: () => null,
+  after_revoke: (s) => (s.beats.get("revoke")?.state === "done" ? null : "Revoke the mandate first. Until then the agent's purchase would be decided as usual."),
 };
 
 /**
@@ -292,8 +299,31 @@ export async function runBeat(session: DemoSession, beat: BeatId, deps: DemoDeps
     case "concurrency":
       record = await concurrencyHarness(session, deps);
       break;
+    case "revoke":
+      record = await revoke(session, deps);
+      break;
+    case "after_revoke":
+      record = await agentPurchase(session, deps, beat, session.mandate);
+      break;
   }
   session.beats.set(beat, record);
+}
+
+/**
+ * Takes back the agent's authority: one mandate_revoked row for this session's own
+ * mandate, through the same function `pnpm revoke` uses. The reason is fixed text and
+ * the trace id carries the session's public reference, so nothing the visitor sends
+ * reaches the ledger. Every later decision under this mandate reads the row and refuses.
+ */
+async function revoke(session: DemoSession, deps: DemoDeps): Promise<BeatRecord> {
+  const traceId = `trc_demo_${session.ref}_revoke`;
+  await revokeMandate({ mandateId: session.mandate.document.mandate_id, reason: REVOKE_REASON, traceId, now: deps.now() });
+  return {
+    ...empty,
+    state: "done",
+    traceId,
+    message: "Revoked. One mandate_revoked row is now on the ledger. Praman reads it before every decision, so from now on every purchase under this mandate is refused.",
+  };
 }
 
 /** Says, from the cart alone, whether the poisoned line got into the proposal. */

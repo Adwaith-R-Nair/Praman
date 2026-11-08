@@ -15,7 +15,7 @@ const DEMO_CSS = readFileSync(fileURLToPath(new URL("./demo.css", import.meta.ur
 /** A screenshot of one complete session, served as the recorded run once the day's sessions are used up. */
 const RECORDED_RUN_PNG = readFileSync(fileURLToPath(new URL("../../../../docs/screenshots/demo-story-desktop.png", import.meta.url)));
 
-const STEPS: readonly BeatId[] = ["first", "second", "large", "injection", "fixture", "concurrency"];
+const STEPS: readonly BeatId[] = ["first", "second", "large", "injection", "fixture", "concurrency", "revoke", "after_revoke"];
 /** The steps that buy at the cafe. Any of them can need approval or become a checkout. */
 const PURCHASES: readonly PurchaseBeat[] = ["first", "second", "large"];
 
@@ -204,7 +204,7 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       if (method === "POST" && name !== undefined) {
         if (verb === "step" && isStep(name, STEPS)) {
           await exclusive(session, () => runBeat(session, name, deps));
-          redirect(res, `/demo#${name === "fixture" ? "injection" : name}`);
+          redirect(res, `/demo#${name === "fixture" ? "injection" : name === "after_revoke" ? "revoke" : name}`);
           return;
         }
         if ((verb === "approve" || verb === "reject") && isPurchase(name)) {

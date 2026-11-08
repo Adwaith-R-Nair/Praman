@@ -541,6 +541,86 @@ describe("the demo story", () => {
   });
 });
 
+describe("revoking the mandate", () => {
+  const revocations = (mandateId: string) =>
+    prisma.ledgerEntry.findMany({ where: { eventType: "mandate_revoked", payload: { path: ["mandate_id"], equals: mandateId } }, orderBy: { seq: "asc" } });
+
+  it("the visitor revokes, the agent tries again, and gets DENY MANDATE_REVOKED with no charge", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    await v.post("/demo/approve/first");
+    expect(paypal.charges).toHaveLength(1);
+    const mandateId = sessionOf(v).mandate.document.mandate_id;
+
+    await v.post("/demo/step/revoke");
+    const rows = await revocations(mandateId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actor: "issuer", payload: { mandate_id: mandateId } });
+    expect(sessionOf(v).beats.get("revoke")).toMatchObject({ state: "done", traceId: rows[0]?.traceId });
+    expect(rows[0]?.traceId.startsWith(`trc_demo_${sessionOf(v).ref}`)).toBe(true);
+
+    const callsBefore = model.calls;
+    await v.post("/demo/step/after_revoke");
+    expect(model.calls).toBeGreaterThan(callsBefore);
+    const retry = sessionOf(v).beats.get("after_revoke");
+    expect(retry).toMatchObject({ state: "refused", reasonCode: "MANDATE_REVOKED", agentView: { kind: "DENY", reason_code: "MANDATE_REVOKED" }, orderId: null });
+    expect(paypal.charges).toHaveLength(1);
+    expect(paypal.checkouts).toHaveLength(0);
+    const retryRows = await ledgerFor(retry?.traceId ?? null);
+    expect(retryRows.map((r) => r.eventType)).not.toContain("api_call");
+    expect(retryRows.map((r) => r.eventType)).not.toContain("outcome");
+
+    const page = await v.page();
+    expect(page).toContain("MANDATE_REVOKED");
+    expect(page).toContain("This mandate has been revoked.");
+    expect(page).toContain("Nothing charged.");
+    expect(page).toContain(`/r/${encodeURIComponent(rows[0]?.traceId ?? "")}`);
+  });
+
+  it("revokes once, however many times it is pressed", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/step/revoke");
+    await v.post("/demo/step/revoke");
+    expect(await revocations(sessionOf(v).mandate.document.mandate_id)).toHaveLength(1);
+  });
+
+  it("the agent's retry waits until the mandate is revoked", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/step/after_revoke");
+    expect(sessionOf(v).beats.get("after_revoke")).toBeUndefined();
+    expect(model.calls).toBe(0);
+    expect(await v.page()).toContain("Revoke the mandate first");
+  });
+
+  it("revokes only the visitor's own mandate", async () => {
+    const a = visitor();
+    const b = visitor();
+    await a.post("/demo/start");
+    await b.post("/demo/start");
+    await a.post("/demo/step/revoke");
+    expect(await revocations(sessionOf(a).mandate.document.mandate_id)).toHaveLength(1);
+    expect(await revocations(sessionOf(b).mandate.document.mandate_id)).toHaveLength(0);
+    expect(await prisma.$transaction((tx) => deriveState(tx, sessionOf(b).mandate.document.mandate_id))).toMatchObject({ revoked: false });
+  });
+
+  it("a checkout waiting at PayPal is refused at capture once the mandate is revoked", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    await v.post("/demo/approve/first");
+    await v.post("/demo/step/large");
+    await v.post("/demo/approve/large");
+    expect(sessionOf(v).beats.get("large")).toMatchObject({ state: "awaiting_checkout" });
+
+    await v.post("/demo/step/revoke");
+    paypal.approveAll();
+    await v.post("/demo/capture/large");
+    expect(sessionOf(v).beats.get("large")).toMatchObject({ state: "refused", reasonCode: "MANDATE_REVOKED" });
+    expect([...paypal.orders.values()].some((o) => o.captured && o.id.startsWith("CHK"))).toBe(false);
+  });
+});
+
 describe("the demo's boundaries", () => {
   it("one visitor cannot approve or capture another session's order", async () => {
     const alice = await startConnected();
@@ -669,13 +749,15 @@ describe("the demo's boundaries", () => {
     const v = visitor();
     await v.post("/demo/start");
     const before = await v.page();
-    expect(check(before)).toBe(3);
+    // First purchase, second, large, and the agent's retry after revoking.
+    expect(check(before)).toBe(4);
     expect(before).toContain("Connect PayPal in step 2 first.");
     expect(before).toContain("Finish the first purchase first.");
+    expect(before).toContain("Revoke the mandate first.");
 
     await v.post("/demo/connect");
     await v.get(`/demo/connect/return?approval_token_id=${SETUP_TOKEN}`);
-    expect(check(await v.page())).toBe(2);
+    expect(check(await v.page())).toBe(3);
   });
 
   it("the start page sends the checkout to a window that is not logged in to PayPal", async () => {

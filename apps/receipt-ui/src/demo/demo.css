@@ -207,6 +207,16 @@ code {
   font-style: italic;
 }
 
+/* A revoked mandate keeps its terms on screen, with the revocation said under them in the refusal ink. */
+.revoked-line {
+  margin: var(--s1) 0 0;
+  padding: var(--s1) var(--s2);
+  background: var(--deny-wash);
+  border-left: 3px solid var(--deny);
+  color: var(--deny);
+  font-size: 0.95rem;
+}
+
 /* ── Buttons ──────────────────────────────────────────────────── */
 
 .act {

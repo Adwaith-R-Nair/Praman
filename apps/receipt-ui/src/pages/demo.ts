@@ -197,6 +197,7 @@ function mandateHtml(session: DemoSession): string {
       <li>At most ${escapeHtml(doc.limits.max_txns_per_window.toString())} purchases an hour. Valid until ${escapeHtml(until.toUTCString())}.</li>
     </ul>
     <p class="seal">Signed with the demo key <code>${escapeHtml(session.mandate.signature.key_id)}</code>. Mandate <code>${escapeHtml(doc.mandate_id)}</code>. The agent never sees these limits.</p>
+    ${session.beats.get("revoke")?.state === "done" ? `<p class="revoked-line"><strong>Revoked.</strong> You took this authority back in step 8. Every purchase under it is now refused.</p>` : ""}
   </div>`;
 }
 
@@ -283,6 +284,15 @@ function harnessHtml(record: BeatRecord | undefined): string {
     <p class="message">${escapeHtml(record.message)} Model calls: ${escapeHtml(h.modelCalls.toString())}.</p>
     <details><summary>All ${escapeHtml(h.attempted.toString())} traces</summary><ol class="harness-traces">${traces}</ol></details>
     ${traceLinks(h.priorTraceId)}
+  </div>`;
+}
+
+/** The revocation, once it is on the ledger: what it did and where to see the row. */
+function revokeHtml(record: BeatRecord | undefined): string {
+  if (record === undefined) return "";
+  return `<div class="result" data-state="${escapeHtml(record.state)}">
+    <p class="message">${escapeHtml(record.message)}</p>
+    ${traceLinks(record.traceId)}
   </div>`;
 }
 
@@ -418,6 +428,19 @@ ${step(
   p("Test-harness intents, not the agent: no model is called. One earlier purchase, approved by the test harness, not a person, then twenty purchases sent at the same instant against a separate $30 mandate on the simulated rail. Praman reserves each attempt as it decides, so they can't all slip past the budget together."),
   `${b("concurrency") === undefined ? action("/demo/step/concurrency", "Send twenty at once", "quiet") : ""}${harnessHtml(b("concurrency"))}`,
   b("concurrency") !== undefined,
+)}
+
+${step(
+  8,
+  "revoke",
+  "Revoke the mandate",
+  p("You can take the agent's authority back at any time. Revoking adds one row to the ledger. Praman reads the ledger before every decision, so the agent's next purchase is refused and never reaches PayPal. Do this last: after it, every purchase in this session is refused."),
+  `${b("revoke") === undefined ? action("/demo/step/revoke", "Revoke the mandate") : ""}${revokeHtml(b("revoke"))}
+   <h3>The agent tries again</h3>
+   ${p("The same goal as step 4: buy one iced coffee. The live model proposes a cart, and Praman decides as it always does.")}
+   ${askable("after_revoke", b("after_revoke")) ? action("/demo/step/after_revoke", b("after_revoke") === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", configured.model ? (b("revoke")?.state === "done" ? null : "Revoke the mandate first.") : NO_MODEL) : ""}
+   ${resultHtml(b("after_revoke"))}`,
+  b("after_revoke")?.state === "refused",
 )}
 
 <footer class="end">
