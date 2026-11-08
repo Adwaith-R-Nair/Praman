@@ -1,28 +1,29 @@
+import { createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { prisma, type PrismaTx } from "@praman/db";
 import { amountIfPresent, read, readCurrency, verifyChain, type LedgerEntryRecord } from "@praman/ledger";
-import type { Currency } from "@praman/shared";
+import { canonical, type Currency } from "@praman/shared";
 
 export interface DisputeBundle {
   readonly trace_id: string;
   readonly generated_at: string;
   readonly mandate: {
     readonly id: string;
+    /** issuer_id from the signed mandate. Null on traces recorded before the mandate went on the intent row (D-79). */
+    readonly issuer: string | null;
     /**
-     * Not durably recorded anywhere — the ledger's intent/decision events
-     * only ever store mandate_id (packages/control-plane/src/run-intent.ts),
-     * never issuer_id, and the `mandate` DB table (packages/db's own
-     * schema) has a column for it but no code path writes to that table at
-     * all. Left null rather than fabricated; a future improvement is
-     * recording issuer_id on the intent event itself.
-     */
-    readonly issuer: null;
-    /**
-     * Derived from the ledger, not asserted: true unless this trace's own
-     * decision was denied specifically for MANDATE_SIGNATURE_INVALID — the
-     * only way any other outcome (ALLOW/STEP_UP/other DENY reasons) could
-     * exist on this trace is if verifyMandate() already passed at the time.
+     * Whether the signature checks out. "recomputed": this bundle's own signed
+     * mandate was verified with Ed25519 just now. "inferred": an older trace with no
+     * mandate on it, so this is true unless its decision was MANDATE_SIGNATURE_INVALID.
      */
     readonly signature_verified: boolean;
+    readonly signature_check: "recomputed" | "inferred";
+    /**
+     * What an outsider needs to check the mandate: Ed25519 over the canonical JSON of
+     * `document` (sorted keys, no whitespace), with `public_key_pem`. It is the key
+     * Praman verified against when it decided, so it shows the mandate wasn't altered,
+     * not who holds the key. Null on older traces.
+     */
+    readonly signed: { readonly document: unknown; readonly signature: SignatureBlock; readonly public_key_pem: string } | null;
   };
   readonly authorisation: {
     readonly decision: string | null;
@@ -106,6 +107,37 @@ export interface DisputeBundle {
     /** Whether every one of THIS trace's own entries falls inside the verified range. */
     readonly trace_fully_verified: boolean;
   };
+}
+
+interface SignatureBlock {
+  readonly alg: string;
+  readonly key_id: string;
+  readonly value: string;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function signedMandateOf(intent: Record<string, unknown> | null): NonNullable<DisputeBundle["mandate"]["signed"]> | null {
+  const signed = intent?.["signed_mandate"];
+  const publicKey = intent?.["public_key_pem"];
+  if (!isRecord(signed) || typeof publicKey !== "string") return null;
+  const { document, signature } = signed;
+  if (!isRecord(document) || !isRecord(signature)) return null;
+  const { alg, key_id: keyId, value } = signature;
+  if (typeof alg !== "string" || typeof keyId !== "string" || typeof value !== "string") return null;
+  return { document, signature: { alg, key_id: keyId, value }, public_key_pem: publicKey };
+}
+
+/** Checks the mandate on the bundle itself, the way an outsider would. Any malformed part counts as not verified. */
+function signatureHolds(signed: NonNullable<DisputeBundle["mandate"]["signed"]>): boolean {
+  if (signed.signature.alg !== "Ed25519") return false;
+  try {
+    return cryptoVerify(null, Buffer.from(canonical(signed.document), "utf8"), createPublicKey(signed.public_key_pem), Buffer.from(signed.signature.value, "base64url"));
+  } catch {
+    return false;
+  }
 }
 
 function payloadOf(entries: readonly LedgerEntryRecord[], eventType: string): Record<string, unknown> | null {
@@ -288,13 +320,18 @@ export async function buildBundle(tx: PrismaTx, traceId: string): Promise<Disput
 
   const amountMinor = (outcome && amountIfPresent(outcome)) ?? (decision && amountIfPresent(decision));
 
+  const signed = signedMandateOf(intent);
+  const issuer = signed !== null && isRecord(signed.document) ? asString(signed.document["issuer_id"]) : null;
+
   return {
     trace_id: traceId,
     generated_at: new Date().toISOString(),
     mandate: {
       id: asString(intent?.["mandate_id"]) ?? "unknown",
-      issuer: null,
-      signature_verified: reasonCode !== "MANDATE_SIGNATURE_INVALID",
+      issuer,
+      signature_verified: signed === null ? reasonCode !== "MANDATE_SIGNATURE_INVALID" : signatureHolds(signed),
+      signature_check: signed === null ? "inferred" : "recomputed",
+      signed,
     },
     authorisation: {
       decision: decisionKind,

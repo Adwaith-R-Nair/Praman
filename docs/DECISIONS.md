@@ -2895,3 +2895,18 @@ A temporary log (`d0be8c6`, since reverted) recorded each header as salted hashe
 **Rejected: reading `CF-Connecting-IP`.** It carries the same value here, but D-60's objection stands: it is only safe while Cloudflare is in front, and a position from the right needs no new code.
 
 **Cost.** If Render changes its proxy chain, the number has to change too. `docs/DEPLOY.md`'s smoke test catches that.
+
+---
+
+### D-79 · The intent row carries the signed mandate, so a dispute bundle can be checked from outside · Accepted (implementer's decision, for the builder to check)
+
+The dispute bundle said `signature_verified: true` with no mandate in it, inferred from the decision's reason code, and `issuer` was always `null`. Someone outside Praman had nothing to check. Mandates aren't stored anywhere the ledger can reach, and the demo's live only in memory.
+
+**Decided.** After `verifyMandate()` passes, `runIntent` writes the signed mandate (document and signature) and the public key it verified against onto the `intent` row. The bundle reads them back, recomputes the Ed25519 signature, fills `issuer` from `issuer_id`, and says `signature_check: "recomputed"`. Traces from before this change say `"inferred"`, and that is all they can say.
+
+**What it opens.** Anyone holding a trace id can now read that mandate's limits in its bundle. The MCP gateway's answers never carry payloads (`traceEvents` strips them), so an agent with only the gateway still can't see limits. An agent that can also fetch the receipt server's `dispute_url` can read them, which D-08 doesn't cover. On the hosted demo the visitor sees those limits on the page anyway. A real deployment would put `/dispute` behind an access check.
+
+**Limit.** The public key travels with the bundle, so it proves the mandate wasn't altered after signing, not who holds the key. Tying a key to a person is a key registry, which Praman doesn't have.
+
+**Rejected.** The unused `mandate` table: outside the hash chain, so no tamper evidence. A new ledger event: more rows on every trace and no gain over a field on the row that already belongs to the decision. A signing step in the demo: it would change what a visitor does, not what an outsider can check.
+

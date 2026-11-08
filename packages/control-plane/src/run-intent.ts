@@ -232,7 +232,9 @@ export async function runIntent(
       ts: now,
       actor: "agent",
       eventType: "intent",
-      payload: { ...intent, mandate_id: mandate.mandate_id, idempotency_key: key, model_id: modelId },
+      // The signed mandate this decision is made under, so a dispute bundle can be checked
+      // by someone outside Praman (D-79). Only reached after verifyMandate() passed.
+      payload: { ...intent, mandate_id: mandate.mandate_id, idempotency_key: key, model_id: modelId, signed_mandate: { document: signed.document, signature: signed.signature }, public_key_pem: publicKeyPem },
     });
 
     const gate = gateOnRail(evaluate({ intent, mandate, state, catalog, now, idempotency_key: key }), routed);

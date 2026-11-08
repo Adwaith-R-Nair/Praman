@@ -1,6 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@praman/db";
 import { append, type EventType } from "@praman/ledger";
+import { generateKeyPairSync, sign } from "node:crypto";
+import { canonical } from "@praman/shared";
 import { buildBundle } from "../src/bundle.js";
 
 beforeEach(async () => {
@@ -190,6 +192,35 @@ describe("buildBundle", () => {
     expect(bundle.authorisation.currency).toBe("INR");
     expect(bundle.merchant_content_read.map((r) => r.sku)).toEqual(["SKU_FOOD_002"]);
     expect(bundle.chain.global_chain_ok).toBe(true);
+  });
+
+  describe("the signed mandate", () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    const document = { mandate_id: "mnd_signed", version: 2, issuer_id: "usr_issuer", scope: { currency: "USD" } };
+    const signature = { alg: "Ed25519", key_id: "k1", value: sign(null, Buffer.from(canonical(document), "utf8"), privateKey).toString("base64url") };
+    const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+
+    async function bundleWith(signedMandate: Record<string, unknown>) {
+      await prisma.$transaction((tx) => append(tx, { traceId: "trc_signed", ts: new Date(), actor: "agent", eventType: "intent", payload: { mandate_id: "mnd_signed", signed_mandate: signedMandate, public_key_pem: publicKeyPem } }));
+      return prisma.$transaction((tx) => buildBundle(tx, "trc_signed"));
+    }
+
+    it("carries the mandate, signature and key so an outsider can check it, and recomputes the check", async () => {
+      const bundle = await bundleWith({ document, signature });
+      expect(bundle?.mandate).toMatchObject({ id: "mnd_signed", issuer: "usr_issuer", signature_verified: true, signature_check: "recomputed" });
+      expect(bundle?.mandate.signed).toEqual({ document, signature, public_key_pem: publicKeyPem });
+    });
+
+    it("says not verified when the mandate on the trace doesn't match its signature", async () => {
+      const bundle = await bundleWith({ document: { ...document, issuer_id: "usr_other" }, signature });
+      expect(bundle?.mandate).toMatchObject({ issuer: "usr_other", signature_verified: false, signature_check: "recomputed" });
+    });
+
+    it("says an older trace with no mandate on it was only inferred", async () => {
+      await prisma.$transaction((tx) => append(tx, { traceId: "trc_old", ts: new Date(), actor: "agent", eventType: "intent", payload: { mandate_id: "mnd_old" } }));
+      const bundle = await prisma.$transaction((tx) => buildBundle(tx, "trc_old"));
+      expect(bundle?.mandate).toEqual({ id: "mnd_old", issuer: null, signature_verified: true, signature_check: "inferred", signed: null });
+    });
   });
 
   it("marks signature_verified false when the trace was denied for an invalid signature", async () => {

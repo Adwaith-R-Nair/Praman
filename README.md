@@ -234,7 +234,7 @@ Built solo in nine days. These are decisions, not oversights.
 - PayPal webhooks (`POST /webhooks/paypal`) are tested only against synthetic events written from PayPal's published schemas. No real delivery has reached them, because nothing is hosted yet. A webhook can settle a pending PayPal capture early, and the sweep still settles anything a webhook misses. Razorpay webhooks are not built ([D-45](docs/DECISIONS.md)).
 - Refunds are full only, PayPal only, and started by a person. PayPal's refund webhook is ignored, so a refund made in PayPal's dashboard doesn't reach the ledger ([D-66](docs/DECISIONS.md)).
 - Ledger appends are serialised by one global lock, since the chain is a single linked list. Per-mandate sub-chains would remove this.
-- `mandate.issuer` is `null` in dispute bundles: issuer identity is not durably recorded anywhere the ledger can reach, and populating it from a mutable local file could misattribute an old trace.
+- Dispute bundles carry the signed mandate, its signature and the public key Praman verified against, so anyone can check them ([D-79](docs/DECISIONS.md)). That key is the one the server used, so it shows the mandate wasn't altered, not who holds the key. Traces from before this change have no mandate on them: `issuer` is `null` there and `signature_check` says `inferred`.
 
 **Defense only.** The adversarial corpus is a fixed set of fixtures exercised against this project's own sandbox. Praman ships no attack generator and nothing that generalises to third-party systems.
 
@@ -252,7 +252,7 @@ Three that changed the architecture:
 
 ## Decision records
 
-78 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
+79 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
 
 ## Documentation
 

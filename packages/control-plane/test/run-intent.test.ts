@@ -108,6 +108,16 @@ describe("runIntent with a USD mandate", () => {
     });
   });
 
+  it("puts the signed mandate and its key on the intent row, for a dispute bundle", async () => {
+    const { signed, publicKeyPem } = buildSignedMandate("mnd_on_intent", "USD");
+    await prisma.$executeRaw`UPDATE merchant SET currency = 'USD' WHERE merchant_id = ${MERCHANT}`;
+    await prisma.$executeRaw`UPDATE catalog_item SET currency = 'USD' WHERE merchant_id = ${MERCHANT}`;
+    const intent: PurchaseIntent = { intent_id: "int_on_intent", mandate_id: "mnd_on_intent", merchant_id: MERCHANT, line_items: [{ sku: SKU, qty: 1 }], requested_at: new Date().toISOString(), agent_rationale: "r" };
+    await runIntent(intent, signed, publicKeyPem, routeByRail([new SimulatedExecutor()]), new Date(), "test-model");
+    const row = await prisma.ledgerEntry.findFirst({ where: { traceId: "trc_int_on_intent", eventType: "intent" } });
+    expect(row?.payload).toMatchObject({ signed_mandate: { document: { mandate_id: "mnd_on_intent", issuer_id: "usr_t" }, signature: { alg: "Ed25519" } }, public_key_pem: publicKeyPem });
+  });
+
   it("buys a USD item and records USD on every event that has an amount", async () => {
     const mandateId = "mnd_usd_allow";
     await seedTrustedMerchant(mandateId);
