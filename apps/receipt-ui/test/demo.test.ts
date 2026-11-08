@@ -20,6 +20,9 @@ import { DemoActivity, scheduleSweeps } from "../src/sweeps.js";
 import { routeByRail } from "@praman/exec-core";
 import { SavedMethods, SessionStore } from "../src/demo/session.js";
 import { loadRecording, recordingHtml } from "../src/pages/demo.js";
+import { readFileSync } from "node:fs";
+import { CONTENT_SECURITY_POLICY } from "../src/csp.js";
+import { VENDOR, vendorPath } from "../src/assets.js";
 
 // Lets one test make the transcript write fail once, after the payment has gone through.
 const transcriptFault = vi.hoisted(() => ({ armed: false }));
@@ -618,6 +621,132 @@ describe("revoking the mandate", () => {
     await v.post("/demo/capture/large");
     expect(sessionOf(v).beats.get("large")).toMatchObject({ state: "refused", reasonCode: "MANDATE_REVOKED" });
     expect([...paypal.orders.values()].some((o) => o.captured && o.id.startsWith("CHK"))).toBe(false);
+  });
+});
+
+describe("the ledger console", () => {
+  const getRaw = (path: string, cookie: string | null = null) => fetch(`${base}${path}`, { redirect: "manual", headers: cookie === null ? {} : { Cookie: `${COOKIE}=${cookie}` } });
+  /** The app around the demo, as server.ts builds it, with or without the operator console. */
+  function appServer(operatorConsole: boolean) {
+    handler = createApp({
+      demo: createDemoHandler(deps),
+      webhooks: { webhookId: null, verify: async () => false, apply: async () => "unmatched", now: () => new Date(clock) },
+      hsts: false,
+      proxyHops: 0,
+      onDemoRequest: () => {},
+      log: (line) => logs.push(line),
+      operatorConsole,
+    });
+  }
+  const consoleData = async (cookie: string | null) => {
+    const res = await getRaw("/demo/console/data", cookie);
+    return { status: res.status, body: (await res.json()) as { rows: { traceId: string; mandateId: string | null; eventType: string; hashVerdict: string; chainVerified: boolean; decision: string | null }[]; chain: { ok: boolean }; spend: { mandateId: string; budgetMinor: string | null; spentNowMinor: string; revoked: boolean }[] } };
+  };
+
+  it("serves the page under a policy whose only change is a fresh style nonce, and no ledger data in the HTML", async () => {
+    appServer(false);
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/step/concurrency");
+    const first = await getRaw("/demo/console", v.cookie);
+    const second = await getRaw("/demo/console", v.cookie);
+    const html = await first.text();
+    const policy = first.headers.get("content-security-policy") ?? "";
+    const nonce = /'nonce-([^']+)'/.exec(policy)?.[1] ?? "";
+    expect(nonce.length).toBeGreaterThanOrEqual(24);
+    expect(policy).toBe(CONTENT_SECURITY_POLICY.replace("style-src 'self'", `style-src 'self' 'nonce-${nonce}'`));
+    expect(policy).not.toContain("unsafe-inline");
+    expect(policy).not.toContain("unsafe-eval");
+    expect(second.headers.get("content-security-policy")).not.toBe(policy);
+    expect(html).toContain(`<script src="/assets/console.js" nonce="${nonce}" defer></script>`);
+    expect(html).toContain(`src="${vendorPath(VENDOR.grid)}"`);
+    expect(html).toContain(`src="${vendorPath(VENDOR.charts)}"`);
+    expect(html).not.toMatch(/<script>|<style>| style="/);
+    expect(html).not.toContain("https://cdn");
+    expect(html).not.toContain(sessionOf(v).ref);
+    expect(html).not.toContain(v.cookie ?? "no cookie");
+  });
+
+  it("shows a visitor only their own session's mandates, and the revocation in the chain", async () => {
+    appServer(false);
+    const a = visitor();
+    const b = visitor();
+    await a.post("/demo/start");
+    await b.post("/demo/start");
+    await a.post("/demo/step/concurrency");
+    await a.post("/demo/step/revoke");
+    await b.post("/demo/step/fixture");
+
+    const mine = await consoleData(a.cookie);
+    expect(mine.status).toBe(200);
+    const s = sessionOf(a);
+    const ids = new Set([s.mandate.document.mandate_id, s.harnessMandate.document.mandate_id]);
+    expect(mine.body.rows.length).toBeGreaterThan(40);
+    expect(mine.body.rows.every((r) => r.mandateId !== null && ids.has(r.mandateId))).toBe(true);
+    expect(mine.body.rows.every((r) => r.hashVerdict === "intact" && r.chainVerified)).toBe(true);
+    expect(mine.body.chain.ok).toBe(true);
+    expect(mine.body.rows.find((r) => r.eventType === "mandate_revoked")).toMatchObject({ decision: "REVOKED", traceId: `trc_demo_${s.ref}_revoke` });
+    expect(mine.body.spend.find((x) => x.mandateId === s.harnessMandate.document.mandate_id)).toMatchObject({ budgetMinor: HARNESS_LIMITS.max_total_minor, spentNowMinor: "3000", revoked: false });
+    expect(mine.body.spend.find((x) => x.mandateId === s.mandate.document.mandate_id)).toMatchObject({ revoked: true });
+    expect(JSON.stringify(mine.body)).not.toContain(sessionOf(b).ref);
+
+    const theirs = await consoleData(b.cookie);
+    expect(theirs.body.rows.every((r) => !JSON.stringify(r).includes(s.ref))).toBe(true);
+    expect(theirs.body.rows.some((r) => r.traceId === `trc_demo_${sessionOf(b).ref}_fixture`)).toBe(true);
+  });
+
+  it("gives no rows without a session, and limits how often one session can load them", async () => {
+    appServer(false);
+    expect((await getRaw("/demo/console/data")).status).toBe(401);
+    expect((await getRaw("/demo/console", null)).status).toBe(200);
+    const v = visitor();
+    await v.post("/demo/start");
+    const statuses: number[] = [];
+    for (let i = 0; i < 31; i++) statuses.push((await getRaw("/demo/console/data", v.cookie)).status);
+    expect(statuses.filter((x) => x === 200).length).toBe(30);
+    expect(statuses.at(-1)).toBe(429);
+  });
+
+  it("keeps the whole-ledger console off unless the server turns it on", async () => {
+    appServer(false);
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/step/fixture");
+    const off = await getRaw("/console");
+    expect(off.status).toBe(404);
+    expect(await off.text()).toContain("Each demo visitor has their own console at /demo/console");
+    expect((await getRaw("/console/data")).status).toBe(404);
+
+    appServer(true);
+    const page = await getRaw("/console");
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-security-policy")).toMatch(/style-src 'self' 'nonce-[^']+' https/);
+    const data = (await (await getRaw("/console/data")).json()) as { rows: { traceId: string }[] };
+    expect(data.rows.some((r) => r.traceId === `trc_demo_${sessionOf(v).ref}_fixture`)).toBe(true);
+  });
+
+  it("serves AG Grid and AG Charts Community from node_modules at the pinned versions", async () => {
+    appServer(false);
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { dependencies: Record<string, string> };
+    expect(pkg.dependencies["ag-grid-community"]).toBe(VENDOR.grid.version);
+    expect(pkg.dependencies["ag-charts-community"]).toBe(VENDOR.charts.version);
+    expect(Object.keys(pkg.dependencies).filter((d) => d.includes("enterprise"))).toEqual([]);
+    for (const v of [VENDOR.grid, VENDOR.charts]) {
+      const res = await getRaw(vendorPath(v));
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("javascript");
+      expect((await res.text()).length).toBeGreaterThan(500_000);
+    }
+  });
+
+  it("the console script builds every value as text, never as HTML", () => {
+    const client = readFileSync(new URL("../src/console/console.client.js", import.meta.url), "utf8");
+    expect(client).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/);
+    // AG Grid inserts a string a cell renderer returns as HTML, so the only renderer returns an element.
+    expect(client.match(/cellRenderer:/g)).toHaveLength(1);
+    expect(client).toContain("cellRenderer: traceLink");
+    expect(client).toMatch(/function traceLink[\s\S]*?document\.createElement\("a"\)[\s\S]*?textContent/);
+    expect(client).toContain("styleNonce: nonce");
   });
 });
 

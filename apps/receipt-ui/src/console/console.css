@@ -1,0 +1,458 @@
+/* Praman ledger console. The same paper, inks and type as the demo and the trace pages,
+   wider, because a ledger is a table. The decision colours mean what they mean
+   everywhere else: allowed, asked, refused. The seal blue marks what is signed or
+   verified, which here is the chain. */
+
+:root {
+  --paper: #edf1ee;
+  --paper-raised: #f6f8f6;
+  --ink: #172420;
+  --ink-muted: #4b5b55;
+  --hairline: #c7d0c9;
+  --seal: #24496b;
+  --allow: #2e6b4c;
+  --step-up: #8a5f22;
+  --deny: #9e3b2e;
+  --allow-wash: #e1ece5;
+  --step-up-wash: #f1e9db;
+  --deny-wash: #f2e3df;
+  --seal-wash: #e2e9f0;
+
+  --serif: "PT Serif", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  --s1: 0.5rem;
+  --s2: 1rem;
+  --s3: 1.75rem;
+  --s4: 2.75rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.55;
+  -webkit-text-size-adjust: 100%;
+}
+
+.console {
+  max-width: 88rem;
+  margin: 0 auto;
+  padding: var(--s3) 1rem var(--s4);
+}
+
+a {
+  color: var(--ink);
+  text-underline-offset: 0.18em;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: 2px;
+}
+
+.nav {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  margin-bottom: var(--s3);
+}
+
+/* ── Masthead ─────────────────────────────────────────────────── */
+
+.masthead {
+  max-width: 52rem;
+  margin-bottom: var(--s3);
+}
+
+.kicker {
+  margin: 0 0 var(--s1);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--seal);
+}
+
+h1 {
+  margin: 0 0 var(--s1);
+  font-size: clamp(1.6rem, 3.2vw, 2.3rem);
+  line-height: 1.15;
+  font-weight: 700;
+}
+
+.lede {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.notice {
+  border-left: 3px solid var(--step-up);
+  background: var(--step-up-wash);
+  padding: var(--s1) var(--s2);
+  margin: 0 0 var(--s3);
+}
+
+/* ── The chain verdict: the first thing an operator needs to trust anything below ─ */
+
+.chain {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  border: 1px solid var(--hairline);
+  border-left: 4px solid var(--ink-muted);
+  background: var(--paper-raised);
+  padding: var(--s2) var(--s3);
+  margin-bottom: var(--s2);
+}
+
+.chain[data-state="ok"] {
+  border-left-color: var(--seal);
+  background: var(--seal-wash);
+}
+
+.chain[data-state="broken"] {
+  border-left-color: var(--deny);
+  background: var(--deny-wash);
+}
+
+.chain-stamp {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1.5px solid currentColor;
+  padding: 0.1rem 0.5rem;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.chain[data-state="ok"] .chain-stamp {
+  color: var(--seal);
+}
+
+.chain[data-state="broken"] .chain-stamp {
+  color: var(--deny);
+}
+
+.chain-text {
+  margin: 0;
+  flex: 1 1 24rem;
+  overflow-wrap: anywhere;
+}
+
+/* ── Totals ───────────────────────────────────────────────────── */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+  gap: var(--s1);
+  margin-bottom: var(--s3);
+}
+
+.tiles:empty {
+  display: none;
+}
+
+.tile {
+  background: var(--paper-raised);
+  border: 1px solid var(--hairline);
+  padding: var(--s1) var(--s2) 0.65rem;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tile-n {
+  font-family: var(--mono);
+  font-size: 1.45rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile-label {
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ── Charts ───────────────────────────────────────────────────── */
+
+.charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+
+.card {
+  margin: 0;
+  background: var(--paper-raised);
+  border: 1px solid var(--hairline);
+  padding: var(--s2);
+  min-width: 0;
+}
+
+.card-wide {
+  grid-column: 1 / -1;
+}
+
+.card figcaption {
+  margin-bottom: var(--s1);
+}
+
+.card-note {
+  margin: 0.2rem 0 var(--s1);
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  max-width: 60rem;
+}
+
+.select-label {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  margin-right: var(--s1);
+}
+
+select,
+input[type="search"] {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--ink-muted);
+  border-radius: 0;
+  padding: 0.3rem 0.5rem;
+  max-width: 100%;
+}
+
+.chart {
+  height: 320px;
+  min-width: 0;
+}
+
+#chart-reasons {
+  height: auto;
+  min-height: 260px;
+}
+
+.chart-empty {
+  margin: 0;
+  padding: var(--s3) var(--s2);
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+/* ── Ledger ───────────────────────────────────────────────────── */
+
+.ledger-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s1);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  flex-wrap: wrap;
+}
+
+.toolbar label {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.toolbar input[type="search"] {
+  width: 22rem;
+}
+
+.btn-quiet {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  background: transparent;
+  border: 1px solid var(--ink-muted);
+  color: var(--ink);
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+}
+
+.btn-quiet:hover {
+  background: var(--paper-raised);
+}
+
+.count {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
+.grid {
+  height: 560px;
+  width: 100%;
+}
+
+/* Decision and hash-check cells carry the decision inks. Classes only: no cell is HTML. */
+.grid .cell-allow {
+  color: var(--allow);
+  font-weight: 600;
+}
+
+.grid .cell-step-up {
+  color: var(--step-up);
+  font-weight: 600;
+}
+
+.grid .cell-deny {
+  color: var(--deny);
+  font-weight: 600;
+}
+
+.grid .cell-code {
+  letter-spacing: 0.01em;
+}
+
+/* ── The selected row's hash check ────────────────────────────── */
+
+.detail {
+  border: 1px solid var(--hairline);
+  border-top: none;
+  background: var(--paper-raised);
+  padding: var(--s2) var(--s3);
+}
+
+.detail-empty {
+  margin: 0;
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+.detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+
+.detail-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.detail-head a {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.detail-note {
+  margin: var(--s1) 0;
+  font-size: 0.88rem;
+  color: var(--ink-muted);
+}
+
+.hashes {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem var(--s2);
+  margin: 0;
+}
+
+.hashes dt {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.hashes dd {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem var(--s2);
+  align-items: baseline;
+}
+
+.hash {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.walk-note {
+  font-size: 0.88rem;
+}
+
+.pass,
+.fail,
+.unknown {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pass {
+  color: var(--allow);
+}
+
+.fail {
+  color: var(--deny);
+}
+
+.unknown {
+  color: var(--ink-muted);
+}
+
+@media (max-width: 760px) {
+  .console {
+    padding-top: var(--s2);
+  }
+
+  .charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chain {
+    padding: var(--s2);
+  }
+
+  .toolbar input[type="search"] {
+    width: 100%;
+  }
+
+  .grid {
+    height: 480px;
+  }
+
+  .detail {
+    padding: var(--s2);
+  }
+
+  .hashes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

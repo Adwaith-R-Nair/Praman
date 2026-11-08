@@ -20,6 +20,8 @@
     "@praman/policy": "workspace:*",
     "@praman/razorpay-exec": "workspace:*",
     "@praman/shared": "workspace:*",
+    "ag-charts-community": "14.2.0",
+    "ag-grid-community": "36.2.0",
     "dotenv": "^17.4.2"
   }
 }

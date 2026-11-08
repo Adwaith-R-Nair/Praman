@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { loadRecording, renderCheckoutReturnPage, renderDemoPage, renderErrorPage, renderRecordedRunPage, renderStartPage } from "../pages/demo.js";
+import { loadConsoleData, type Budget } from "../console/data.js";
+import { newStyleNonce, renderConsolePage } from "../console/page.js";
 import { SESSION_TTL_MS, type BeatId, type PurchaseBeat } from "./config.js";
 import { finishConnect, releaseSession, startConnect, type DemoDeps } from "./connect.js";
 import { LIMITS, RateLimiter } from "./limits.js";
@@ -25,6 +27,16 @@ function isStep(value: string, allowed: readonly BeatId[]): value is BeatId {
 
 function isPurchase(value: string): value is PurchaseBeat {
   return PURCHASES.some((s) => s === value);
+}
+
+/** The session's two mandates and their signed budgets: the only rows its console may show. */
+function consoleScope(session: DemoSession): { readonly mandateIds: string[]; readonly budgets: Map<string, Budget> } {
+  const budgets = new Map<string, Budget>();
+  for (const m of [session.mandate, session.harnessMandate]) {
+    const doc = m.document;
+    if (doc.version === 2) budgets.set(doc.mandate_id, { maxTotalMinor: doc.limits.max_total_minor, currency: doc.scope.currency });
+  }
+  return { mandateIds: [session.mandate.document.mandate_id, session.harnessMandate.document.mandate_id], budgets };
 }
 
 function readCookie(header: string | undefined): string | null {
@@ -55,6 +67,8 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
   const origin = new URL(deps.baseUrl).origin;
   const recording = loadRecording();
   const presses = new RateLimiter(LIMITS.postsPerSession.limit, LIMITS.postsPerSession.windowMs);
+  // Each console load walks the whole chain, so it is limited per session like a press.
+  const consoleLoads = new RateLimiter(LIMITS.postsPerSession.limit, LIMITS.postsPerSession.windowMs);
 
   const send = (res: ServerResponse, status: number, html: string, extra: Record<string, string> = {}) => {
     res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", ...SECURITY_HEADERS, ...extra });
@@ -144,6 +158,30 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
         }
         const fresh = deps.sessions.create(now);
         redirect(res, "/demo", { "Set-Cookie": cookie(fresh.id, Math.floor(SESSION_TTL_MS / 1000)) });
+        return;
+      }
+
+      if (method === "GET" && path === "/demo/console") {
+        const page = renderConsolePage("visitor", newStyleNonce(), session === null ? "You have no demo session in this browser, so there are no rows to show. Start a session on the demo page, then come back." : null);
+        send(res, 200, page.html, { "Content-Security-Policy": page.policy });
+        return;
+      }
+      if (method === "GET" && path === "/demo/console/data") {
+        const json = { "Content-Type": "application/json; charset=utf-8", ...SECURITY_HEADERS };
+        if (session === null) {
+          res.writeHead(401, json);
+          res.end(JSON.stringify({ error: "no session" }));
+          return;
+        }
+        if (!consoleLoads.take(session.ref, now)) {
+          res.writeHead(429, { ...json, "Retry-After": consoleLoads.retryAfterSeconds(session.ref, now).toString() });
+          res.end(JSON.stringify({ error: "too many loads" }));
+          return;
+        }
+        const scope = consoleScope(session);
+        const data = await loadConsoleData({ kind: "mandates", mandateIds: scope.mandateIds }, scope.budgets, now);
+        res.writeHead(200, json);
+        res.end(JSON.stringify(data));
         return;
       }
 

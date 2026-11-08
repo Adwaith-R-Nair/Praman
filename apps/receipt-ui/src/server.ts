@@ -65,6 +65,9 @@ const app = createApp({
   proxyHops: Number(process.env["TRUST_PROXY"] || "0"),
   onDemoRequest: () => activity.touch(new Date()),
   log: (line) => console.error(line),
+  // The whole-ledger console, only with the demo off and never in production. With
+  // the demo on, each visitor has their own console at /demo/console instead.
+  operatorConsole: demo === null && process.env["NODE_ENV"] !== "production",
 });
 
 // The app answers its own errors. Anything that still escapes it is logged and the one
@@ -79,6 +82,7 @@ const server = createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`receipt-ui listening on http://localhost:${PORT.toString()}`);
+  if (demo === null && process.env["NODE_ENV"] !== "production") console.log(`receipt-ui: operator console at http://localhost:${PORT.toString()}/console`);
 });
 
 // On SIGTERM or Ctrl-C, stop taking requests, then delete the demo's saved PayPal

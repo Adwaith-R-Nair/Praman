@@ -1,6 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { buildBundleStandalone } from "@praman/dispute";
 import { ASSETS } from "./assets.js";
+import { loadConsoleData } from "./console/data.js";
+import { newStyleNonce, OPERATOR_CONSOLE_OFF, renderConsolePage } from "./console/page.js";
+import { CONTENT_SECURITY_POLICY } from "./csp.js";
 import { countTraces } from "./data.js";
 import { clientIp, LIMITS, RateLimiter } from "./demo/limits.js";
 import { renderIndexPage } from "./pages/index.js";
@@ -10,23 +13,7 @@ import { handlePayPalWebhook, readRawBody, type PayPalWebhookDeps } from "./webh
 
 export type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 
-/**
- * Sent on every response. Script and style come only from this origin (and Google's
- * font stylesheet), nothing inline, so text that slips past escaping still can't run.
- * Forms may post here, and the demo's POSTs redirect on to PayPal's sandbox, which
- * form-action has to allow. No page may be framed.
- */
-export const CONTENT_SECURITY_POLICY = [
-  "default-src 'none'",
-  "script-src 'self'",
-  "style-src 'self' https://fonts.googleapis.com",
-  "font-src https://fonts.gstatic.com",
-  "img-src 'self' data:",
-  "connect-src 'self'",
-  "form-action 'self' https://www.sandbox.paypal.com",
-  "frame-ancestors 'none'",
-  "base-uri 'none'",
-].join("; ");
+export { CONTENT_SECURITY_POLICY } from "./csp.js";
 
 export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "Content-Security-Policy": CONTENT_SECURITY_POLICY,
@@ -49,7 +36,16 @@ export interface AppDeps {
   /** Told about every request to /demo, so the sweeps know the demo is in use. */
   readonly onDemoRequest: () => void;
   readonly log: (line: string) => void;
+  /**
+   * The operator console at /console, which shows the whole ledger. Only on a local
+   * server with the demo off: on the hosted demo it would show every visitor's
+   * purchases. server.ts sets it; unset means off.
+   */
+  readonly operatorConsole?: boolean;
 }
+
+/** The newest rows the operator console shows. Older ones are on their trace pages. */
+export const OPERATOR_CONSOLE_ROWS = 2000;
 
 const text = (res: ServerResponse, status: number, body: string, extra: Record<string, string> = {}) => {
   res.writeHead(status, { "Content-Type": "text/plain; charset=utf-8", ...extra });
@@ -117,6 +113,28 @@ export function createApp(deps: AppDeps): Handler {
           return;
         }
         await deps.demo(req, res);
+        return;
+      }
+
+      if (url.pathname === "/console" || url.pathname === "/console/data") {
+        if (method !== "GET" && method !== "HEAD") {
+          text(res, 405, "Method not allowed", { Allow: "GET, HEAD" });
+          return;
+        }
+        if (deps.operatorConsole !== true) {
+          text(res, 404, OPERATOR_CONSOLE_OFF, { "Cache-Control": "no-store" });
+          return;
+        }
+        if (!within(reads, req, res, TOO_MANY_READS)) return;
+        if (url.pathname === "/console/data") {
+          const data = await loadConsoleData({ kind: "all", limit: OPERATOR_CONSOLE_ROWS }, new Map(), now());
+          res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+          res.end(JSON.stringify(data));
+          return;
+        }
+        const page = renderConsolePage("operator", newStyleNonce());
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Content-Security-Policy": page.policy });
+        res.end(page.html);
         return;
       }
 
