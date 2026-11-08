@@ -3534,3 +3534,23 @@ put back.
 for the console's data layer, 6 for the console routes and page. One existing test's counts changed: "every disabled button
 says why" now finds 4 disabled buttons before connecting and 3 after, not 3 and 2, because step 8's retry is disabled until
 the mandate is revoked, and it says why. Nothing weakened or removed. Every check ran with `TSX_DISABLE_CACHE=1`.
+
+### Phase P16 · 2026-11-08 · review fix: a trace link opened the console at the top
+
+A reviewer opened the console from step 8's "See the revocation in your ledger console" link. The grid was filtered to the
+right trace ("1 of 59 rows"), but the page stayed at the top: the chain verdict and a spend chart for another mandate, with the
+revocation row about 1000px further down and nothing selected. It looked like the link went nowhere. Every trace page's "See
+this trace in the ledger console" link did the same. Clicking a chart bar already scrolled to the grid; the `#trace=` path never
+did.
+
+**Fix (`32b99f0`).** When the console opens on `#trace=<id>`, it now selects the first matching row, which opens its hash check,
+keeps that row in view and scrolls the grid to the top of the window. For a revocation trace that row is the `mandate_revoked`
+row itself, since that trace holds only that one row.
+
+**Test.** `apps/receipt-ui/test/console-client.test.ts` is new. It runs the real `console.client.js` in a bare Node context with a
+stand-in page and grid, so it checks what the script does, not what its text says. It failed first (the grid was never
+scrolled), then passed. It also checks that opening without a trace leaves the page alone, and that a trace with no rows selects
+nothing.
+
+**Tests.** 786, all passing, up from 783. Nothing weakened or removed. `packages/policy` untouched. Every check ran with
+`TSX_DISABLE_CACHE=1`.
