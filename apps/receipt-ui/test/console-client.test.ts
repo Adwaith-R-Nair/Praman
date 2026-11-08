@@ -121,6 +121,14 @@ describe("the console opened from a trace link", () => {
   });
 });
 
+describe("the spend chart's time axis", () => {
+  it("names UTC and formats in it, like the grid", () => {
+    const source = readFileSync(new URL("../src/console/console.client.js", import.meta.url), "utf8");
+    expect(source).toContain('title: { text: "Time (UTC)"');
+    expect(source).toContain("new Date(p.value).toISOString().slice(11, 16)");
+  });
+});
+
 describe("the console with no session", () => {
   it("asks the server for nothing and says what to do", async () => {
     dataSrc = "";

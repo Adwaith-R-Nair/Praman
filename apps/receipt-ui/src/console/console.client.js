@@ -318,7 +318,8 @@
       },
     ];
     options.axes = {
-      x: { type: "time", position: "bottom", label: { color: INK.muted } },
+      // The grid and tooltip read UTC, so the axis does too rather than the browser's zone.
+      x: { type: "time", position: "bottom", title: { text: "Time (UTC)", color: INK.muted }, label: { color: INK.muted, formatter: function (p) { return new Date(p.value).toISOString().slice(11, 16); } } },
       y: {
         type: "number",
         position: "left",
