@@ -39,10 +39,28 @@ for (const dir of PROTECTED_DIRS) {
   }
 }
 
+/**
+ * The other direction. Only a person starts a refund (D-66): an operator with
+ * `pnpm refund`, or a demo visitor on their own trace page. So nothing a model drives,
+ * the agent, its providers or the merchant tool server, may name the refund path.
+ */
+const AGENT_DIRS = ["apps/buyer-agent/src", "packages/agent-core/src", "apps/merchant-mcp/src"];
+const REFUND_PATTERNS: readonly RegExp[] = [/\brefundOrder\b/, /\.refund\s*\??\.?\s*\(/, /\/refund\b/, /\breconcileRefund\b/];
+
+for (const dir of AGENT_DIRS) {
+  for (const file of walk(join(ROOT, dir))) {
+    const src = readFileSync(file, "utf8");
+    for (const pattern of REFUND_PATTERNS) {
+      if (pattern.test(src)) violations.push(`${file.replace(ROOT, "")}: names the refund path (${pattern.source})`);
+    }
+  }
+}
+
 if (violations.length > 0) {
-  console.error("Import-boundary violation — a protected package imports a forbidden module:");
+  console.error("Import-boundary violation — a protected package imports a forbidden module, or agent code names the refund path:");
   for (const v of violations) console.error(`  - ${v}`);
   process.exit(1);
 }
 
 console.log(`Import boundary OK: ${PROTECTED_DIRS.join(", ")} import none of ${FORBIDDEN.join(", ")}.`);
+console.log(`Refund boundary OK: ${AGENT_DIRS.join(", ")} never name the refund path.`);
