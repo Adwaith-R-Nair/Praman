@@ -251,6 +251,18 @@ describe("a cross-site start", () => {
   });
 });
 
+describe("the session's own trace page", () => {
+  it("is limited like the public trace page", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    await v.post("/demo/approve/first");
+    const answers = [];
+    for (let i = 0; i < 65; i += 1) answers.push((await v.get("/demo/r/first")).status);
+    expect(answers.filter((s) => s === 200)).toHaveLength(60);
+    expect(answers.at(-1)).toBe(429);
+  });
+});
+
 describe("the fooled cart", () => {
   it("shows the items, their prices and the category refused, as the front page does", async () => {
     const v = visitor();

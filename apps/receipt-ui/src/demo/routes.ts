@@ -78,6 +78,8 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
   const presses = new RateLimiter(LIMITS.postsPerSession.limit, LIMITS.postsPerSession.windowMs);
   // Each console load walks the whole chain, so it is limited per session like a press.
   const consoleLoads = new RateLimiter(LIMITS.postsPerSession.limit, LIMITS.postsPerSession.windowMs);
+  // The same allowance as the public trace page, per session rather than per address.
+  const traceLoads = new RateLimiter(LIMITS.publicPerIp.limit, LIMITS.publicPerIp.windowMs);
 
   const send = (res: ServerResponse, status: number, html: string, extra: Record<string, string> = {}) => {
     res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", ...SECURITY_HEADERS, ...extra });
@@ -259,6 +261,11 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       // The visitor's own view of a purchase step's trace: the public trace page, plus
       // the refund control for this session's purchase. The path names a step, never a trace.
       if (method === "GET" && verb === "r" && name !== undefined && isPurchase(name)) {
+        if (!traceLoads.take(session.ref, now)) {
+          res.writeHead(429, { "Content-Type": "text/plain; charset=utf-8", "Retry-After": traceLoads.retryAfterSeconds(session.ref, now).toString(), ...SECURITY_HEADERS });
+          res.end("Too many requests for this trace in the last minute. Wait a minute and try again.");
+          return;
+        }
         const record = session.beats.get(name);
         if (record === undefined || record.traceId === null) {
           redirect(res, "/demo");
