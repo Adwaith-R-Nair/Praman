@@ -8,6 +8,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e": "playwright test -c e2e/playwright.local.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify-ledger": "tsx scripts/verify-ledger.ts",
     "keygen": "tsx scripts/keygen.ts",
@@ -41,6 +42,7 @@
     }
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
     "@types/node": "^26.4.0",
     "@types/pg": "^8.23.1",
     "dotenv": "^17.4.2",

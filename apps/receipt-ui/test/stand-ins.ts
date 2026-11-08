@@ -44,6 +44,9 @@ interface FakeOrder {
 
 /** PayPal as seen on 2026-11-08: a saved-method charge is captured on creation; a checkout order waits for the buyer. */
 export class FakePayPal implements SavedMethodCharger, VaultApi {
+  /** Where connecting sends the visitor. The browser suite replaces PayPal's address with a local page. */
+  constructor(private readonly connectApproveUrl = "https://www.sandbox.paypal.com/agreements/approve") {}
+
   readonly rail = "paypal";
   readonly charges: { req: CreateOrderRequest; vaultId: string }[] = [];
   readonly checkouts: CreateOrderRequest[] = [];
@@ -113,7 +116,7 @@ export class FakePayPal implements SavedMethodCharger, VaultApi {
     return done;
   }
   async createSetupToken(): Promise<VaultResult<SetupToken>> {
-    return { ok: true, value: { id: SETUP_TOKEN, approveUrl: `https://www.sandbox.paypal.com/agreements/approve?approval_session_id=${SETUP_TOKEN}` } };
+    return { ok: true, value: { id: SETUP_TOKEN, approveUrl: `${this.connectApproveUrl}?approval_session_id=${SETUP_TOKEN}` } };
   }
   async createPaymentToken(setupTokenId: string): Promise<VaultResult<{ readonly id: string }>> {
     return setupTokenId === SETUP_TOKEN ? { ok: true, value: { id: PAYMENT_TOKEN } } : { ok: false, code: "INVALID_RESOURCE_ID" };
