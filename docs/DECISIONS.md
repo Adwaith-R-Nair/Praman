@@ -1251,6 +1251,8 @@ Status: the reconciler now reads a capture record's order by id, and a capture r
 
 Status: `ORDER_ALREADY_CAPTURED` has now been seen live, and `paypal-exec` read the order back and reported the real capture. Two of the three questions under Limits are answered: a repeated capture key returns the same capture, and a key refused with `ORDER_NOT_APPROVED` captures normally after approval. The third, a repeated create after capture, is still untested. See D-49.
 
+Status: refunds are now modelled, by D-66. A capture PayPal reports as `REFUNDED` or `PARTIALLY_REFUNDED` still reads as `captured` here, which stays right: the payment happened. The refund is on its own ledger rows.
+
 An implementer's decisions for the builder to check. The `Executor` contract gives a rail three ways to answer, and getting one
 wrong has a price in money. A false `failed` frees budget for an order that exists. A false "created" sends a buyer to pay
 something Praman can't vouch for. So each answer from PayPal is sorted once, in `client.ts`.
@@ -2490,3 +2492,165 @@ only thing that changed is the revocation, and the intent goes through `runInten
 
 **Rejected: a revoke route that takes a mandate id.** The session's own mandate is the only one a visitor may revoke, so the
 route names none.
+
+### D-66 · Only a person refunds, through the same outbox as any money action · Accepted
+
+The builder set the requirements on 2026-11-08: refunds through PayPal's Payments API, started only by a person, through the
+same two-phase outbox as every money action, with a derived `PayPal-Request-Id`, the outcome appended and nothing rewritten, and a
+full refund only unless partial is trivial and safe. The details below are an implementer's decisions for the builder to check.
+
+**Decision: `refundOrder` in `packages/control-plane` refunds the one captured payment on a trace, in full.** It follows
+`captureOrder`'s shape (D-22, D-40):
+
+1. **Before T1.** Find the one captured order on the trace, from the intent rows, the order records and the ledger's outcome rows.
+   Check that this process has a rail that can refund it.
+2. **T1, under the mandate lock.** Look again. If the ledger already has a refund that isn't a failure, answer with it and call
+   nothing. If a refund record is still pending, answer that it is open. Otherwise commit a pending `refund` record and one
+   `refund_requested` row, whose actor is the person who asked.
+3. **The call, outside any transaction.** `POST /v2/payments/captures/{capture_id}/refund`, with the captured amount stated and the
+   refund key as `PayPal-Request-Id`.
+4. **T2, under the lock.** If the record is still pending, append one `refund_outcome` and settle the record.
+
+| What PayPal answers | `refund_outcome.status` | Refund record |
+|---|---|---|
+| 201 or 200, `COMPLETED`, the money asked for | `refunded` | succeeded |
+| `PENDING` | `pending` | stays pending, so the reconciler follows it up |
+| `CANCELLED`, `FAILED`, or a named 4xx such as `CAPTURE_FULLY_REFUNDED` | `failed` | failed; a later request may try again |
+| a refund of other money or currency | `mismatch`, with what the rail said in `rail_` fields | succeeded, never sent again |
+| no answer, a 5xx or 409, an unreadable body, a link naming another capture | nothing | stays pending |
+
+Each part answers a question:
+
+- **Who can start one?** Only `pnpm refund <trace_id>`, recorded as `operator`, and `POST /demo/refund/<step>`, recorded as
+  `demo_visitor`. The demo route names a step of the visitor's own session, never a trace, and the lookup is scoped to that
+  session's mandate, the same way every other demo route works (D-51). The buyer agent's tools are reading the catalog and proposing
+  a cart, and a test pins that list. `pnpm lint:boundary` now fails if the agent, its model providers or the merchant tool server
+  name `refundOrder`, `reconcileRefund` or a refund call.
+- **Where does the key come from?** `refundRecordKey(orderKey, captureId, attempt)`: `sha256("refund|" + orderKey + "|" + captureId)`
+  for the first attempt, with `"|" + n` after a definite refusal, as capture keys do (D-40). Derived, never random, never supplied.
+- **Why is the mandate not re-checked?** A refund is not the agent spending. It can't be started by an agent, it sends money back to
+  the person the mandate protects, and a revoked or expired mandate is no reason to keep their money. A test refunds after
+  revocation. `packages/policy` is untouched and `pnpm lint:policy-freeze` passes.
+- **Why no reason code for a refusal?** Nothing here is a policy decision. "Nothing on this trace was paid" is a fact about the
+  ledger. `refundOrder` returns `CANNOT_REFUND` with a closed list of five reasons and a fixed sentence, writes no row, and calls
+  nothing. Reason codes stay what Praman decides about an agent's purchase (invariant 8).
+- **Why new event types and not `outcome`?** Every reader of `outcome` treats its last row as where the order stands: the trace
+  page's headline, the dispute bundle's `execution`, the release sweep, settlement matching. A refund row there would make each of
+  them reason about refunds. `refund_requested` and `refund_outcome` are read only by the code that means to, and both carry the
+  order's `idempotency_key` and `order_id`, like every capture row (D-30, D-34), with the refund's own key as `refund_key`.
+- **Why full only?** A partial refund needs an amount, which needs an input on a page whose rule is that no request carries a
+  value (D-51), and a second refund on one capture needs its own key scheme and a running total to check against. Neither is
+  trivial, so neither is built. The amount sent is always the one the ledger recorded as captured.
+- **Why is a mismatch order refused?** Its rail once answered about other money (D-33). Which amount to give back is a question for
+  a person with PayPal's dashboard open.
+
+**The reconciler.** `reconcilePending` now settles `refund` records too, by sending the same request again under the record's own
+key. D-68 shows PayPal answers that with the refund it already made. A refund PayPal still calls `PENDING` writes nothing new and
+stays open. The demo's in-server sweep (D-56) runs the same function, so it settles refunds on the host.
+
+**What every reader shows.** The trace page has a Refund section that says what happened, who asked, and that the budget still
+counts the purchase. The demo's own view of a purchase step, `/demo/r/<step>`, is that page plus a refund button while no refund is
+done or under way; the public page at `/r/<id>` never has a button. The dispute bundle gains `refund`, with `budget_returned: false`
+always. The console shows the rows with a refund id column, and its rails chart counts a captured order whose money went back as
+refunded.
+
+**Rejected: a refund tool for the agent, or the PayPal Agent Toolkit's.** That is the money-moving tool Praman exists to stand in
+front of, pointed the other way. Moving money back still moves money.
+
+**Rejected: refunding through the order instead of the capture.** PayPal's Orders API has no refund. The capture id is on the
+ledger already, on the `captured` row.
+
+**Limits.** Razorpay has no refund here: it stops at order creation in this repo, so its executor has no `refund` and a refund of a
+Razorpay trace is `rail_cannot_refund`. PayPal's `PAYMENT.CAPTURE.REFUNDED` webhook is still ignored, so a refund made in PayPal's
+dashboard doesn't reach the ledger; Praman's own refund of that capture then gets `CAPTURE_FULLY_REFUNDED`, recorded as failed,
+which is true of that call. A refund PayPal keeps at `PENDING` for good stays open for good, and holds nothing, since refunds
+never touch budget (D-67).
+
+### D-67 · A refund gives no budget back · Accepted
+
+The builder asked on 2026-11-08 for this to be decided, recorded and tested, with two fixed points: a refund that is pending or
+unknown never frees budget, and no buy, refund, buy loop can take an agent past its mandate. The choice is an implementer's for the
+builder to check.
+
+**Decision: a refund changes nothing in `deriveState`, whatever its status.** Spend, velocity, merchant trust and seen keys are the
+same before and after. `deriveState` names both refund event types and skips them, so this reads as a decision in the code, not
+as the default branch.
+
+In plain words: the mandate's budget is the most that may go out under this one signature. Money coming back to the buyer doesn't
+raise that ceiling. A person who wants the agent to spend more signs a new mandate, which is one click in the demo and one
+`pnpm issue-mandate` locally.
+
+**Why this and not net spend.** Counting refunds against spend would mean:
+
+- A person refunding a wrong purchase silently hands the agent that much new room to spend. That isn't what they asked for.
+- The loop the builder named becomes possible: an agent buys, a person refunds, the agent buys again, and the total that went out
+  under one mandate is no longer bounded by it. Only a person can refund (D-66), so the loop needs one, but the mandate's job is to
+  be the bound without relying on that.
+- Only a completed refund could ever count, so the rule would need a careful distinction between `refunded`, `pending`, `mismatch`
+  and an open request. Not counting refunds at all needs none, and the two fixed points hold by construction.
+
+**Velocity counts the purchase too.** It happened, and the rate limit is about how often the agent buys.
+
+**What a person sees.** The trace page, the demo page and `pnpm refund` all say that the budget still counts a refunded purchase.
+The console's spend line doesn't move at a refund, and the bundle says `budget_returned: false`.
+
+**Tests.** `deriveState` gives the same state before and after a `refunded`, `pending`, `failed` or `mismatch` refund, and after a
+request with no answer. A control-plane test buys under a mandate with room for one more purchase, refunds it, and the next
+purchase is refused `MANDATE_BUDGET_EXHAUSTED`. A pending refund leaves state unchanged before and after the reconciler records it
+as done.
+
+**Rejected: freeing budget on a completed refund.** It is the net-spend rule above, with its loop.
+
+**Rejected: a separate refund allowance on the mandate.** A new limit is a new mandate field and a policy change, and
+`packages/policy` is frozen (D-31, D-43).
+
+**Consequence.** On a long-lived mandate with many refunds, the budget runs out faster than the money that actually left. That is
+the cautious direction. If the builder wants net spend later, it is one change in `deriveState`, and D-43's point applies: it would
+change what `evaluate()` is told without changing `evaluate()`.
+
+### D-68 · What a live PayPal refund does in the sandbox · Accepted
+
+An implementer's record for the builder to check, from 2026-11-08, in the style of D-26 and D-49. Two kinds of run: a throwaway
+script outside the repo calling PayPal directly on a capture named in D-49, and `pnpm refund` through Praman's own code on two
+captured demo purchases in the local ledger.
+
+**On D-49's $2.00 capture `68C05697TX7382946`, order `0G353546C23905239`.**
+
+| Request | Observed |
+|---|---|
+| GET the capture first | 200, `COMPLETED`, $2.00 |
+| Refund $2.00 with key A | **201**, refund `7DA46548R94559222`, `COMPLETED`, $2.00. Body keys: `id`, `status`, `amount`, `seller_payable_breakdown`, `create_time`, `update_time`, `links` (`self`, and `up` naming the capture) |
+| The same again, key A | **200, the same refund.** No second refund |
+| Key A with $1.00 | **200 and the $2.00 refund, with no error.** D-26's silent reuse again |
+| A new key B, $2.00 | 422 `CAPTURE_FULLY_REFUNDED` |
+| No key, empty body | 422 `CAPTURE_FULLY_REFUNDED` |
+| GET the capture after | 200, `REFUNDED` |
+| GET the refund | 200, `COMPLETED`, $2.00, now with `payer` |
+| GET the order | `COMPLETED`, one capture `REFUNDED`, and a `refunds` list with the one refund |
+
+**Through Praman, on the local ledger.** `pnpm refund trc_demo_7e7de65ab5a2_second_5`, a $4.50 coffee paid with no buyer present
+in P14, refunded as `2JV473619H1766245`. Run again, it answered from the ledger with the same refund and called nothing. `pnpm
+refund trc_demo_fe70eb7e4119_large_8`, a $32.00 team lunch the buyer paid at PayPal's checkout and Praman captured, refunded as
+`90W33293UC2395338`. Each trace gained one `refund_requested` row by `operator` and one `refund_outcome` row, `refunded`. The two
+mandates' `spent_minor` still count both purchases (1700 and 4900 minor units). `pnpm verify-ledger` passed over 1249 entries.
+
+**What each result means for the code.**
+
+1. **The reconciler's resend is safe.** The same key returns the same refund with 200, so a refund whose answer was lost is sent
+   again under its key and gives one refund. D-66's reconciler relies on this.
+2. **`acceptRefund` is needed.** A reused key asking for other money gets the old refund with no error. Praman's keys come from the
+   order key and capture id, and the amount is always the captured one, so this should be unreachable; it is checked because it
+   fails silently if it is ever reached.
+3. **PayPal itself refuses a second full refund**, with or without a key. So even a bug that sent a second request couldn't return
+   the money twice, and Praman's own check stops it before a call.
+4. **A refunded capture still reads as captured through `findOrder`.** D-38 maps a capture's `REFUNDED` to `captured`, since the
+   payment happened. That is right for the release sweep, which must never release an order whose money moved, and nothing else
+   reads it for refunds.
+5. **The response names its capture only in the `up` link,** so `paypal-exec` checks that link when it is there and treats an answer
+   about another capture as unknown.
+
+**Not seen.** A refund at `PENDING`, `CANCELLED` or `FAILED`: every refund here completed in its first answer, so those rows of
+D-66's table rest on PayPal's documented statuses. A refund webhook. How long PayPal keeps a refund key.
+
+**Limits.** One app on one sandbox account, on one day, and each row was run once. The test fixture `liveRefund` in
+`packages/paypal-exec/test/documented-shapes.ts` is this run's answer, trimmed to the fields `paypal-exec` reads.
