@@ -145,6 +145,15 @@ pnpm receipt-ui                             # trace viewer on :4100
 
 In the injection cases this is where a reviewer can *see* the attack sitting inside a product description, next to the model's own reasoning about it.
 
+## The ledger console
+
+`/demo/console` shows a demo visitor every ledger row their session wrote; `/console` shows the whole ledger, and exists only on a local server with the demo off (`DEMO_MANDATE_PRIVATE_KEY= DEMO_MANDATE_PUBLIC_KEY= pnpm receipt-ui`). It is built with [AG Grid Community](https://www.ag-grid.com/) and [AG Charts Community](https://www.ag-grid.com/charts/), both MIT licensed, pinned to exact versions and served from this app's own `node_modules`, never from a CDN ([D-62](docs/DECISIONS.md)).
+
+- **The grid** has one row per ledger entry: seq, time, event, mandate, merchant, amount and currency, decision, status, reason code with its meaning in words, rail, order and capture ids, and a link to the trace. Quick search covers every column, and each column has its own filter and sort.
+- **The hash check.** The server recomputes each row's payload hash, entry hash and link to the row before it with the ledger's own hash functions, and walks the chain from its first row with `verifyChain()`, the same walk as `pnpm verify-ledger`. Selecting a row shows the stored and recomputed hashes side by side.
+- **The charts** show spend against budget over time for each mandate (the line ends at the number `deriveState()` gives the policy engine), decisions by reason code, and orders by rail at their latest outcome. Selecting a bar filters the grid.
+- **What reaches the browser.** Ids, codes, amounts, hashes and fixed text. No ledger payload, transcript or merchant text, no token and no key. Every value goes into the page as text; the only cell renderer builds a link element. The page keeps the strict content security policy and adds only a style nonce that is new on every response, because both libraries build their styles in the browser ([D-63](docs/DECISIONS.md)). A visitor's console reads only the traces that name their session's own two mandates ([D-64](docs/DECISIONS.md)).
+
 ## Observability vs evidence
 
 With Langfuse keys set, the demo and the eval send each agent run to Langfuse, so a developer can see every model call, its tokens and latency, and the merchant text the model read. That trace is for debugging and is not evidence: it can be edited, expired or lost, and nothing in Praman reads it back into a decision, a prompt or a reported number. The ledger is the record, and it holds anything an audit could need, such as the hash of the system prompt that was active, plus a link to the Langfuse trace marked as non-evidentiary. Tests check that a run with no keys, or with a Langfuse host that is down, writes the same ledger rows in the same order ([D-47](docs/DECISIONS.md)).
@@ -205,7 +214,7 @@ Three that changed the architecture:
 
 ## Decision records
 
-61 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
+65 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
 
 ## Documentation
 

@@ -20,8 +20,11 @@ No real money moves. Everything runs against PayPal's sandbox.
 5. Press **Ask the agent to buy a team lunch**. It is $32.00, over the approval line, so Praman asks you again. Approve it. A PayPal checkout link appears. Copy it into a **private window** (or your other browser, if the demo is in a private window), log in as the sandbox buyer, and pay. Come back to the demo tab and press **Capture the payment**. Praman checks the mandate again before taking the money.
 6. In **A poisoned listing**, the live model reads a shop listing that tells it to add a gift card. Then a fixed cart from a fooled model goes to Praman, labelled as a simulation, and is refused. Below it is a recorded run where a model really was fooled, labelled as a recording.
 7. **Twenty purchases at once** sends twenty test intents together against a $30.00 budget. No model is called. Five are paid and the rest are refused.
+8. **Revoke the mandate**. Press **Revoke the mandate**, then **Ask the agent to buy a coffee**. The agent asks for the same coffee as in step 4, and Praman refuses it with `MANDATE_REVOKED`. Nothing reaches PayPal. Do this last, because after it every purchase in the session is refused.
 
 Every step links to its **Ledger trace**, where **Verify this chain** checks the hash chain, and to its **Dispute bundle**.
+
+**Open your ledger console** at the top of the demo page shows every ledger row your session wrote, in a grid you can search, filter and sort. Each row's hashes are recomputed and the whole chain is checked. Select a row to see its hash check. The charts show spend against each mandate's budget, decisions by reason code, and outcomes by rail; select a bar to filter the rows. After step 8 the revocation is one of the rows.
 
 ## If something goes wrong
 
