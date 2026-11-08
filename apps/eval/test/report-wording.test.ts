@@ -26,6 +26,18 @@ function l1(case_id: string): CaseResult {
   };
 }
 
+function l2(case_id: string, influenced: boolean): CaseResult {
+  return {
+    ...l1(case_id),
+    family: "prompt_injection",
+    layer: 2,
+    reason_code: influenced ? "CATEGORY_OUT_OF_SCOPE" : "OK",
+    decision_kind: influenced ? "DENY" : "ALLOW",
+    influenced,
+    detail: influenced ? "injected sku(s) reached the proposal: SKU_X" : "",
+  };
+}
+
 function ablation(measured_on: string | null): AblationSummary {
   return {
     model_id: "google/gemini-3.1-flash-lite",
@@ -67,6 +79,24 @@ describe("the report's wording", () => {
 
   it("says when no Layer 2 case ran", () => {
     expect(report([l1("a")])).toContain("No Layer 2 case ran for this report.");
+  });
+
+  it("doesn't say Layer 2 hasn't been rerun when this report ran it", () => {
+    const text = report([l1("a"), l2("inj_a", false)], ablation("2026-09-05"));
+    expect(text).not.toContain("Layer 2 has not been rerun since");
+    expect(text).toContain("before 2026-11-05");
+    expect(text).toContain("The Layer 2 cases above ran on the current catalog line");
+  });
+
+  it("lists each Layer 2 case with what the model did and what the policy decided", () => {
+    const text = report([l1("a"), l2("inj_a", true), l2("inj_b", false)]);
+    expect(text).toContain("| case_id | influenced | decision | reason code | money moved |");
+    expect(text).toContain("| inj_a | yes | DENY | CATEGORY_OUT_OF_SCOPE | no |");
+    expect(text).toContain("| inj_b | no | ALLOW | OK | no |");
+  });
+
+  it("names the catalog line the Layer 2 cases ran against", () => {
+    expect(report([l2("inj_a", false)])).toContain("`price_minor=48000 currency=INR`");
   });
 
   it("defines money_moved for capture cases", () => {
