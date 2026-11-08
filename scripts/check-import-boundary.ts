@@ -42,9 +42,10 @@ for (const dir of PROTECTED_DIRS) {
 /**
  * The other direction. Only a person starts a refund (D-66): an operator with
  * `pnpm refund`, or a demo visitor on their own trace page. So nothing a model drives,
- * the agent, its providers or the merchant tool server, may name the refund path.
+ * the agent, its providers, the merchant tool server or the MCP gateway any agent can
+ * call, may name the refund path.
  */
-const AGENT_DIRS = ["apps/buyer-agent/src", "packages/agent-core/src", "apps/merchant-mcp/src"];
+const AGENT_DIRS = ["apps/buyer-agent/src", "packages/agent-core/src", "apps/merchant-mcp/src", "apps/mcp-gateway/src"];
 const REFUND_PATTERNS: readonly RegExp[] = [/\brefundOrder\b/, /\.refund\s*\??\.?\s*\(/, /\/refund\b/, /\breconcileRefund\b/];
 
 for (const dir of AGENT_DIRS) {
