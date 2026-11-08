@@ -10,6 +10,29 @@ Praman is a control plane for agent-initiated payments on PayPal. It sits betwee
 
 Adwaith R Nair · Entered in the PayPal AI Hackathon · Started at the Razorpay AI Buildathon 2026 (Track 01, AI Growth & Agentic Commerce). See [History](#history).
 
+| Every decision on the ledger, in AG Grid and AG Charts | A fooled model's cart, refused |
+|---|---|
+| ![Ledger console with a verified chain, spend against budget, decisions by reason code and ledger rows](docs/screenshots/demo-console-desktop.png) | ![Trace page showing a cart refused with CATEGORY_OUT_OF_SCOPE and its hash-chained ledger entries](docs/screenshots/demo-refused-trace-desktop.png) |
+
+<details>
+<summary>The whole demo story, all eight steps</summary>
+
+![The demo page from the signed mandate through to revocation](docs/screenshots/demo-story-desktop.png)
+
+</details>
+
+## What's new since 1 Oct 2026
+
+The Razorpay Buildathon entry ended on 5 Sep 2026 with one rail and rupees only. Since 1 Oct:
+
+- **PayPal as a second rail:** Orders v2 create and capture, Vault v3 saved accounts charged with no buyer present, full refunds, and webhooks verified with PayPal. Dollars and rupees both come from the signed mandate.
+- **A hosted public demo on Render:** a web service defined by the [`render.yaml`](render.yaml) Blueprint on the free plan, with Postgres on Neon. Eight steps on the PayPal sandbox, with per-address, per-session and per-day limits. See [`docs/DEPLOY.md`](docs/DEPLOY.md).
+- **A ledger console built with AG Grid and AG Charts Community:** search and filter every ledger row, with a server-side hash check on each. See [The ledger console](#the-ledger-console).
+- **An MCP gateway on a real Channel3 catalog:** any MCP client can shop within one signed mandate. It runs locally. See [MCP gateway](#mcp-gateway-any-agent-shops-within-a-mandate).
+- **Dispute bundles:** a public copy with limits withheld, and a full copy for the owner.
+
+[History](#history) has the detail and the links to compare the code. Trying it takes about five minutes: [`docs/DEMO_INSTRUCTIONS.md`](docs/DEMO_INSTRUCTIONS.md).
+
 ---
 
 ## The problem
@@ -103,6 +126,8 @@ Three things a reviewer should weigh, stated here rather than buried:
 **The ablation is n=21 per arm**, on one model at one temperature, against seven attacks written by the same author as the defence. The delimiter and the prompt instructions were removed together, so this does not separate their individual contributions. It is an experiment, not a benchmark.
 
 ## Architecture
+
+![Architecture: the agent proposes an intent, evaluate() decides, the two-phase outbox calls PayPal, and webhooks and outcomes land on the ledger behind the console](docs/submission/architecture.svg)
 
 ```
 [human] --signs mandate--> [agent] <--MCP--> [merchant catalog · UNTRUSTED]
