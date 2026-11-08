@@ -2853,3 +2853,31 @@ refuse a delimiter in `custom_id`. `apps/merchant-mcp` returns raw catalog text 
 The gateway prints SKU and category outside the wrapper; for Channel3 rows both are restricted to plain slugs
 (`skuFor`, `categoryFor`). The receipt page and dispute bundle parse the block with a lazy match up to the closing tag,
 which now can only be the real one.
+
+### D-77 · The site's front page is a fixed page at /, and the trace index moves to /traces · Accepted
+
+An implementer's decision, made on 2026-11-08 in the final polish task. The builder had asked for a front page at `/`
+that makes the case in seconds and leads into the demo; where the trace index goes was left to the implementer.
+
+**Context.** `/` was the index of recent traces. It never lists demo visitors' traces, so on the hosted database it
+was always empty, and P12 made it redirect to `/demo`. A judge opening the public address landed in the middle of a
+demo with no word on what Praman is, who it is for, or why an agent's spending needs a gate.
+
+**Decision.** `/` is a front page rendered once at start from fixed text and the demo's own config: the problem, who it
+is for, the steps every purchase goes through, and one real refusal from step 6 of the demo, with two buttons into
+`/demo`. It reads no database, runs no script and takes no input, so it answers while Neon is asleep and is not on the
+per-address read limit. The index moves to `/traces`, unchanged, and with nothing to list it says so and links to the
+demo instead of redirecting. Every link to the index (a non-demo trace's top link, the operator console's back link,
+the Postman collection) now points at `/traces`. A browser that asks for an unknown path, or hits a rate limit or a server
+error, gets a small page linking to the demo and the front page; a client that doesn't ask for HTML still gets the
+plain text it got before.
+
+**Rejected.** Keeping the index at `/` and putting the case at the top of it: on the hosted server the list below would
+always be empty. Making `/demo` itself the front page: it already carries eight steps and its own start page, and
+someone arriving from a trace link should land back in their story, not on a pitch. Reading live numbers (traces
+recorded, chain length) onto the front page: it would wake the database on every visit for a figure a judge can see
+in the console.
+
+**Cost.** Anyone who bookmarked `/` for the trace list now has to go to `/traces`. The front page's figures come from
+`apps/receipt-ui/src/demo/config.ts`, so it changes only when the demo does; its copy describing the steps has to be
+kept true by hand.

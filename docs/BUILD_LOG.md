@@ -3883,3 +3883,59 @@ now asserts the transcript holds the neutralised `‹script›` and no raw `<scr
 are unchanged. Done-check after it, with `set -euo pipefail`: `pnpm test` 55 files and 775 tests passed, typecheck,
 `lint:boundary`, `lint:policy-freeze`, `eval:check-coverage` and `lint:casts` clean, `pnpm eval --layer1 --dev` 88/88
 with `eval/` restored.
+
+### Phase P20 · 2026-11-08 · final polish: a front page, and the rough edges a first visitor hits
+
+Not a plan task: the final pass before the submission, done as a first-time visitor would see the site. `packages/policy`
+is untouched and `pnpm lint:policy-freeze` passes. No money-path code changed.
+
+**What a visitor sees now.**
+
+- **A front page at `/` (`f233d60`, D-77).** It says the problem in its first line: an AI agent with a payment method can
+  be talked into spending. Then who it is for (merchants and platforms that let agents pay, and the people who give an
+  agent spending authority), the four things that happen to every purchase, and the demo's own mandate in plain words.
+  Its one loud element is a real refusal from step 6 of the demo, laid out the way the demo lays out every purchase: the
+  poisoned listing line, the fooled cart with the $100.00 gift card, Praman's cell raised and stamped **Refused** with
+  `CATEGORY_OUT_OF_SCOPE`, and "Nothing charged". Two buttons go to `/demo`. It is fixed text, so it never wakes the
+  database. Every figure on it comes from the demo's config, so the page can't drift from the demo. Screenshots:
+  `docs/screenshots/landing-desktop.png` and `landing-mobile.png`.
+- **The trace index moved to `/traces`.** On the hosted server it would always be empty, which is why `/` used to
+  redirect. With nothing to list it now says so and links to the demo. Links to it, and the Postman collection, follow it.
+- **Every demo page links back to the front page (`8617f5a`)**, with the Praman name at the top left. A judge who opens
+  `/demo` directly can find out what it is.
+- **Error pages a browser can use.** A wrong address, a rate limit or a server error now shows a short page with links to
+  the demo and the front page. A missing trace says so and links to the demo. Scripts and Postman still get plain text.
+- **The trace pages were grey (`683ac03`).** The "faint" paper grain drew at full strength, because `fill-opacity` on an
+  SVG rect does nothing once a filter replaces its fill. Every trace page looked dimmer than the demo. It is faint now.
+- **The empty console (`7c57370`).** A fresh session's console said "No Rows To Show" in the grid's own words and "Of the 0
+  rows below, 0 pass their own check". It now says to run a demo step, and that there are no rows yet.
+
+**Screenshots, and what I couldn't retake.** There was no screenshot script in the repo, although the recorded-run page
+said one made its image. `pnpm screenshots` (`9e0d614`) now runs the whole story in-process against the sandbox and the
+model and captures each page at 1280 and 390 px. I ran it, and the first purchase came back `PAYPAL_NOT_AUTHORIZED`
+(trace `trc_demo_93487eae0fcc_first_1`, $12.50, nothing charged): the saved PayPal payment token the earlier screenshot
+runs used is no longer valid at PayPal. Making a new one needs a person to approve at the sandbox buyer login, so the
+script now prints PayPal's link and waits for you. It also refuses to overwrite good screenshots when the first purchase
+fails, and I restored the ones that run had overwritten. `pnpm screenshots --front-only` needs neither PayPal nor a model,
+and its four images are committed (`6dfc8bd`): the front page and the demo's start page, both widths.
+
+**Not done, and needs you.** Run `pnpm screenshots` once and approve at PayPal when it asks. That retakes
+`demo-story-*`, `demo-no-buyer-trace-*`, and adds `demo-console-*` and `demo-refused-trace-*`. Until then
+`demo-story-desktop.png`, which `/demo/recorded` also serves, shows the older seven-step page without the top link, and the
+recorded-run alt text still describes seven steps to match it. Setting `PRAMAN_SAVED_PAYMENT_TOKEN_FILE` to a path
+outside the repo saves the token so later runs don't ask again.
+
+**Clean clone.** A fresh `git clone` of this branch into a scratch folder, with `.env` linked in, then `pnpm install
+--frozen-lockfile`, `pnpm --filter @praman/db generate`, `migrate:deploy` ("No pending migrations"), `pnpm typecheck`
+clean and `pnpm test` 63 files and 985 tests passed. Its `pnpm receipt-ui` answered `/` 200, `/demo` 200, `/traces` 200,
+`/healthz` 200 and `/nope` 404, and a started session showed all eight steps. What the README lacked was how to run the
+PayPal demo at all: it never named the PayPal and `DEMO_MANDATE_*` values or where to open it. It does now (`4429454`),
+below the README top, which the submission task rewrites. `docs/DEPLOY.md`'s smoke test expected the old redirect at `/`;
+it now expects the front page.
+
+**Tests.** 985, up from 975: the front page at `/` with no traces, only demo traces and other traces; that it names the
+problem and the audience and has no em dash; that it doesn't touch the database; `/traces` with and without traces; the
+HTML and plain-text 404s; demo pages linking to `/`; the empty console. Each failed before its fix. Three existing tests
+changed because the index moved: a non-demo trace's link now expects `/traces`, the catch-all 500 test asks `/traces`
+(the page that reads the database) instead of `/`, and the two root-redirect tests became tests of the front page and of
+`/traces`. Nothing was weakened or removed. Every check ran with `TSX_DISABLE_CACHE=1`.
