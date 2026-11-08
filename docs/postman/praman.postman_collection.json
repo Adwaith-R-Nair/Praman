@@ -1,0 +1,1641 @@
+{
+  "info": {
+    "name": "Praman",
+    "description": "Every public HTTP route of Praman's receipt server (`apps/receipt-ui`): the demo, trace pages, ledger verification, dispute bundles, the consoles, the health check and the PayPal webhook.\n\nPick an environment: **Praman local** for `pnpm receipt-ui` on port 4100, or **Praman hosted** for the deployed demo. Set `trace_id` before running the trace folder. No request carries a key: the server holds every PayPal and model credential, and the demo session is a cookie Postman keeps for you.\n\nEach request has tests for the status it should answer, so **Run collection** gives a pass or fail per route. The Demo folder calls the model and the PayPal sandbox.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /healthz",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/healthz",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            },
+            "description": "Liveness check. Answers `ok` as plain text and touches no database."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"body is ok\", () => pm.expect(pm.response.text()).to.eql(\"ok\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Demo",
+      "description": "The eight-step PayPal story a visitor clicks through at `/demo`, as HTTP calls. Run **Session** first: Start a session sets the cookie the rest need, and Postman keeps it.\n\nThe first, second and large purchases charge PayPal, so they need a PayPal sandbox account connected, which is a login at PayPal in a browser. Do those three in the browser at `/demo`. From Postman they answer with the notice that says what is missing, which `GET /demo` shows. The injection, fixture, concurrency, revoke and after revoke steps need no PayPal login and run fully from Postman. The injection and after revoke steps call the live model, so leave a few seconds between steps. On the hosted server, POSTs are limited per session and new sessions per address.",
+      "item": [
+        {
+          "name": "Session",
+          "item": [
+            {
+              "name": "GET /demo",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo"
+                  ]
+                },
+                "description": "The demo page. With no session it shows the start page. Answers 503 on a server where the demo isn't configured."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is one of 200, 503\", () => pm.expect(pm.response.code).to.be.oneOf([200, 503]));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "POST /demo/start",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/start",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "start"
+                  ]
+                },
+                "description": "Starts a demo session with two freshly signed mandates and sets the `praman_demo` cookie. Past the daily session cap it redirects to `/demo/recorded` instead (D-61).\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "GET /demo (with session)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo"
+                  ]
+                },
+                "description": "The demo page for this session: every step, its decision, reason code and ledger trace link."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                      "pm.test(\"answers HTML\", () => pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"text/html\"));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "POST /demo/connect",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/connect",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "connect"
+                  ]
+                },
+                "description": "Starts the PayPal vault flow so a purchase can be charged with no buyer present. The 303 goes to PayPal's sandbox approval page; finish it in a browser.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "GET /demo/connect/return",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/connect/return?approval_token_id={{approval_token_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "connect",
+                    "return"
+                  ],
+                  "query": [
+                    {
+                      "key": "approval_token_id",
+                      "value": "{{approval_token_id}}"
+                    }
+                  ]
+                },
+                "description": "Where PayPal sends the buyer after saving a payment method. Praman exchanges the token for a saved method held on the server. Opened by PayPal, not by hand."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "GET /demo/connect/cancel",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/connect/cancel",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "connect",
+                    "cancel"
+                  ]
+                },
+                "description": "Where PayPal sends the buyer who cancels saving a method. Nothing is saved."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "GET /demo/checkout/return",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/checkout/return",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "checkout",
+                    "return"
+                  ]
+                },
+                "description": "Where PayPal checkout sends a buyer who approved a payment. With a session it redirects to the demo; without one it explains what to do. It never captures by itself."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is one of 200, 303\", () => pm.expect(pm.response.code).to.be.oneOf([200, 303]));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "GET /demo/checkout/cancel",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/checkout/cancel",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "checkout",
+                    "cancel"
+                  ]
+                },
+                "description": "Where PayPal checkout sends a buyer who cancelled. Nothing is charged."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is one of 200, 303\", () => pm.expect(pm.response.code).to.be.oneOf([200, 303]));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            }
+          ]
+        },
+        {
+          "name": "Steps",
+          "item": [
+            {
+              "name": "POST /demo/step/first",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/step/first",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "step",
+                    "first"
+                  ]
+                },
+                "description": "The agent buys lunch at a merchant it has never used, so Praman answers STEP_UP and holds it for a person. Needs a PayPal account connected first.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/step/second",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/step/second",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "step",
+                    "second"
+                  ]
+                },
+                "description": "The agent buys a coffee at the same merchant. Under the approval threshold and with a saved PayPal method, Praman's ALLOW is the only thing between the agent and the charge.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/step/large",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/step/large",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "step",
+                    "large"
+                  ]
+                },
+                "description": "A team lunch over the approval threshold. Held for a person, then paid through PayPal checkout.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/step/injection",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/step/injection",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "step",
+                    "injection"
+                  ]
+                },
+                "description": "The agent shops at a merchant whose catalog text carries a prompt injection.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/step/fixture",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/step/fixture",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "step",
+                    "fixture"
+                  ]
+                },
+                "description": "Sends a recorded cart from a model that was fooled. Praman refuses it with a reason code, whatever the model said.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/step/concurrency",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/step/concurrency",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "step",
+                    "concurrency"
+                  ]
+                },
+                "description": "Twenty purchases race one $30.00 budget at the same moment. The per-mandate lock lets through only what the budget holds and refuses the rest with a reason code.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/step/revoke",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/step/revoke",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "step",
+                    "revoke"
+                  ]
+                },
+                "description": "The person revokes the mandate. Revocation is a ledger row.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/step/after_revoke",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/step/after_revoke",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "step",
+                    "after_revoke"
+                  ]
+                },
+                "description": "The agent tries again after the revoke and is refused MANDATE_REVOKED.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve, capture, refund",
+          "item": [
+            {
+              "name": "POST /demo/approve/first",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/approve/first",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "approve",
+                    "first"
+                  ]
+                },
+                "description": "A person approves the held `first` purchase. Only a person's approval turns a STEP_UP into a payment.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/reject/first",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/reject/first",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "reject",
+                    "first"
+                  ]
+                },
+                "description": "A person rejects the held `first` purchase. Nothing is charged, and the rejection is a ledger row.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/approve/second",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/approve/second",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "approve",
+                    "second"
+                  ]
+                },
+                "description": "A person approves the held `second` purchase. Only a person's approval turns a STEP_UP into a payment.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/reject/second",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/reject/second",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "reject",
+                    "second"
+                  ]
+                },
+                "description": "A person rejects the held `second` purchase. Nothing is charged, and the rejection is a ledger row.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/approve/large",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/approve/large",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "approve",
+                    "large"
+                  ]
+                },
+                "description": "A person approves the held `large` purchase. Only a person's approval turns a STEP_UP into a payment.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/reject/large",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/reject/large",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "reject",
+                    "large"
+                  ]
+                },
+                "description": "A person rejects the held `large` purchase. Nothing is charged, and the rejection is a ledger row.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/capture/first",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/capture/first",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "capture",
+                    "first"
+                  ]
+                },
+                "description": "Captures the `first` purchase after the buyer approved it at PayPal checkout.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/capture/second",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/capture/second",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "capture",
+                    "second"
+                  ]
+                },
+                "description": "Captures the `second` purchase after the buyer approved it at PayPal checkout.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/capture/large",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/capture/large",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "capture",
+                    "large"
+                  ]
+                },
+                "description": "Captures the `large` purchase after the buyer approved it at PayPal checkout.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/refund/first",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/refund/first",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "refund",
+                    "first"
+                  ]
+                },
+                "description": "Refunds the paid `first` purchase in full. Only a person on this page can do this; no agent tool reaches it (D-66). The budget is not given back (D-67).\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/refund/second",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/refund/second",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "refund",
+                    "second"
+                  ]
+                },
+                "description": "Refunds the paid `second` purchase in full. Only a person on this page can do this; no agent tool reaches it (D-66). The budget is not given back (D-67).\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "POST /demo/refund/large",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/refund/large",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "refund",
+                    "large"
+                  ]
+                },
+                "description": "Refunds the paid `large` purchase in full. Only a person on this page can do this; no agent tool reaches it (D-66). The budget is not given back (D-67).\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "GET /demo/r/first",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/r/first",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "r",
+                    "first"
+                  ]
+                },
+                "description": "This session's view of the `first` purchase trace, with the refund button while it is paid. Redirects to `/demo` until the step has a trace."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is one of 200, 303\", () => pm.expect(pm.response.code).to.be.oneOf([200, 303]));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "GET /demo/r/second",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/r/second",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "r",
+                    "second"
+                  ]
+                },
+                "description": "This session's view of the `second` purchase trace, with the refund button while it is paid. Redirects to `/demo` until the step has a trace."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is one of 200, 303\", () => pm.expect(pm.response.code).to.be.oneOf([200, 303]));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "GET /demo/r/large",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/r/large",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "r",
+                    "large"
+                  ]
+                },
+                "description": "This session's view of the `large` purchase trace, with the refund button while it is paid. Redirects to `/demo` until the step has a trace."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is one of 200, 303\", () => pm.expect(pm.response.code).to.be.oneOf([200, 303]));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            }
+          ]
+        },
+        {
+          "name": "Visitor console",
+          "item": [
+            {
+              "name": "GET /demo/console",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/console",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "console"
+                  ]
+                },
+                "description": "The ledger console scoped to this session's two mandates (D-64)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                      "pm.test(\"answers HTML\", () => pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"text/html\"));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "GET /demo/console/data",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/console/data",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "console",
+                    "data"
+                  ]
+                },
+                "description": "The rows behind `/demo/console`, as JSON. 401 without a session, 429 past the per-session load limit."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is one of 200, 401, 429\", () => pm.expect(pm.response.code).to.be.oneOf([200, 401, 429]));",
+                      "pm.test(\"answers JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Recording and static files, end",
+          "item": [
+            {
+              "name": "GET /demo/recorded",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/recorded",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "recorded"
+                  ]
+                },
+                "description": "The labelled recording of a full run, shown when the daily session cap is reached (D-61)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                      "pm.test(\"answers HTML\", () => pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"text/html\"));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "GET /demo/recorded-run.png",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/recorded-run.png",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "recorded-run.png"
+                  ]
+                },
+                "description": "The image used by the recorded run page."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "GET /demo/client.js",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/client.js",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "client.js"
+                  ]
+                },
+                "description": "The demo page's script."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "GET /demo/demo.css",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/demo.css",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "demo.css"
+                  ]
+                },
+                "description": "The demo page's stylesheet."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "POST /demo/end",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/demo/end",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "demo",
+                    "end"
+                  ]
+                },
+                "description": "Ends the session now. Deletes the saved PayPal method at PayPal and clears the cookie. The ledger keeps every row.\n\nAnswers with a 303 back to the demo page, which shows the result. Postman's cookie jar sends the `praman_demo` session cookie set by Start a session."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"status is 303\", () => pm.response.to.have.status(303));",
+                      "pm.test(\"redirects to a demo page\", () => pm.expect(pm.response.headers.get(\"Location\") || \"\").to.match(/^\\/demo/));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Trace, verify, dispute",
+      "description": "Public read routes keyed by a trace id. Set `trace_id` in the environment to one from the demo: open a step's **Ledger trace** link and copy the id after `/r/`.",
+      "item": [
+        {
+          "name": "GET /",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": []
+            },
+            "description": "The index of recent traces. On a database with no traces it redirects to `/demo`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is one of 200, 302\", () => pm.expect(pm.response.code).to.be.oneOf([200, 302]));"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "GET /r/{{trace_id}}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/r/{{trace_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "r",
+                "{{trace_id}}"
+              ]
+            },
+            "description": "The trace page: every ledger row for one purchase, the policy decision and reason code, the PayPal order and capture, and any refund."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"answers HTML\", () => pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"text/html\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /verify/{{trace_id}}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/verify/{{trace_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "verify",
+                "{{trace_id}}"
+              ]
+            },
+            "description": "Checks the ledger's hash chain and whether this trace's rows are inside it. JSON. 404 with `null` for an unknown trace."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"answers JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /dispute/{{trace_id}}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/dispute/{{trace_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "dispute",
+                "{{trace_id}}"
+              ]
+            },
+            "description": "The dispute bundle for one trace as a JSON download: the mandate, the decision and reason code, what the agent read and proposed, the PayPal order and capture, any refund, and the hash chain check."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"answers JSON\", () => pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"application/json\"));",
+                  "pm.test(\"is a download\", () => pm.expect(pm.response.headers.get(\"Content-Disposition\") || \"\").to.include(\"attachment\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /r/unknown trace",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/r/trc_does_not_exist",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "r",
+                "trc_does_not_exist"
+              ]
+            },
+            "description": "An unknown trace id answers 404, not an error."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Operator console",
+      "description": "The whole-ledger console. It exists only on a local server with the demo off (`DEMO_MANDATE_PRIVATE_KEY= DEMO_MANDATE_PUBLIC_KEY= pnpm receipt-ui`). Everywhere else it answers 404.",
+      "item": [
+        {
+          "name": "GET /console",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/console",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "console"
+              ]
+            },
+            "description": "The operator console page."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is one of 200, 404\", () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /console/data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/console/data",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "console",
+                "data"
+              ]
+            },
+            "description": "The rows behind `/console`, as JSON."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is one of 200, 404\", () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "PayPal webhook",
+      "description": "Where PayPal delivers events. Praman asks PayPal to verify the signature before it reads the body, so a delivery from Postman is refused and nothing is written.",
+      "item": [
+        {
+          "name": "POST /webhooks/paypal (unsigned, refused)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "paypal-auth-algo",
+                "value": "SHA256withRSA"
+              },
+              {
+                "key": "paypal-cert-url",
+                "value": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-EXAMPLE"
+              },
+              {
+                "key": "paypal-transmission-id",
+                "value": "00000000-0000-0000-0000-000000000000"
+              },
+              {
+                "key": "paypal-transmission-sig",
+                "value": "bm90LWEtcmVhbC1zaWduYXR1cmU="
+              },
+              {
+                "key": "paypal-transmission-time",
+                "value": "2026-11-08T00:00:00Z"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/webhooks/paypal",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "paypal"
+              ]
+            },
+            "description": "A made-up `PAYMENT.CAPTURE.COMPLETED` with made-up PayPal headers. Expect 400 `signature not verified`, or 503 on a server with no webhook id configured. Either way nothing reaches the ledger.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"WH-POSTMAN-EXAMPLE\",\n  \"event_type\": \"PAYMENT.CAPTURE.COMPLETED\",\n  \"resource_type\": \"capture\",\n  \"resource\": {\n    \"id\": \"0000000000000000X\",\n    \"status\": \"COMPLETED\",\n    \"amount\": {\n      \"currency_code\": \"USD\",\n      \"value\": \"4.50\"\n    },\n    \"supplementary_data\": {\n      \"related_ids\": {\n        \"order_id\": \"0000000000000000Y\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is one of 400, 503\", () => pm.expect(pm.response.code).to.be.oneOf([400, 503]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /webhooks/paypal (wrong method)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/webhooks/paypal",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "paypal"
+              ]
+            },
+            "description": "Only POST is accepted."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 405\", () => pm.response.to.have.status(405));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
