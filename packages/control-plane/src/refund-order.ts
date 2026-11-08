@@ -130,8 +130,10 @@ function refunderFor(route: ExecutorRouter, rail: string): { readonly executor: 
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 
 /**
- * What the ledger already says about refunding this order: the latest refund outcome
- * that isn't a failure. A failed refund moved no money, so it doesn't stop another.
+ * What the ledger already says about refunding this order: the newest attempt whose
+ * own latest outcome isn't a failure. An attempt is judged by its last row, so one
+ * that was pending and then failed counts as failed. A failed refund moved no money,
+ * so it doesn't stop another.
  */
 async function standingRefund(tx: PrismaTx, order: Refundable, traceId: string): Promise<RefundResult | null> {
   const rows = await tx.$queryRaw<{ payload: Record<string, unknown> }[]>`
@@ -141,9 +143,14 @@ async function standingRefund(tx: PrismaTx, order: Refundable, traceId: string):
       AND payload->>'order_id' = ${order.orderId}
     ORDER BY seq DESC
   `;
-  const latest = rows.map((r) => r.payload).find((p) => p["status"] !== "failed");
-  if (latest === undefined) return null;
-  return fromLedger(traceId, order, latest);
+  const seen = new Set<string | null>();
+  for (const { payload } of rows) {
+    const key = str(payload["refund_key"]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (payload["status"] !== "failed") return fromLedger(traceId, order, payload);
+  }
+  return null;
 }
 
 function fromLedger(traceId: string, order: Refundable, p: Record<string, unknown>): RefundResult {

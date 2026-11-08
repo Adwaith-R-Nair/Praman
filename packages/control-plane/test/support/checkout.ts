@@ -56,6 +56,8 @@ export class CheckoutExecutor implements Executor {
   refundAmount: Minor | null = null;
   /** Lets two refunds overlap. */
   refundDelayMs = 0;
+  /** A refund PayPal reported as pending later fails: the next resend answers failed. */
+  pendingRefundFails = false;
   /** Refunds by PayPal-Request-Id, and which captures are refunded in full. */
   readonly #refunds = new Map<string, { id: string; paymentId: string; amount: Minor; status: "refunded" | "pending" }>();
   readonly #refundedCaptures = new Set<string>();
@@ -137,6 +139,13 @@ export class CheckoutExecutor implements Executor {
     });
     const failed = (code: string): RefundOutcome => ({ rail: this.rail, payment_id: req.payment_id, refund_id: null, status: "failed", amount_minor: req.amount_minor, currency: req.currency, failure_code: code });
     const existing = this.#refunds.get(req.idempotency_key);
+    if (existing !== undefined && this.pendingRefundFails) {
+      // PayPal's FAILED or CANCELLED: no money moved, so the capture can be refunded again.
+      this.pendingRefundFails = false;
+      this.#refunds.delete(req.idempotency_key);
+      this.#refundedCaptures.delete(req.payment_id);
+      return failed("REFUND_FAILED");
+    }
     if (existing !== undefined) return answer(existing);
     if (this.#refundedCaptures.has(req.payment_id)) return failed("CAPTURE_FULLY_REFUNDED");
     const make = (status: "refunded" | "pending") => {

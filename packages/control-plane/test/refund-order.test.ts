@@ -253,6 +253,23 @@ describe("refundOrder", () => {
     expect(executor.refundCalls).toHaveLength(1);
   });
 
+  it("lets a refund that was pending and then failed be asked for again, under a new key", async () => {
+    const { executor, route, order, paymentId } = await capturedCheckout("mnd_ref_pending_failed");
+    executor.refundAnswer = "pending";
+    expect((await refundOrder(asOperator(order.traceId), route, AFTER)).kind).toBe("PENDING");
+    const [first] = await refundRecords(order.key);
+    await age(first?.key ?? "");
+    executor.pendingRefundFails = true;
+    expect(await reconcilePending(route, new Date())).toBe(1);
+    expect((await rows(order.traceId, "refund_outcome")).map((r) => r.payload["status"])).toEqual(["pending", "failed"]);
+
+    executor.refundAnswer = "refund";
+    const again = await refundOrder(asOperator(order.traceId), route, AFTER);
+
+    expect(again.kind).toBe("REFUNDED");
+    expect(executor.refundCalls.at(-1)?.idempotency_key).toBe(refundRecordKey(order.key, paymentId, 1));
+  });
+
   it("still refunds after the mandate is revoked: money going back is not the agent spending", async () => {
     const { route, order, ctx } = await capturedCheckout("mnd_ref_revoked");
     await revokeMandate({ mandateId: ctx.mandateId, reason: "test", traceId: "trc_ref_revoke", now: LATER });
