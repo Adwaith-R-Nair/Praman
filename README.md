@@ -153,6 +153,8 @@ pnpm dispute <trace_id>                     # self-verifying evidence bundle
 pnpm receipt-ui                             # trace viewer on :4100
 ```
 
+To call every route without a browser, import [`docs/postman/praman.postman_collection.json`](docs/postman/praman.postman_collection.json) into Postman with the local or hosted environment beside it, set `trace_id` from a demo trace link, and press **Run collection**: each request checks the status it should get, and none carries a key.
+
 ## The trace viewer
 
 `/r/:trace_id` renders one decision as a record a human can audit months later: the verification state and decision above the fold, the agent's verbatim tool calls, the merchant text it actually read with untrusted regions visibly marked, and the hash chain drawn as a continuous spine where each entry's `entry_hash` and the next entry's `prev_hash` sit adjacent so continuity is read directly rather than asserted. The verify button walks the chain live and stops at the first break.
