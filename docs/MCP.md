@@ -37,7 +37,7 @@ An identical proposal (same merchant, SKU and quantity) within two minutes is tr
 
 ## Setting it up
 
-From the repo root, with `.env` filled in as for the rest of Praman:
+From the repo root, with `.env` filled in as for the rest of Praman, plus `CHANNEL3_API_KEY` from <https://trychannel3.com> (only `pnpm catalog:channel3` uses it):
 
 ```
 pnpm catalog:channel3     # real products from Channel3 into DEMO_SHOP, prices pinned now
