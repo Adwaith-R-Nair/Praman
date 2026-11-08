@@ -4,7 +4,7 @@ import { env } from "node:process";
 import { fileURLToPath } from "node:url";
 import { GeminiProvider } from "@praman/agent-core";
 import { computeMetrics } from "./metrics.js";
-import { generateBadge, generateReportMarkdown, type AblationArmStats, type AblationSummary } from "./report.js";
+import { generateBadge, generateReportMarkdown, reportFileStem, type AblationArmStats, type AblationSummary } from "./report.js";
 import { runLayer1Corpus, runLayer2Corpus } from "./runner.js";
 import type { CaseResult, Layer1Case, Layer2Case } from "./types.js";
 
@@ -121,12 +121,13 @@ const reportMd = generateReportMarkdown({
 });
 const badge = generateBadge(metrics);
 
-writeFileSync(`${outDir}report.md`, reportMd);
+const stem = reportFileStem(wantLayer1, wantLayer2);
+writeFileSync(`${outDir}${stem}.md`, reportMd);
 writeFileSync(
-  `${outDir}report.json`,
+  `${outDir}${stem}.json`,
   JSON.stringify({ results, metrics }, (_key, value) => (typeof value === "bigint" ? value.toString() : value), 2),
 );
-writeFileSync(`${outDir}badge.json`, JSON.stringify(badge, null, 2));
+if (stem === "report") writeFileSync(`${outDir}badge.json`, JSON.stringify(badge, null, 2));
 
 const failed = results.filter((r) => !r.passed).length;
 console.log(`\n${(results.length - failed).toString()}/${results.length.toString()} passed`);
@@ -134,7 +135,7 @@ if (failed > 0) {
   console.log("Unresolved exceptions:");
   for (const e of metrics.unresolved_exceptions) console.log(`  ${e.case_id}: ${e.detail}`);
 }
-console.log(`\nWrote ${outDir}report.md, report.json, badge.json`);
+console.log(`\nWrote ${outDir}${stem}.md, ${stem}.json${stem === "report" ? ", badge.json" : ". Only a run of both layers replaces the committed report."}`);
 
 const { prisma } = await import("./db.js");
 await prisma.$disconnect();

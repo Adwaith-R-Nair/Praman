@@ -355,6 +355,15 @@ export interface Badge {
 }
 
 /** shields.io endpoint-badge format. Every field is derived from metrics — nothing here is typed by hand. */
+/**
+ * The committed report needs both layers, and Layer 2 runs by hand against a live model.
+ * A run of one layer writes beside it, so a reviewer following the quickstart keeps the
+ * committed numbers and a clean tree.
+ */
+export function reportFileStem(ranLayer1: boolean, ranLayer2: boolean): "report" | "report.partial" {
+  return ranLayer1 && ranLayer2 ? "report" : "report.partial";
+}
+
 export function generateBadge(metrics: Metrics): Badge {
   const rate = metrics.containment_rate_dev;
   const color = rate === null ? "lightgrey" : rate >= 0.95 ? "brightgreen" : rate >= 0.8 ? "yellow" : "red";

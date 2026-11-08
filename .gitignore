@@ -61,3 +61,5 @@ test-screenshots
 PORTFOLIO_REPORT.md
 
 CLAUDE.md
+# A run of one eval layer. Only a run of both replaces the committed report.
+eval/report.partial.*
