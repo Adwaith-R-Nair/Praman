@@ -18,6 +18,10 @@ const DEMO_CSS = readFileSync(fileURLToPath(new URL("./demo.css", import.meta.ur
 /** A screenshot of one complete session, served as the recorded run once the day's sessions are used up. */
 const RECORDED_RUN_PNG = readFileSync(fileURLToPath(new URL("../../../../docs/screenshots/demo-story-desktop.png", import.meta.url)));
 
+/** Told to a visitor whose session is gone, whatever they had pressed. */
+const SESSION_ENDED =
+  "Your demo session has ended, because the server restarted or its hour ran out. Whatever you just pressed was not run. A PayPal checkout that wasn't captured can't be captured now, so nothing is charged for it. Everything already paid stays on the ledger. Start a new session to go on.";
+
 const STEPS: readonly BeatId[] = ["first", "second", "large", "injection", "fixture", "concurrency", "revoke", "after_revoke"];
 /** The steps that buy at the cafe. Any of them can need approval or become a checkout. */
 const PURCHASES: readonly PurchaseBeat[] = ["first", "second", "large"];
@@ -189,14 +193,16 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
 
       if (session === null) {
         if (method === "GET" && path === "/demo") {
-          send(res, 200, renderStartPage(null, configured));
+          // A cookie this server doesn't know: a restart or the hour's end. Said once, then forgotten.
+          const hadSession = readCookie(req.headers.cookie) !== null;
+          send(res, 200, renderStartPage(hadSession ? SESSION_ENDED : null, configured), hadSession ? { "Set-Cookie": cookie("", 0) } : {});
           return;
         }
         if (method === "GET" && path.startsWith("/demo/connect/")) {
           send(res, 200, renderStartPage("Your session ended before PayPal sent you back. Nothing was saved. Start a new session.", configured));
           return;
         }
-        // Nothing to act on. A stale cookie gets the start page, not an error.
+        // Nothing to act on. A stale cookie gets the start page, which says what happened.
         redirect(res, "/demo");
         return;
       }

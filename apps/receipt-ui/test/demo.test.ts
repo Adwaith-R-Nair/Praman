@@ -152,6 +152,37 @@ async function ledgerFor(traceId: string | null) {
   return prisma.ledgerEntry.findMany({ where: { traceId }, orderBy: { seq: "asc" } });
 }
 
+describe("a session lost to a restart", () => {
+  async function restarted(): Promise<Visitor> {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    deps = makeDeps();
+    handler = createDemoHandler(deps);
+    return v;
+  }
+
+  it("tells the visitor plainly that the session ended and the button did nothing, once", async () => {
+    const v = await restarted();
+    const pressed = await v.post("/demo/approve/first");
+    expect(pressed.location).toBe("/demo");
+    const page = await v.page();
+    expect(page).toContain("Your demo session has ended");
+    expect(page).toContain("was not run");
+    expect(paypal.charges).toHaveLength(0);
+    expect(await v.page()).not.toContain("Your demo session has ended");
+  });
+
+  it("says nothing to a visitor who never had a session", async () => {
+    expect(await visitor().page()).not.toContain("Your demo session has ended");
+  });
+
+  it("doesn't tell someone with no session that they can still capture", async () => {
+    const text = (await visitor().get("/demo/checkout/return")).text;
+    expect(text).toContain("If your demo session is still open");
+    expect(text).toContain("can&#39;t be captured any more");
+  });
+});
+
 describe("the demo story", () => {
   it("a new session's first purchase returns STEP_UP_FIRST_MERCHANT", async () => {
     const v = await startConnected();

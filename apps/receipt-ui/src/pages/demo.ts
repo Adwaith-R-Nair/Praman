@@ -492,7 +492,7 @@ export function renderCheckoutReturnPage(cancelled: boolean): string {
     `<header class="masthead"><h1>${cancelled ? "Checkout cancelled" : "Approved at PayPal"}</h1></header>
      <section class="start">
        ${cancelled ? p("You cancelled at PayPal. Nothing was charged.") : p("PayPal has your approval. Nothing is charged yet.")}
-       ${p("Go back to the window where your demo session is open and press Capture the payment. This window can be closed.")}
+       ${cancelled ? p("This window can be closed.") : p("If your demo session is still open in another window, go back to it and press Capture the payment. If that window says the session has ended, the server restarted or its hour ran out, so this payment can't be captured any more and nothing will be charged. Start a new session to try again. This window can be closed.")}
      </section>`,
   );
 }
