@@ -38,11 +38,10 @@ services:
       # recorded model answer, labelled as one.
       - key: DEMO_DAILY_MODEL_CALLS
         value: "400"
-      # How many proxies append the visitor's address to X-Forwarded-For. Per-address
-      # limits read the entry this many places from the right, never the client's own.
-      # docs/DEPLOY.md's smoke test says when to change it.
+      # How many entries from the right of X-Forwarded-For is the visitor's address.
+      # On Render it is 3: visitor, Cloudflare edge, Render's proxy (D-78).
       - key: TRUST_PROXY
-        value: "1"
+        value: "3"
 
       # Secrets: Render asks for each when the Blueprint is created. Never in this file.
       - key: DATABASE_URL

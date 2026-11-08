@@ -58,7 +58,7 @@ These are set by `render.yaml` and you don't touch them:
 | `NODE_VERSION` | `24` | The Node version the repo is tested on. |
 | `PAYPAL_BASE_URL` | `https://api-m.sandbox.paypal.com` | Any other value stops the server at start. |
 | `DEMO_DAILY_MODEL_CALLS` | `400` | Model calls per UTC day for all visitors together. After that, steps replay a recorded model answer, labelled as one. |
-| `TRUST_PROXY` | `1` | How many proxies in front of the server add the visitor's address to the right of `X-Forwarded-For`. The per-address limits read the entry that many places from the right, never the leftmost, which a visitor can write themselves. |
+| `TRUST_PROXY` | `3` | How many proxies in front of the server add the visitor's address to the right of `X-Forwarded-For`. The per-address limits read the entry that many places from the right, never the leftmost, which a visitor can write themselves. |
 
 These Render asks you for:
 
@@ -140,8 +140,8 @@ for i in 1 2 3 4 5 6 7 8; do curl -s -o /dev/null -w "%{http_code} " -X POST -H 
 
 The first five answer `303` and the rest `429`, even though each request claims a different address. Then, within ten minutes, open the demo on your phone over mobile data (not your Wi-Fi) and press **Start a session**. It must start.
 
-- If all eight answer `303`, Render passed the made-up header on without adding the address it saw, and no `TRUST_PROXY` value can fix that. Leave it at `1`. The per-address limit then only slows casual use, and the daily caps still hold (D-57, D-60).
-- If the phone also gets "Too many new demo sessions", the entry being read belongs to a Render proxy, shared by everyone. Set `TRUST_PROXY` to `2` in Render's Environment, let it redeploy, and run both checks again.
+- If all eight answer `303`, or the refusals come and go, the limit is reading an entry that changes between requests. On Render the header is the visitor, then a Cloudflare edge address, then Render's proxy, and the two proxy entries vary, so `TRUST_PROXY` must be `3` (D-78). Check that it is.
+- If the phone also gets "Too many new demo sessions", the entry being read is shared by other visitors. Check `TRUST_PROXY` is `3` in Render's Environment.
 
 ## When something goes wrong
 

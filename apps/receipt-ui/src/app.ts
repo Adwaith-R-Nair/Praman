@@ -32,7 +32,7 @@ export interface AppDeps {
   readonly webhooks: PayPalWebhookDeps;
   /** Sent on every response when the server is reached over HTTPS. */
   readonly hsts: boolean;
-  /** How many proxies in front append to X-Forwarded-For (Render: 1). 0 reads the socket's address. */
+  /** How many proxies in front append to X-Forwarded-For (Render: 3, D-78). 0 reads the socket's address. */
   readonly proxyHops: number;
   readonly now?: () => Date;
   /** Told about every request to /demo, so the sweeps know the demo is in use. */
