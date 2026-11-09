@@ -40,6 +40,10 @@ test("the sample run is populated and public, or absent and unlinked", async ({ 
   for (const series of spend) expect(series).toMatchObject({ budgetMinor: null, budgetLabel: null });
   console.log(`sample: populated, ${(await page.locator("#count").textContent()) ?? ""}`);
 
+  // The reader's own recheck of the rows runs in the browser and agrees with the server.
+  await page.getByRole("button", { name: "Recheck these rows in my browser" }).click();
+  await expect(page.locator("#chain-browser-text")).toHaveText(/^Rechecked in this browser with WebCrypto\. \d+ entry hash(es)? recomputed from the rows below, (all )?matching\./);
+
   // Every trace line leads to a public trace page and a public bundle. The first is opened.
   const firstTrace = page.locator(".sample-trace-main").first();
   const firstBundle = page.locator(".sample-trace-bundle").first();
@@ -58,6 +62,9 @@ test("the sample run is populated and public, or absent and unlinked", async ({ 
   await expect(page.locator("h1.decision")).toBeVisible();
   await expect(page.locator('a[href^="/sample#trace="]')).toBeVisible();
   await expect(page.locator('nav a[href="/sample"]')).toBeVisible();
+  // On that trace, the browser's own check of the page's rows passes.
+  await page.getByRole("button", { name: "Verify in my browser" }).click();
+  await expect(page.locator("#bv-result")).toHaveText(/^Verified in this browser\./);
 
   // The other pages say where the sample is.
   await page.goto("/traces");
