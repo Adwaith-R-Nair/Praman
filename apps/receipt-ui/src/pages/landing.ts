@@ -23,9 +23,9 @@ const priceOf = (sku: string): string => {
 
 const bowl = CAFE_ITEMS.find((i) => i.sku === "SKU_CAFE_BOWL");
 
-/** The branch with the PayPal work. The repo's main branch still holds the earlier Razorpay entry. */
-const CODE = "https://github.com/Adwaith-R-Nair/Praman/tree/paypal-hackathon";
-const MCP_GUIDE = "https://github.com/Adwaith-R-Nair/Praman/blob/paypal-hackathon/docs/MCP.md";
+/** The repository's front page, and the MCP guide on its default branch (GitHub reads HEAD as that branch). */
+const CODE = "https://github.com/Adwaith-R-Nair/Praman";
+const MCP_GUIDE = `${CODE}/blob/HEAD/docs/MCP.md`;
 
 export function renderLandingPage(): string {
   const body = `

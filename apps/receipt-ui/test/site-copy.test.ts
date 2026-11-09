@@ -7,10 +7,12 @@ import { SessionStore } from "../src/demo/session.js";
 // What the public pages say, checked against what the product does. No database.
 
 describe("the front page's links", () => {
-  it("sends the code and MCP links to the branch that has the PayPal work", () => {
+  it("sends the code link to the repository root and the MCP link to the default branch", () => {
     const html = renderLandingPage();
-    expect(html).toContain('href="https://github.com/Adwaith-R-Nair/Praman/tree/paypal-hackathon"');
-    expect(html).toContain('href="https://github.com/Adwaith-R-Nair/Praman/blob/paypal-hackathon/docs/MCP.md"');
+    expect(html).toContain('href="https://github.com/Adwaith-R-Nair/Praman"');
+    expect(html).toContain('href="https://github.com/Adwaith-R-Nair/Praman/blob/HEAD/docs/MCP.md"');
+    expect(html).not.toContain("/tree/paypal-hackathon");
+    expect(html).not.toContain("/blob/paypal-hackathon/");
     expect(html).not.toContain("/blob/main/");
   });
 });
