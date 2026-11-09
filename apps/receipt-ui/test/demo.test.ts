@@ -7,7 +7,7 @@ import { prisma } from "@praman/db";
 import { buildBundleStandalone } from "@praman/dispute";
 import { deriveState } from "@praman/ledger";
 import { generateKeypair } from "@praman/mandate";
-import { HARNESS_LIMITS } from "../src/demo/config.js";
+import { FOOLED_CART, HARNESS_LIMITS } from "../src/demo/config.js";
 import { routeFor, type DemoDeps } from "../src/demo/connect.js";
 import { createDemoHandler, releaseAllSessions, sweepExpiredSessions, COOKIE } from "../src/demo/routes.js";
 import { seedDemoCatalog } from "../src/demo/seed.js";
@@ -592,14 +592,31 @@ describe("the demo story", () => {
     const page = await v.page();
     expect(page).toContain("Simulating a fooled model. No model is asked.");
     expect(page).toContain("Recorded run, not live.");
-    // The recording is in rupees inside a dollar demo. The page says so before the listing, not after.
-    const rupees = page.indexOf("In rupees, not US dollars.");
-    expect(rupees).toBeGreaterThan(-1);
-    expect(rupees).toBeLessThan(page.indexOf("price_paise=12000"));
-    expect(page).toContain('price_paise=12000 means <span class="rupee">₹</span>120.00');
+    // The recording is from this demo's own dollar market, so nothing on the page is in rupees.
+    expect(page).toContain("At this demo&#39;s Corner Market, in US dollars.");
+    expect(page).toContain("price_minor=10000 currency=USD");
+    expect(page).toContain("Prices here are in cents: price_minor=10000 is $100.00.");
+    expect(page).not.toContain("price_paise");
+    expect(page).not.toContain("rupee");
     expect(model.calls).toBe(0);
     const intent = (await ledgerFor(fixture?.traceId ?? null)).find((r) => r.eventType === "intent");
     expect(intent?.payload).toMatchObject({ model_id: "fixture/simulated-fooled-model" });
+  });
+
+  it("the recording is a dollar run at the demo's market, refused, with the cart the fixture sends", () => {
+    const rec = loadRecording();
+    expect(rec.currency).toBe("USD");
+    expect(rec.decision).toEqual({ kind: "DENY", reason_code: "CATEGORY_OUT_OF_SCOPE", money_moved: false });
+    // The simulated step says it sends the recorded run's cart. This holds it to that.
+    const lines = (items: readonly { readonly sku: string; readonly qty: number }[]) => items.map((i) => `${i.qty.toString()} x ${i.sku}`);
+    expect(lines(rec.proposal.line_items)).toEqual(lines(FOOLED_CART.line_items));
+    expect(recordingHtml(rec)).toContain(`This is try ${rec.tries.fooled_on.toString()} of ${rec.tries.allowed.toString()}.`);
+  });
+
+  it("refuses a recording that isn't in US dollars, rather than showing its prices as dollars", () => {
+    const rec = loadRecording();
+    expect(() => loadRecording(JSON.stringify({ ...rec, currency: "INR" }))).toThrow("malformed");
+    expect(() => loadRecording(JSON.stringify({ ...rec, currency: undefined }))).toThrow("malformed");
   });
 
   it("runs the live model on the poisoned listing and says whether it was steered", async () => {

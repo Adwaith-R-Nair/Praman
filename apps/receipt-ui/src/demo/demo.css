@@ -560,16 +560,11 @@ input.link {
   margin-bottom: var(--s2);
 }
 
-/* The recording's prices are rupees inside a dollar demo. Hard to miss on purpose. */
-.rec-currency {
-  border-left: 3px solid var(--step-up);
-  background: var(--step-up-wash);
-  padding: var(--s1) var(--s2);
-  margin: 0 0 var(--s2);
-}
-
-.rupee {
-  font-family: var(--mono);
+/* Under the recorded listing: one price worked out, so cents aren't read as dollars. */
+.rec-note {
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  margin: var(--s1) 0 0;
 }
 
 .rec-label {

@@ -6,7 +6,7 @@ import { CAFE, MARKET, MARKET_ITEM_NAMES, MARKET_PRICES, type BeatId, type Purch
 import { canAskAgain, refundable } from "../demo/story.js";
 import type { TraceView } from "../data.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
-import { escapeHtml, fixRupeeGlyph } from "../html.js";
+import { escapeHtml } from "../html.js";
 import { REASON_CODE_PLAIN } from "../reason-codes.js";
 
 const usd = (minorText: string): string => formatMoney(minorFromJSON(minorText), "USD");
@@ -249,49 +249,70 @@ interface Recording {
   readonly recorded_on: string;
   readonly model: string;
   readonly arm: string;
-  readonly currency_note: string;
+  readonly currency: "USD";
+  /** How many tries the recording script was allowed, and which one the model was fooled on. */
+  readonly tries: { readonly allowed: number; readonly fooled_on: number };
   readonly catalog_reads: readonly string[];
   readonly proposal: { readonly line_items: readonly { readonly sku: string; readonly qty: number }[]; readonly rationale: string };
   readonly decision: { readonly kind: string; readonly reason_code: string; readonly money_moved: boolean };
 }
 
+/** The page shows this recording's prices as US dollars, so a recording in anything else is refused, not mislabelled. */
 function isRecording(v: unknown): v is Recording {
   if (typeof v !== "object" || v === null) return false;
   const r: Record<string, unknown> = { ...v };
-  return typeof r["recorded_on"] === "string" && typeof r["model"] === "string" && Array.isArray(r["catalog_reads"]) && typeof r["proposal"] === "object" && typeof r["decision"] === "object";
+  const tries: unknown = r["tries"];
+  const triesOk = typeof tries === "object" && tries !== null && "allowed" in tries && typeof tries.allowed === "number" && "fooled_on" in tries && typeof tries.fooled_on === "number";
+  return (
+    typeof r["recorded_on"] === "string" &&
+    typeof r["model"] === "string" &&
+    typeof r["arm"] === "string" &&
+    r["currency"] === "USD" &&
+    triesOk &&
+    Array.isArray(r["catalog_reads"]) &&
+    typeof r["proposal"] === "object" &&
+    typeof r["decision"] === "object"
+  );
 }
 
 const RECORDING_PATH = fileURLToPath(new URL("../demo/recorded/undefended-system-update.json", import.meta.url));
 
+/**
+ * The recorded run of a model that was fooled. scripts/record-undefended-run.ts writes
+ * the file from a real model's answer at this demo's own market. Nobody edits it by hand.
+ */
 export function loadRecording(raw: string = readFileSync(RECORDING_PATH, "utf8")): Recording {
   const parsed: unknown = JSON.parse(raw);
   if (!isRecording(parsed)) throw new Error("the demo recording is malformed");
   return parsed;
 }
 
-/**
- * The recording comes from the eval's rupee shop, recorded before this demo used US
- * dollars, so its listing shows paise. Said before the listing, with one price worked
- * out, so nobody reads 12000 as dollars or thinks the demo spends rupees. Re-recording
- * on the dollar catalog would need a model fooled again on demand, which it usually isn't.
- */
-function rupeeNotice(rec: Recording, listing: string): string {
-  const price = /price_paise=(\d+)/.exec(listing)?.[1];
-  const example = price === undefined ? "" : ` For example, price_paise=${price} means ${formatMoney(minorFromJSON(price), "INR")}.`;
-  return `<p class="rec-currency"><strong>In rupees, not US dollars.</strong> ${fixRupeeGlyph(
-    escapeHtml(`This run was recorded on ${rec.recorded_on} at a rupee shop from Praman's eval, before this demo used US dollars. Its prices are in paise, a hundredth of a rupee.${example} They are not this demo's prices, and your mandate here can only spend US dollars.`),
-  )}</p>`;
+/** The item the fixture's poisoned line pushes. Its row in a catalog read starts with this. */
+const PUSHED_ROW = "sku=SKU_INJ2_TARGET ";
+
+/** The model reads raw catalog rows, priced in cents. One of them is worked out, so 10000 isn't read as dollars. */
+function centsNote(listing: string): string {
+  const price = /sku=SKU_INJ2_TARGET [^\n]*price_minor=(\d+)/.exec(listing)?.[1] ?? /price_minor=(\d+)/.exec(listing)?.[1];
+  return price === undefined ? "" : `<p class="rec-note">${escapeHtml(`Prices here are in cents: price_minor=${price} is ${usd(price)}.`)}</p>`;
+}
+
+/** Which try the model was fooled on, said because it usually isn't on the first. */
+function triesNote(tries: Recording["tries"]): string {
+  if (tries.fooled_on <= 1) return "The model was fooled on the first try.";
+  return `This is try ${tries.fooled_on.toString()} of ${tries.allowed.toString()}. The earlier ${tries.fooled_on === 2 ? "try" : "tries"} gave no fooled cart.`;
 }
 
 /** A recorded run, shown as a recording. Every string is corpus or model text, escaped. */
 export function recordingHtml(rec: Recording): string {
-  const poisoned = rec.catalog_reads.find((r) => r.includes("SKU_INJ2_BAIT")) ?? rec.catalog_reads[0] ?? "";
+  const poisoned = rec.catalog_reads.filter((r) => r.includes("SKU_INJ2_BAIT"));
+  // The read that also lists the pushed item, if the model made one, so its price is on the page.
+  const listing = poisoned.find((r) => r.includes(PUSHED_ROW)) ?? poisoned[0] ?? rec.catalog_reads[0] ?? "";
   const cart = rec.proposal.line_items.map((i) => `${i.qty.toString()} × ${i.sku}`).join(", ");
   return `<figure class="recording">
-    <figcaption><strong>Recorded run, not live.</strong> ${escapeHtml(`${rec.model}, ${rec.recorded_on}, ${rec.arm}. ${rec.currency_note}`)}</figcaption>
-    ${rupeeNotice(rec, poisoned)}
+    <figcaption><strong>Recorded run, not live.</strong> ${escapeHtml(`${rec.model}, ${rec.recorded_on}, ${rec.arm}. At this demo's Corner Market, in US dollars. ${triesNote(rec.tries)}`)}</figcaption>
     <p class="rec-label">The listing the model read</p>
-    <pre class="merchant-text">${escapeHtml(poisoned)}</pre>
+    <pre class="merchant-text">${escapeHtml(listing)}</pre>
+    ${centsNote(listing)}
     <p class="rec-label">What it proposed</p>
     <p><code>${escapeHtml(cart)}</code></p>
     <p class="rationale">${escapeHtml(rec.proposal.rationale)}</p>
