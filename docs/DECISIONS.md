@@ -2963,3 +2963,33 @@ The full bundle, with the mandate, signature and public key, goes only to someon
 
 **Limits.** Rows written before this change have no salt, and the ledger is append-only, so a `detail` that named a limit on an old `decision` row can still be guessed at against its hash. Withholding `detail` stops it being read; it doesn't stop that guess. Rows with `withheld_fields` can't have their payload rehashed from the public copy; only the owner's copy can. The operator console at `/console` (local only, off when the demo runs) shows reason codes including step-up reasons and no limits. Demo steps that aren't purchases link to the public bundle.
 
+
+---
+
+### D-85 · A shared sandbox buyer lets a visitor skip the PayPal login, behind a switch · Accepted (the builder's decision, recorded by an implementer for the builder to check)
+
+The first real PayPal charge in the demo sat behind a sandbox login: a visitor had to have, or make, a PayPal sandbox buyer account before step 3 would run. The hackathon's judges aren't required to run a project at all, and one who tries has a few minutes. The builder decided on 2026-11-09 that the demo may hold one sandbox buyer of its own, behind a switch, with a go or no-go at testing.
+
+**Decided.** When the server has `DEMO_HOUSE_BUYER_TOKEN`, a visitor may press **Use the demo's sandbox buyer** in place of the PayPal login. The secret is the Vault payment token of one sandbox account whose owner, the builder, approved saving it once with `pnpm house-buyer`. The session's purchases are then charged to that account under the visitor's own freshly signed mandate, as a saved account connected by login would be.
+
+- It is a second source for the saved payment method `savedMethodChoice` already hands the PayPal executor (D-50), and nothing else. `evaluate()`, `runIntent`, the idempotency key, the mandate and `packages/ledger` are unchanged. The price is still the catalog's and the decision is still Praman's.
+- The threshold rule of D-50 applies to it unchanged. A purchase at or above the mandate's approval threshold becomes a checkout order that a buyer has to approve at PayPal. A step-up still waits for the visitor. So "no login" covers the purchases below the threshold, not the checkout.
+- With the secret unset there is no house buyer: `POST /demo/connect/house` is a 404, no page mentions it, and the demo behaves as it did. `DEMO_DAILY_HOUSE_SESSIONS=0` switches it off with the secret left in place.
+- The token is never deleted at PayPal. D-50 and D-54 delete a session's own token when the session ends, expires, or the server stops. Each of those paths skips this one. A token is checked by value before any delete, because a visitor who logs in as the same sandbox account could be handed the same token.
+- The token lives in one object in memory, read from the environment. It is not in a session, a page, the agent's context, the ledger, a record, a log or an error message. Start-up names the variable if it is malformed and never prints it.
+- At most 50 sessions per UTC day may use it (`DEMO_DAILY_HOUSE_SESSIONS`), counted in `demo_usage` so a restart doesn't refill it. Past the cap the choice isn't shown and the login path remains.
+- If PayPal refuses a charge to it, nothing is charged, the outcome goes on the ledger as any failed charge does, that session is sent back to the login path in plain words, and the house buyer rests: 30 minutes, doubling on each refusal in a row, up to a day. While it rests nobody is offered it, and a session still on it is sent back to the login path before its next purchase is asked for or approved. A charge with no answer is not a refusal. Its record stays pending for the reconcile sweep (D-22).
+
+**What this rules out.** Charging the house buyer for anything a buyer must be present for. Deleting, rotating or re-creating the token from the server. Putting the token in the database or the repo. Offering it on a server that wasn't given the secret.
+
+**Rejected.** *A token per visitor made by a script logging in to PayPal for them:* that is driving PayPal's login page with stored buyer credentials, which is worse than one consent given by the account's owner. *Keeping the token in the database so a restart keeps a rest or a rotation:* a secret in one more place for no gain, since the environment already survives a restart. *A pre-flight read of the token at PayPal before offering it:* it needs a vault call this repo has never run against the sandbox, and this work could not call the sandbox to check it. *Letting a refused step run again on the visitor's own account:* a step that failed at the provider is never asked again (D-52), and this is not the place to loosen that. *The visitor signing their own limits in the browser instead (plan item 14):* better on camera, but it leaves the login in front of the first charge.
+
+**Limits.**
+
+- A shared sandbox account is charged by strangers. Each session is held to its own mandate: under $20.00 a charge and $60.00 in all. The story charges it $17.00 a session, so a full day at the cap is $850 as the story goes and $3,000 at the very most. One address can start five sessions in ten minutes. This is sandbox money. No real funds exist on either side.
+- The visitor never consented as that buyer. The builder did, once, as the account's owner, and the server signs each session's mandate with the demo key (D-81). So with the house buyer the demo shows a buyer-not-present charge against an account the demo owns. In real use the account's owner signs the mandate. The page says the account is the demo's.
+- Tested with the stand-in PayPal only. Nothing in this work called the real sandbox. Ten sessions charging the token at once each got one capture and the ledger verified, against the stand-in. Whether PayPal ever returns the same token for a second approval by the same buyer was not checked, which is why the delete is guarded by value. Whether the sandbox retires a token over weeks was not checked either.
+- The rest after a refusal and the "today is used up" flag are in memory. After a restart the choice is shown again until one visitor meets the refusal or the cap. That visitor is charged nothing.
+- The session PayPal refused keeps a failed step it can't run again, so its visitor has to start a new session. If another session's purchase is in flight at that moment, it gets a checkout order in place of a charge, and no money moves without a buyer.
+- The token stays saved at PayPal until someone deletes it with the vault API. Whoever holds it and this app's credentials can charge the sandbox buyer.
+- A refund asked for from a house-buyer session goes back to the house buyer's sandbox account.
