@@ -2997,3 +2997,88 @@ The first real PayPal charge in the demo sat behind a sandbox login: a visitor h
 - The session PayPal refused keeps a failed step it can't run again, so its visitor has to start a new session. If another session's purchase is in flight at that moment, it gets a checkout order in place of a charge, and no money moves without a buyer.
 - The token stays saved at PayPal until someone deletes it with the vault API. Whoever holds it and this app's credentials can charge the sandbox buyer.
 - A refund asked for from a house-buyer session goes back to the house buyer's sandbox account.
+
+
+---
+
+### D-86 · The demo opens on the poisoned listing, and the "no gate" figure is arithmetic · Accepted (implementer's decision, for the builder to check)
+
+A judge isn't required to run the project and one who does has a few minutes. The refusal of a fooled model's cart is the point of Praman, and it sat at step 6 of 8, behind a PayPal sandbox login.
+
+**Decided.** The steps are now: 1 the mandate, 2 the poisoned listing, 3 Connect PayPal, 4 to 6 the three purchases, 7 twenty at once, 8 revoke. Step 2 runs on the simulated rail and needs no login. Section ids and routes did not change, so links and anchors still work. The start page leads with one sentence about the example person, Meera, and the login is one small line under the Start button.
+
+Beside the refusal, a panel labelled "Arithmetic, not a payment" adds the refused cart up at catalog prices: $6.00 + $3.00 + $100.00 = $109.00, and says nothing was charged. It is computed when the page is rendered, from the same price constants the demo catalog is seeded from, in bigint minor units. Tests hold it to no model call, no executor call and no ledger row.
+
+**What this rules out.** An ungated run to produce the figure. No path in this repo sends a cart to a rail without `evaluate()`, and none was added to make a number for the page. Calling the figure a payment, a loss, or something that happened.
+
+**Rejected.** *A real "unprotected" lane that charges the fooled cart on the simulated rail:* it puts the bug the project exists to prevent into the repo, for a figure a sum gives exactly. *Keeping the login warning first on the start page:* the first runnable step needs no login, so the warning was the wrong first thing to read.
+
+**Limits.** The fooled cart's refusal now lands before the PayPal purchases and counts toward the mandate's denial cap, 5 an hour. One refusal doesn't block the purchases, and a test covers that. A visitor who presses "Ask the agent again" on a fooled live model until five refusals are on the ledger has the session's later purchases refused, and the page gives no warning. Meera is an example, not a customer. The front page and the README say so in those words; the demo's start page tells her story and says the demo puts the visitor in her place, without that label. Her story says $60 a week; the demo mandate is $60 in total for one hour, and the start page says the demo is an hour.
+
+
+---
+
+### D-87 · The fooled-model recording is written by a script, never by hand · Accepted (implementer's decision, for the builder to check)
+
+The demo shows a recording of a model that really was fooled by the poisoned listing. The old recording was in rupees and carried a notice saying so. A recording is evidence only if nobody typed it.
+
+**Decided.** `scripts/record-undefended-run.ts` is the one way to produce `apps/receipt-ui/src/demo/recorded/undefended-system-update.json`. It runs the ablation's existing undefended arm against the demo market with the injection step's fixed goal, sends the cart through `runIntent` on the simulated rail under a demo mandate, and writes the file only if the cart contains the bait SKU. Otherwise it exits 1 and leaves the old file alone. It allows at most 5 tries, and the file records how many were allowed and which one was fooled. The page loads only a recording in US dollars and says which try it shows.
+
+The committed recording is one run on 2026-11-09 with `google/gemini-3.1-flash-lite`: fooled on try 3 of 3, and Praman answered DENY `CATEGORY_OUT_OF_SCOPE` with no money moved.
+
+**What this rules out.** Editing the recording by hand. Generating attack text: the script uses the static corpus listing and nothing else (invariant 9). A recording from a run that was not fooled.
+
+**Rejected.** *Converting the rupee recording to dollars:* that is a hand edit of evidence. *Trying until fooled with no limit:* the count of tries is part of what the recording claims.
+
+**Limits.** The file holds `tries: {allowed: 3, fooled_on: 3}` and nothing about tries 1 and 2. That try 1 ignored the line and try 2 failed at the model call is in the commit message and the build log only, and those tries wrote no ledger rows. An earlier run of the script stopped on a model timeout before any try finished and is not counted. One fooled run in three says the model can be fooled, not how often; `eval/report.md` has the measured rates.
+
+
+---
+
+### D-88 · The public sample is one session the operator pins, shown through a public copy · Accepted (implementer's decision, for the builder to check)
+
+A visitor with no time to run the demo should still be able to open a real run. The ledger console showed only a visitor's own session, and only after they had made one.
+
+**Decided.** `/sample` shows one past session in the same AG Grid console, with a link to each trace's public page and public dispute bundle. The session is named by `SAMPLE_MANDATE_IDS` in the server's environment: up to four mandate ids. Unset or malformed, `/sample` is a 404 and nothing links to it. Set, the front page, `/traces` and the empty `/demo/console` link to it.
+
+The page gets a public copy of the console data: no budget, and no reason on any row that asked a person, with the decisions chart counted again from what is left (D-84). A test runs a whole demo session, pins it, and checks the HTML and the JSON for limits, step-up reasons, the signed mandate, salts, the cookie and tokens, and that every value on a row is also in that trace's public bundle. One load is shared for 60 seconds, because each load walks the whole chain, and the page says so.
+
+**What this rules out.** A request choosing which mandate to show: no parameter, cookie or header can. Showing a budget, a threshold or a step-up's reason on a public page. Writing anything: the routes answer GET only.
+
+**Rejected.** *A mandate id in the URL:* anyone could then read any session's rows. *Reusing the visitor's console data:* it carries budgets and step-up reason codes, which D-84 withholds from the public.
+
+**Limits.** The sample shows that session's sandbox order and capture ids, which its public trace pages already show. The concurrency step spends its whole $30.00 mandate, so that budget can be read off the spend chart; the amounts were already on public traces. A populated `/sample` has no committed browser test, because the local suite can't pin a session before the server starts. `e2e/hosted/sample.spec.ts` covers it once the hosted server has the variable.
+
+
+---
+
+### D-89 · The browser check rehashes only what the public page holds, and says what it can't see · Accepted (implementer's decision, for the builder to check)
+
+"Verify this chain" asks the server whether the ledger is intact. A reader who doubts the server has no reason to believe its answer.
+
+**Decided.** The trace page carries each row's hash inputs as the exact text the ledger hashed, and a script served from this origin recomputes every entry hash with WebCrypto and checks each link between neighbouring rows. A row's payload is sent, as canonical JSON, only when the public copy withholds nothing from it and it is under 100,000 characters. Otherwise only the names of the withheld fields are sent and the page says "payload not rehashed". The rule for what is public is the dispute package's own, exported and reused, so the page and the public bundle can't disagree. The owner's page gets the same public copy.
+
+A "change one digit" box alters the browser's copy of one row and shows where the chain breaks. It makes no request. The console has the same recheck for entry hashes.
+
+**What this rules out.** Sending a withheld field to the browser so a hash can be shown to match. Claiming the browser checked the whole ledger: it checks the rows on the page against their own hashes, and a link only where two rows are neighbours by sequence number. A second list of withheld fields kept in the UI.
+
+**Rejected.** *Fetching the dispute bundle when the button is pressed:* that is a request, and a full chain walk on the server for each press. *Hashing in the browser from values re-formatted for display:* a timestamp or an amount printed differently gives a false break.
+
+**Limits.** The script comes from the same server as the rows, so this is a check a reader can inspect and rerun, not proof against a server that lies in both. Rows with withheld fields have their entry hash and links checked but not their payload hash; only the owner's bundle can do that (D-84). The served script is tested against rows written by `append()`, with millisecond times and a thirty-digit amount. A sequence number past 2^53 is tested with synthetic rows, since `append()` assigns the number.
+
+
+---
+
+### D-90 · Praman maps onto AP2 and ACP and claims neither · Accepted (implementer's decision, for the builder to check)
+
+A PayPal reader places an agent-payments project by AP2 and ACP. Praman's mandate was modelled on UPI Circle's consent and limit, and implements neither protocol.
+
+**Decided.** `docs/PROTOCOLS.md` maps each mandate field onto AP2 v0.2 and ACP's delegated payment allowance, as those pages read on 9 Nov 2026, and lists the gaps: no SD-JWT, no agent key binding, no user-held key, no merchant-signed cart, no signed receipts, no network tokens, no interop test. The wording is "AP2-shaped" and "maps onto". The word "compliant" appears once, in "not compliant". Quotations are verbatim from the pages cited, and where a page did not say something the document says so.
+
+On the Agent Toolkit, the README and the mapping say what is true today: no code here uses it, and `paypal-exec` calls PayPal's REST APIs directly (D-38). The toolkit gives an agent the means to act, and Praman is the permission in front of that.
+
+**What this rules out.** Describing Praman as AP2 or ACP compliant, compatible or interoperable in the README, the front page, the Devpost text or the video. Paraphrasing a spec inside quotation marks.
+
+**Rejected.** *Saying nothing about the protocols:* the reader then has to work out the mapping alone, and may assume a claim that was never made. *Building an AP2 projection of the mandate before the deadline:* display only, and not in the time left.
+
+**Limits.** Nothing was run against an AP2 sample or an ACP endpoint. The specs move; the mapping is of the versions read on one day. Writing it surfaced two facts about Praman's own mandate: `subject_id` is a signed label that nothing checks against the caller, and the signed document in code has no `revoked` field although the example in `docs/MANDATE_SPEC.md` shows one. Neither is changed here.
