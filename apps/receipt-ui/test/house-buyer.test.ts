@@ -210,6 +210,7 @@ describe("choosing the house buyer", () => {
     expect(s.beats.get("first")).toMatchObject({ state: "done", payment: "saved_method", orderStatus: "captured" });
     expect(s.beats.get("first")?.message).toContain("the demo's sandbox buyer");
     expect(s.beats.get("first")?.message).not.toContain("your saved PayPal account");
+    expect(await v.page()).toContain("Paid from the demo&#39;s sandbox buyer account, with no buyer present.");
 
     await v.post("/demo/step/second");
     expect(s.beats.get("second")).toMatchObject({ state: "done", reasonCode: "OK", agentView: { kind: "ALLOW", amount_minor: 450n } });
