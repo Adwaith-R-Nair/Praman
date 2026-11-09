@@ -88,7 +88,10 @@ export async function consentAsHouseBuyer(vault: Pick<VaultApi, "createSetupToke
     }
     if (!setup.ok) return { ok: false, reason: `PayPal refused to start the approval (${setup.code}). Nothing was saved.` };
 
-    io.say("Open this address in a private browser window, log in as the sandbox BUYER (a personal sandbox account), and agree:");
+    io.say(
+      "Use a sandbox buyer account kept for this alone, not the one whose login you give visitors. A server that doesn't have this token set can delete it at PayPal when someone connects there by logging in as the same account.",
+    );
+    io.say("Open this address in a private browser window, log in as that sandbox BUYER (a personal sandbox account), and agree:");
     io.say(setup.value.approveUrl);
     io.say(`PayPal then sends the browser to ${opts.returnUrl}. Nothing there needs doing. If nothing is running at that address the browser shows an error page, and that is fine: the approval is already given.`);
     await io.waitForApproval();

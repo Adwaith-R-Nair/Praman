@@ -200,4 +200,10 @@ describe("consenting once as the demo's sandbox buyer", () => {
     expect(shown).not.toContain("the demo's front page");
     expect(shown).toContain("error page");
   });
+
+  it("tells the builder, before the approval, to use a sandbox buyer kept for this alone", async () => {
+    await consentAsHouseBuyer(new FakePayPal(), opts(join(dir, "house-buyer-token")), io);
+    const beforeLink = said.slice(0, said.findIndex((line) => line.includes("approval_session_id=")));
+    expect(beforeLink.join("\n")).toContain("not the one whose login you give visitors");
+  });
 });
