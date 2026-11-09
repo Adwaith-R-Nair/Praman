@@ -118,6 +118,10 @@ ${notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}<
   <span class="chain-stamp" id="chain-stamp">Checking</span>
   <p class="chain-text" id="chain-text">Walking the hash chain from its first row.</p>
 </section>
+<div class="chain-browser" id="chain-browser" hidden>
+  <button type="button" id="chain-browser-run" class="btn-quiet">Recheck these rows in my browser</button>
+  <p class="chain-browser-text" id="chain-browser-text" role="status" aria-live="polite">The verdict above is the server's. This asks nobody: your browser recomputes each row's entry hash itself.</p>
+</div>
 <section class="tiles" id="tiles" aria-label="Totals"></section>
 <section class="charts" aria-label="Charts">
   <figure class="card card-wide">
@@ -164,6 +168,7 @@ ${mode === "sample" ? sampleTracesHtml(sampleTraces) : ""}
 </main>
 <script src="${vendorPath(VENDOR.grid)}" defer></script>
 <script src="${vendorPath(VENDOR.charts)}" defer></script>
+<script src="/assets/chain-verify.js" defer></script>
 <script src="/assets/console.js" nonce="${n}" defer></script>
 </body>
 </html>`;

@@ -164,6 +164,36 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+/* The reader's own recheck of the rows, under the server's verdict. */
+
+.chain-browser {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+}
+
+.chain-browser[hidden] {
+  display: none;
+}
+
+.chain-browser-text {
+  margin: 0;
+  flex: 1 1 24rem;
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.chain-browser[data-state="ok"] .chain-browser-text {
+  color: var(--seal);
+}
+
+.chain-browser[data-state="broken"] .chain-browser-text {
+  color: var(--deny);
+}
+
 /* ── Totals ───────────────────────────────────────────────────── */
 
 .tiles {

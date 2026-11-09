@@ -1,6 +1,8 @@
+import { webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
+import { computeEntryHash, GENESIS_HASH } from "@praman/ledger";
 
 // Runs the real console script in a bare context, with just enough of a page, a grid
 // and a chart library for it to load, to check what it does when it opens.
@@ -13,6 +15,8 @@ interface FakeNode {
 
 let dataSrc = "/demo/console.json";
 let mode = "visitor";
+/** The page's hashing script, when a test loads it beside the console's. */
+let chainLib: unknown = undefined;
 
 function fakeNode(id: string): FakeNode {
   const children: unknown[] = [];
@@ -28,7 +32,9 @@ function fakeNode(id: string): FakeNode {
     removeChild(c: unknown) { children.splice(children.indexOf(c), 1); return c; },
     setAttribute() {},
     getAttribute(name: string) { return name === "data-src" ? dataSrc : name === "data-mode" ? mode : null; },
-    addEventListener() {},
+    hidden: true,
+    listeners: {} as Record<string, () => void>,
+    addEventListener(type: string, fn: () => void) { (node["listeners"] as Record<string, () => void>)[type] = fn; },
     scrollIntoView() { node.scrolled += 1; },
   };
   return node;
@@ -36,7 +42,7 @@ function fakeNode(id: string): FakeNode {
 
 const fetches = { count: 0 };
 
-interface Row { seq: string; traceId: string }
+interface Row { seq: string; traceId: string; [key: string]: unknown }
 
 function openConsole(hash: string, rows: Row[]) {
   const nodes = new Map<string, FakeNode>();
@@ -81,6 +87,7 @@ function openConsole(hash: string, rows: Row[]) {
     location: { hash },
     agGrid: { themeQuartz: { withParams: () => ({}) }, createGrid: (_el: unknown, options: Record<string, unknown>) => { gridOptions = options; return gridApi; } },
     agCharts: { AgCharts: { create: () => ({}) } },
+    PramanChainVerify: chainLib,
   };
   const fetch = () => {
     fetches.count += 1;
@@ -90,7 +97,7 @@ function openConsole(hash: string, rows: Row[]) {
   const source = readFileSync(new URL("../src/console/console.client.js", import.meta.url), "utf8");
   runInNewContext(source, { document, window, fetch, BigInt, Promise });
   setTimeout(settle, 20);
-  return done.then(() => ({ grid: byId("grid"), quick: byId("quick"), count: byId("count"), chainText: byId("chain-text"), gridOptions, selected, visible }));
+  return done.then(() => ({ grid: byId("grid"), quick: byId("quick"), count: byId("count"), chainText: byId("chain-text"), chainBrowser: byId("chain-browser"), chainBrowserRun: byId("chain-browser-run"), chainBrowserText: byId("chain-browser-text"), gridOptions, selected, visible }));
 }
 
 const ROWS: Row[] = [
@@ -161,5 +168,64 @@ describe("the console as the public sample", () => {
   it("says the budget is withheld, not that the server lacks the mandate", () => {
     const source = readFileSync(new URL("../src/console/console.client.js", import.meta.url), "utf8");
     expect(source).toContain('mode === "sample" ? "The signed budget is withheld from this public page, so no budget line is drawn."');
+  });
+});
+
+describe("rechecking the rows in the browser", () => {
+  /** Three rows hashed by the ledger's own function: 1 and 2 are neighbours, 5 follows a gap. */
+  function ledgerRows(): Row[] {
+    const rows: Row[] = [];
+    let prev = GENESIS_HASH;
+    for (const seq of [1n, 2n, 5n]) {
+      const ts = new Date(Date.UTC(2026, 10, 9, 10, 0, Number(seq), 7));
+      const fields = { prevHash: seq === 5n ? "c".repeat(64) : prev, seq, ts, actor: "praman", eventType: "decision", payloadHash: "ab".repeat(32) };
+      const entryHash = computeEntryHash(fields);
+      rows.push({ seq: seq.toString(), traceId: "trc_a", ts: ts.toISOString(), actor: fields.actor, payloadHash: fields.payloadHash, prevHash: fields.prevHash, entryHash });
+      prev = entryHash;
+    }
+    return rows;
+  }
+
+  function withLib<T>(work: () => Promise<T>): Promise<T> {
+    const sandbox: { crypto: unknown; TextEncoder: unknown; PramanChainVerify?: unknown } = { crypto: webcrypto, TextEncoder };
+    runInNewContext(readFileSync(new URL("../src/pages/chain-verify.client.js", import.meta.url), "utf8"), sandbox);
+    chainLib = sandbox.PramanChainVerify;
+    return work().finally(() => {
+      chainLib = undefined;
+    });
+  }
+
+  const press = async (page: Awaited<ReturnType<typeof openConsole>>) => {
+    (page.chainBrowserRun["listeners"] as Record<string, () => void>)["click"]?.();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  };
+
+  it("recomputes each row's entry hash, checks links between neighbours, and says payloads were not rehashed", async () => {
+    await withLib(async () => {
+      // The grid's rows arrive newest first; the check puts them back in ledger order.
+      const page = await openConsole("", ledgerRows().reverse());
+      expect(page.chainBrowser["hidden"]).toBe(false);
+      await press(page);
+      expect(page.chainBrowserText.textContent).toBe(
+        "Rechecked in this browser with WebCrypto. 3 entry hashes recomputed from the rows below, all matching. 2 links between neighbouring rows hold, and 1 could not be checked because the row before is not among these rows. Payloads are not sent to this page, so each payload hash is taken as recorded.",
+      );
+    });
+  });
+
+  it("says where a row no longer matches its hash", async () => {
+    await withLib(async () => {
+      const rows = ledgerRows();
+      const forged = rows.map((r) => (r.seq === "2" ? { ...r, actor: "someone_else" } : r));
+      const page = await openConsole("", forged);
+      await press(page);
+      expect(page.chainBrowserText.textContent).toBe("This browser's check fails at seq 2. This entry's own fields changed after it was written. (ENTRY_HASH_MISMATCH)");
+    });
+  });
+
+  it("stays hidden when the browser has no WebCrypto, and asks the server for nothing more", async () => {
+    fetches.count = 0;
+    const page = await openConsole("", ledgerRows());
+    expect(page.chainBrowser["hidden"]).toBe(true);
+    expect(fetches.count).toBe(1);
   });
 });

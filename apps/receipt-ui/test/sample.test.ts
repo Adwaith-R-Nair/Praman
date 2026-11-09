@@ -437,6 +437,15 @@ describe("the console page in sample mode", () => {
     expect(html).toContain('href="/r/trc_%22%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E"');
   });
 
+  it("loads the hashing script from this origin and keeps the recheck hidden until the script shows it", () => {
+    for (const mode of ["sample", "visitor", "operator"] as const) {
+      const { html } = renderConsolePage(mode, "bm9uY2Vub25jZW5vbmNlbm9uY2U=");
+      expect(html).toContain('<script src="/assets/chain-verify.js" defer></script>');
+      expect(html).toContain('id="chain-browser" hidden');
+      expect(html).not.toMatch(/<script>|<style>| style="/);
+    }
+  });
+
   it("shows no trace list on the visitor's or the operator's console", () => {
     const traces = [{ traceId: "trc_a", summary: "s", label: "Allowed", labelClass: "decision-allow", amount: null }];
     expect(renderConsolePage("visitor", "bm9uY2Vub25jZW5vbmNlbm9uY2U=", null, traces).html).not.toContain("Traces in this sample");

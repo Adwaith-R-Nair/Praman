@@ -420,11 +420,49 @@
     drawSpend(first);
   }
 
+  // ── The reader's own check ───────────────────────────────────────
+
+  // Recomputes every row's entry hash in this browser, with WebCrypto, from the rows
+  // already loaded (chain-verify.client.js). It makes no request. The rows here carry
+  // no payloads, so a payload hash is taken as recorded, and the text says so. A link
+  // is checked only between rows whose seqs are neighbours.
+  function setupBrowserCheck(rows) {
+    var lib = window.PramanChainVerify;
+    var box = document.getElementById("chain-browser");
+    var button = document.getElementById("chain-browser-run");
+    var text = document.getElementById("chain-browser-text");
+    if (!lib || !lib.available() || !box || !button || !text || rows.length === 0) return;
+    var ordered = rows
+      .map(function (r) {
+        return { seq: r.seq, ts: r.ts, actor: r.actor, eventType: r.eventType, payloadHash: r.payloadHash, prevHash: r.prevHash, entryHash: r.entryHash, payloadText: null, withheld: [] };
+      })
+      .sort(function (a, b) { return compareMinor(a.seq, b.seq); });
+    button.addEventListener("click", function () {
+      button.disabled = true;
+      lib
+        .verifyRows(ordered)
+        .then(function (outcome) {
+          var c = outcome.counts;
+          box.setAttribute("data-state", outcome.ok ? "ok" : "broken");
+          text.textContent = outcome.ok
+            ? "Rechecked in this browser with WebCrypto. " + c.entries + " entry " + (c.entries === 1 ? "hash" : "hashes") + " recomputed from the rows below, " + (c.entries === 1 ? "" : "all ") + "matching. " + c.links + " " + (c.links === 1 ? "link" : "links") + " between neighbouring rows " + (c.links === 1 ? "holds" : "hold") + (c.linksNotChecked > 0 ? ", and " + c.linksNotChecked + " could not be checked because the row before is not among these rows" : "") + ". Payloads are not sent to this page, so each payload hash is taken as recorded."
+            : "This browser's check fails at seq " + outcome.brokenAt + ". " + outcome.reasonPlain + " (" + outcome.reason + ")";
+        })
+        .catch(function () {
+          box.setAttribute("data-state", "broken");
+          text.textContent = "The check could not run in this browser.";
+        })
+        .then(function () { button.disabled = false; });
+    });
+    box.hidden = false;
+  }
+
   // ── Wiring ───────────────────────────────────────────────────────
 
   function render(data) {
     renderChain(data.chain, data.rows);
     renderTiles(data);
+    setupBrowserCheck(data.rows);
     makeGrid(data.rows);
     setupSpend(data.spend);
     drawReasons(data.decisions);
