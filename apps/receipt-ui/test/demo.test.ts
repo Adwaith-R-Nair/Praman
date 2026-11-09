@@ -425,6 +425,29 @@ describe("a session lost to a restart", () => {
     expect(await v.page()).not.toContain("Your demo session has ended");
   });
 
+  it("runs neither poisoned-listing button for a session that is gone or past its hour", async () => {
+    // These are the first buttons a visitor meets now, so the likeliest press on a stale page.
+    const lost = await restarted();
+    const rows = await prisma.ledgerEntry.count();
+    const calls = model.calls;
+    for (const step of ["injection", "fixture"]) {
+      expect((await lost.post(`/demo/step/${step}`)).location).toBe("/demo");
+    }
+    expect(await lost.page()).toContain("Your demo session has ended");
+
+    const late = visitor();
+    await late.post("/demo/start");
+    clock += 60 * 60 * 1000;
+    for (const step of ["injection", "fixture"]) {
+      expect((await late.post(`/demo/step/${step}`)).location).toBe("/demo");
+    }
+    const page = await late.page();
+    expect(page).toContain("Your demo session has ended");
+    expect(page).not.toContain("Same cart, no gate");
+    expect(model.calls).toBe(calls);
+    expect(await prisma.ledgerEntry.count()).toBe(rows);
+  });
+
   it("says nothing to a visitor who never had a session", async () => {
     expect(await visitor().page()).not.toContain("Your demo session has ended");
   });
