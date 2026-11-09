@@ -1,4 +1,4 @@
-import { expect, test } from "../support.js";
+import { expect, expectNoSidewaysScroll, PHONE, test } from "../support.js";
 
 /**
  * The demo's shared sandbox buyer (D-85) as a visitor meets it, against the stand-in
@@ -40,6 +40,12 @@ test("a visitor pays for the small purchases with no PayPal login, and the check
     await expect(buttons).toHaveText(["Connect PayPal", "Use the demo's sandbox buyer"]);
     await expect(step("connect")).toContainText("sandbox money only");
     await expect(step("first").getByRole("button", { name: "Ask the agent to buy lunch" })).toBeDisabled();
+    // Two buttons in one row is the widest this step gets, so it is held to a phone's width here.
+    const desktop = page.viewportSize();
+    await page.setViewportSize(PHONE.viewport);
+    await expectNoSidewaysScroll(page);
+    await expect(page.getByRole("button", { name: "Use the demo's sandbox buyer" })).toBeVisible();
+    if (desktop !== null) await page.setViewportSize(desktop);
   });
 
   await test.step("choosing the demo's buyer connects without leaving the page", async () => {
