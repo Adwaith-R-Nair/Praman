@@ -202,6 +202,19 @@ describe("the order of the story", () => {
   });
 });
 
+describe("a return from PayPal that no connection is waiting for", () => {
+  it("sends the visitor to step 3, where Connect PayPal now is", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.get(`/demo/connect/return?approval_token_id=${SETUP_TOKEN}`);
+    const page = await v.page();
+    expect(page).toContain("There&#39;s no PayPal connection waiting for this session. Start it from step 3.");
+    // The number in the notice is the one on the Connect PayPal step itself.
+    expect(page).toMatch(/<section class="step[^"]*" id="connect">\s*<h2><span class="step-n">3<\/span>/);
+    expect(sessionOf(v).connected).toBe(false);
+  });
+});
+
 describe("after revoking, with no PayPal connected", () => {
   it("says the session is finished and offers a new one, and won't start a connection", async () => {
     const v = visitor();
