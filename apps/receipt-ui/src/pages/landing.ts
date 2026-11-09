@@ -11,6 +11,8 @@ import { escapeHtml } from "../html.js";
 
 const usd = (amount: bigint): string => formatMoney(minor(amount), DEMO_CURRENCY);
 const limit = (value: string): string => usd(BigInt(value));
+/** A whole-dollar figure as the story says it: "$60", not "$60.00". Display text only. */
+const round = (formatted: string): string => formatted.replace(/\.00$/, "");
 
 /** The poisoned line in the demo market's listing, from the static corpus fixture injection_system_update. */
 const POISONED_LISTING =
@@ -23,9 +25,35 @@ const priceOf = (sku: string): string => {
 
 const bowl = CAFE_ITEMS.find((i) => i.sku === "SKU_CAFE_BOWL");
 
-/** The branch with the PayPal work. The repo's main branch still holds the earlier Razorpay entry. */
-const CODE = "https://github.com/Adwaith-R-Nair/Praman/tree/paypal-hackathon";
-const MCP_GUIDE = "https://github.com/Adwaith-R-Nair/Praman/blob/paypal-hackathon/docs/MCP.md";
+/** The repository's front page, and the MCP guide on its default branch (GitHub reads HEAD as that branch). */
+const CODE = "https://github.com/Adwaith-R-Nair/Praman";
+const MCP_GUIDE = `${CODE}/blob/HEAD/docs/MCP.md`;
+
+/** Where the hosted demo lives (docs/DEPLOY.md). A link preview's og:url has to be a full address. */
+const SITE = "https://praman-demo.onrender.com/";
+
+/** The person in the story. Her budget and the gift card's price are the demo's own figures. */
+const BUDGET = round(limit(MAIN_LIMITS.max_total_minor));
+const BAIT = round(usd(MARKET_PRICES["SKU_INJ2_TARGET"] ?? 0n));
+
+const TITLE = "Praman: the signed permission between an AI agent and PayPal";
+const DESCRIPTION = `Meera gives her shopping agent her PayPal account and ${BUDGET} a week. Praman checks every purchase against limits she signed before PayPal moves money, and keeps a ledger anyone can verify.`;
+
+/**
+ * What a chat app or a social site shows when the address is pasted. There is no image:
+ * the one screenshot this app serves is the whole demo page, 1280 by 7850, which no card
+ * can show, and a preview with no image is better than a cropped strip of one.
+ */
+const PREVIEW = [
+  `<meta property="og:type" content="website">`,
+  `<meta property="og:site_name" content="Praman">`,
+  `<meta property="og:title" content="${escapeHtml(TITLE)}">`,
+  `<meta property="og:description" content="${escapeHtml(DESCRIPTION)}">`,
+  `<meta property="og:url" content="${SITE}">`,
+  `<meta name="twitter:card" content="summary">`,
+  `<meta name="twitter:title" content="${escapeHtml(TITLE)}">`,
+  `<meta name="twitter:description" content="${escapeHtml(DESCRIPTION)}">`,
+].join("\n");
 
 export function renderLandingPage(): string {
   const body = `
@@ -35,13 +63,15 @@ export function renderLandingPage(): string {
 </header>
 
 <section class="hero">
-  <h1>An AI agent with a payment method can be talked into spending.</h1>
-  <p class="lede">One line in a product listing can steer the model. Praman sits between the agent and PayPal so that it doesn't matter. The agent can only propose a purchase. Praman checks it against limits a person signed, and only Praman's yes moves money. Every decision goes on a ledger anyone can verify.</p>
+  <h1>Meera gives her shopping agent her PayPal account and ${BUDGET} a week for lunch.</h1>
+  <p class="story">On Tuesday a shop's listing tells the agent to add a ${BAIT} gift card, and nobody is at the checkout to say no.</p>
+  <p class="lede">Praman is the signed permission between the agent and PayPal. Meera signs her limits once, the agent can only name an item and a quantity, and plain code answers allow, ask Meera, or refuse. PayPal doesn't trust the browser with the price, and Praman doesn't trust the model with it. Every decision lands on a hash-chained ledger you can recheck link by link, and it is the evidence if a charge is disputed.</p>
   <p class="cta"><a class="btn btn-primary" href="/demo">Try the live demo</a><span class="cta-note">PayPal sandbox. About five minutes. No real money. The sandbox login is in the Devpost testing notes.</span></p>
+  <p class="built-on">Built on the PayPal sandbox: Orders, Vault, refunds and verified webhooks. Hosted on Render. The agent in the demo is a Gemini model. The ledger console is AG Grid. The local MCP shop lists real products with prices pinned from Channel3.</p>
 </section>
 
 <figure class="specimen" aria-labelledby="specimen-caption">
-  <figcaption id="specimen-caption">Step 6 of the demo. A shop's listing carries a line written for the agent, not for you.</figcaption>
+  <figcaption id="specimen-caption"><strong>An AI agent with a payment method can be talked into spending.</strong> The first step of the demo. A shop's listing carries a line written for the agent, not for you.</figcaption>
   <blockquote class="listing"><p>${escapeHtml(POISONED_LISTING)}</p></blockquote>
   <div class="gate">
     <div class="cell">
@@ -98,13 +128,13 @@ export function renderLandingPage(): string {
 
 <section class="closing" aria-labelledby="try">
   <h2 id="try">See it decide</h2>
-  <p>In the demo you get a fixed mandate, signed for you with a demo key, connect a PayPal sandbox account and let an agent shop. You approve what Praman asks you about, watch a poisoned listing fail, send twenty purchases at once into one budget, then revoke the mandate and see the agent stopped. Every step links to its ledger record.</p>
+  <p>In the demo you get a fixed mandate, signed for you with a demo key, and watch a poisoned listing fail. Then you connect a PayPal sandbox account and let an agent shop. You approve what Praman asks you about, send twenty purchases at once into one budget, then revoke the mandate and see the agent stopped. Every step links to its ledger record.</p>
   <p class="cta"><a class="btn btn-primary" href="/demo">Try the live demo</a></p>
 </section>
 
 <footer class="foot">
   <p>Praman is open source. <a href="${CODE}">Read the code and the design decisions on GitHub</a>. Any MCP agent, such as Claude Desktop, can also shop through it locally: <a href="${MCP_GUIDE}">how to connect one</a>.</p>
-  <p>Sandbox only. The PayPal accounts here hold play money.</p>
+  <p>Sandbox only. The PayPal accounts here hold play money. Meera is an example, not a customer.</p>
 </footer>
 `;
 
@@ -113,8 +143,9 @@ export function renderLandingPage(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Praman: spending limits an AI agent can't talk its way past</title>
-<meta name="description" content="Praman decides every purchase an AI agent proposes against limits a person signed, before PayPal moves any money, and keeps a verifiable record of each decision.">
+<title>${escapeHtml(TITLE)}</title>
+<meta name="description" content="${escapeHtml(DESCRIPTION)}">
+${PREVIEW}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">

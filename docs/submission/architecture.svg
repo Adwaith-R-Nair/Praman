@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 880" width="1200" height="880" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif">
   <title id="t">Praman architecture</title>
-  <desc id="d">A person signs a mandate. An agent proposes a SKU and quantity. Inside Praman's trust boundary, evaluate decides ALLOW, STEP_UP or DENY. ALLOW writes a pending outbox record, PayPal is called outside any transaction, and the outcome is appended. Verified PayPal webhooks and every decision land on an append-only ledger, which feeds the console, trace page and dispute bundle.</desc>
+  <desc id="d">A person signs a mandate. An agent, Gemini in the hosted demo or any MCP client, reads a merchant catalog, which in the MCP shop holds Channel3 products, and proposes a SKU and quantity. Inside Praman's trust boundary, evaluate decides ALLOW, STEP_UP or DENY. ALLOW writes a pending outbox record, PayPal is called outside any transaction, and the outcome is appended. Verified PayPal webhooks and every decision land on an append-only ledger, which feeds the AG Grid console, trace page and dispute bundle. The hosted demo runs in one Render web service.</desc>
   <defs>
     <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#33413c"/></marker>
     <style>
@@ -20,12 +20,14 @@
   <text class="s c" x="160" y="127">signs limits with Ed25519</text>
 
   <rect class="b" x="480" y="70" width="240" height="80" rx="4"/>
-  <text class="h c" x="600" y="105">AI agent</text>
-  <text class="s c" x="600" y="127">or any MCP client</text>
+  <text class="h c" x="600" y="98">AI agent</text>
+  <text class="s c" x="600" y="119">Gemini in the hosted demo,</text>
+  <text class="s c" x="600" y="136">or any MCP client</text>
 
   <rect x="920" y="70" width="240" height="80" rx="4" fill="#f8ece8" stroke="#a03a2e" stroke-width="1.5"/>
-  <text class="h c" x="1040" y="105">Merchant catalog</text>
-  <text class="s c" x="1040" y="127">untrusted text</text>
+  <text class="h c" x="1040" y="98">Merchant catalog</text>
+  <text class="s c" x="1040" y="119">untrusted text</text>
+  <text class="s c" x="1040" y="136">Channel3 products in the MCP shop</text>
 
   <path class="w" d="M280 110H478"/>
   <text class="l c" x="380" y="100">signed mandate</text>
@@ -102,6 +104,9 @@
   <rect class="b" x="800" y="745" width="360" height="80" rx="4"/>
   <text class="h c" x="980" y="778">Dispute bundle</text>
   <text class="s c" x="980" y="801">public copy hides limits, owner gets the mandate</text>
+
+  <rect x="262" y="683" width="286" height="24" rx="12" fill="#ffffff" stroke="#1f4a70" stroke-width="1.5"/>
+  <text class="l c" x="405" y="699.5" font-weight="700" fill="#1f4a70">Hosted demo runs in one Render web service</text>
 
   <path class="w" d="M220 672V743"/>
   <path class="w" d="M600 672V743"/>

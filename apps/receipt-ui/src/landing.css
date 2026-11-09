@@ -99,13 +99,23 @@ code,
 
 /* ── Hero ─────────────────────────────────────────────────────── */
 
+/* The headline is a whole sentence about a person, so it is set smaller and wider than a slogan. */
 .hero h1 {
-  font-size: clamp(2.2rem, 6.4vw, 3.6rem);
-  line-height: 1.05;
+  font-size: clamp(1.9rem, 5.2vw, 3rem);
+  line-height: 1.1;
   letter-spacing: -0.02em;
   font-weight: 700;
+  margin: 0 0 var(--s2);
+  max-width: 24ch;
+}
+
+/* What goes wrong for her, in the refusal's ink so the eye carries it down to the specimen. */
+.story {
+  font-size: clamp(1.25rem, 3.2vw, 1.5rem);
+  line-height: 1.35;
+  color: var(--deny);
   margin: 0 0 var(--s3);
-  max-width: 17ch;
+  max-width: 34ch;
 }
 
 .lede {
@@ -124,6 +134,15 @@ code,
 }
 
 .cta-note {
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+}
+
+/* What the demo runs on, named once and plainly. */
+.built-on {
+  margin: var(--s3) 0 0;
+  padding-top: var(--s2);
+  border-top: 1px solid var(--hairline);
   font-size: 0.95rem;
   color: var(--ink-muted);
 }
@@ -162,6 +181,16 @@ code,
 .specimen figcaption {
   font-style: italic;
   color: var(--ink-muted);
+  margin: 0 0 var(--s1);
+}
+
+/* The general claim the specimen proves, above the note on where it comes from. */
+.specimen figcaption strong {
+  display: block;
+  font-style: normal;
+  font-size: 1.3rem;
+  line-height: 1.25;
+  color: var(--ink);
   margin: 0 0 var(--s1);
 }
 

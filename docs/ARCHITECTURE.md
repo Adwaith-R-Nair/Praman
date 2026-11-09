@@ -89,6 +89,7 @@ Run in GitHub Actions on every push. The README badge is generated from `report.
 
 - PayPal sandbox and Razorpay test mode only. No live keys, no real money.
 - Not a UAP implementation — UAP is unpublished.
+- Not an AP2 or ACP implementation. [`PROTOCOLS.md`](PROTOCOLS.md) maps the mandate onto both, field by field, and lists the gaps.
 - Single-merchant demo scope; multi-merchant is config, untested at scale.
 - Merkle roots are computed but not externally anchored.
 - `TRUNCATE ledger_entry` bypasses the append-only triggers entirely — they
