@@ -98,6 +98,22 @@ describe("auditTrace", () => {
     expect(text).toContain("get_order answered ID_NOT_SENT");
   });
 
+  it("prints no control character a ledger row holds, so ledger text can't forge a verdict line or move the cursor", async () => {
+    // The ledger's capture id is PayPal's text, copied when the capture was recorded, and paypal-exec keeps any non-empty string.
+    const hostile = "1DA\u001b[2J\nOverall: MATCH. 6 of 6 fields agree.";
+    const { exitCode, text } = await run(rows(intent, outcome("captured", { payment_id: hostile })), fakePayPal({ order: ok(paidOrder()) }));
+    expect(exitCode).toBe(EXIT_MISMATCH);
+    expect(text).not.toContain("\u001b");
+    expect(text.split("\n").filter((line) => line.startsWith("Overall:"))).toEqual(["Overall: MISMATCH. 1 of 6 fields differ: capture_id."]);
+
+    // The same for a row that can't be read: the reason repeats the ledger's own text.
+    const unreadable = await run(rows(outcome("created", { currency: "\u001b[2J\nOverall: MATCH." })), fakePayPal());
+    expect(unreadable.exitCode).toBe(EXIT_NOT_AUDITED);
+    expect(unreadable.text).toContain("A ledger row on this trace can't be read");
+    expect(unreadable.text).not.toContain("\u001b");
+    expect(unreadable.text.split("\n").filter((line) => line.startsWith("Overall"))).toEqual([]);
+  });
+
   it("audits every PayPal order on a trace, and one mismatch makes the whole trace a mismatch", async () => {
     const two = rows(outcome("captured"), outcome("created", { order_id: "ANOTHERORDER00001" }));
     const paypal = fakePayPal({ order: ok(paidOrder()) });

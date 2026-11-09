@@ -151,8 +151,18 @@ function table(fields: readonly FieldCheck[]): string[] {
   return rows.map((r) => `  ${r.field.padEnd(f)}  ${r.ledger.padEnd(l)}  ${r.paypal.padEnd(p)}  ${r.result}`);
 }
 
-/** The whole printed verdict. Each line is built from checked values, never from PayPal's free text. */
+/**
+ * The whole printed verdict, one printed line per element. PayPal's side of each line
+ * is built from checked values, never from its free text. The ledger's side is printed
+ * as stored, and a ledger id is PayPal's text copied when the row was written, so every
+ * control character is dropped here: ledger text can't start a line of its own or move
+ * the cursor.
+ */
 export function renderReport(report: AuditReport): string[] {
+  return reportLines(report).map((line) => line.replace(/\p{C}/gu, ""));
+}
+
+function reportLines(report: AuditReport): string[] {
   const head = `PayPal audit of trace ${report.traceId}`;
   if (report.kind === "NOT_AUDITED") return [head, `Not audited: ${report.reason}`, "Nothing was compared. This is neither a pass nor a fail."];
 
