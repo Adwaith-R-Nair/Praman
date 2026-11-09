@@ -26,6 +26,7 @@
     "mcp:approve": "tsx apps/mcp-gateway/src/approve.ts",
     "mcp:mandate": "tsx apps/mcp-gateway/src/issue-mandate.ts",
     "pending": "tsx scripts/pending.ts",
+    "house-buyer": "tsx scripts/house-buyer.ts",
     "reconcile": "tsx scripts/reconcile.ts",
     "ablation": "tsx apps/eval/src/ablation-cli.ts",
     "receipt-ui": "tsx apps/receipt-ui/src/server.ts",
