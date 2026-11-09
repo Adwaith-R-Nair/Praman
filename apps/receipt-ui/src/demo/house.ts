@@ -149,6 +149,7 @@ export const HOUSE_COPY = {
   chosen: "You're using the demo's sandbox buyer. Praman holds its saved PayPal method on the server. The agent and this page never see it.",
   unavailable: "The demo's sandbox buyer isn't available right now. Connect a PayPal sandbox account by logging in instead.",
   usedUp: "Today's sessions on the demo's sandbox buyer are used up. Connect a PayPal sandbox account by logging in instead.",
+  addressUsedUp: "The demo's sandbox buyer has been used from your address as often as it allows in a day. Connect a PayPal sandbox account by logging in instead.",
   gone: "The demo's sandbox buyer isn't available right now. Nothing was asked and nothing was charged. Connect a PayPal sandbox account by logging in, in step 2, then press the button again.",
   refused: (code: string | null) =>
     `PayPal refused the demo's sandbox buyer${code === null ? "" : ` (${code})`}. Nothing was charged. That step won't run again in this session. To go on, start a new session and connect a PayPal sandbox account by logging in.`,

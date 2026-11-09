@@ -55,6 +55,8 @@ export function demoDepsFromEnv(env: NodeJS.ProcessEnv, port: number): DemoWirin
               vault: new PayPalVault(paypalConfig),
             },
       house,
+      // checkStartup has already refused anything but one digit here.
+      proxyHops: /^\d$/.test(env["TRUST_PROXY"] ?? "") ? Number(env["TRUST_PROXY"]) : 0,
       provider: geminiKey ? new GeminiProvider(geminiKey, "gemini-3.1-flash-lite") : null,
       baseUrl,
       now: () => new Date(),

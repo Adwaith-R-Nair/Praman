@@ -9,7 +9,7 @@ import { newStyleNonce, renderConsolePage } from "../console/page.js";
 import { SESSION_TTL_MS, type BeatId, type PurchaseBeat } from "./config.js";
 import { connectHouseBuyer, finishConnect, houseInUse, isHouseToken, releaseSession, startConnect, type DemoDeps } from "./connect.js";
 import { HOUSE_COPY, HOUSE_PATH, houseWording, leaveHouseBuyer } from "./house.js";
-import { LIMITS, RateLimiter } from "./limits.js";
+import { clientIp, LIMITS, RateLimiter } from "./limits.js";
 import type { DemoSession } from "./session.js";
 import { captureCheckout, decideApproval, refundPurchase, runBeat } from "./story.js";
 
@@ -82,6 +82,8 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
   const consoleLoads = new RateLimiter(LIMITS.postsPerSession.limit, LIMITS.postsPerSession.windowMs);
   // The same allowance as the public trace page, per session rather than per address.
   const traceLoads = new RateLimiter(LIMITS.publicPerIp.limit, LIMITS.publicPerIp.windowMs);
+  // Sessions one address may put on the house buyer in a day, so one address can't take them all (D-85).
+  const houseByAddress = new RateLimiter(LIMITS.housePerIp.limit, LIMITS.housePerIp.windowMs);
 
   const send = (res: ServerResponse, status: number, html: string, extra: Record<string, string> = {}) => {
     res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", ...SECURITY_HEADERS, ...extra });
@@ -250,7 +252,7 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
 
       // Only on a server that has a house buyer. Without one this path is a 404, below.
       if (method === "POST" && path === HOUSE_PATH && house !== null) {
-        await exclusive(session, () => connectHouseBuyer(session, deps));
+        await exclusive(session, () => connectHouseBuyer(session, deps, () => houseByAddress.take(clientIp(req, deps.proxyHops ?? 0), now)));
         redirect(res, "/demo#connect");
         return;
       }

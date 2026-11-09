@@ -89,6 +89,14 @@ describe("start-up refusals", () => {
     };
     const token = "HOUSETOKEN-77aa-NEVER-SHOWN";
     expect(houseOf(env)).toBeNull();
+    // The per-address limit on house-buyer sessions reads the same proxy count as the rest of the server.
+    const hopsOf = (e: NodeJS.ProcessEnv) => {
+      const wiring = demoDepsFromEnv(e, 4100);
+      return wiring.ok ? wiring.deps.proxyHops : null;
+    };
+    expect(hopsOf(env)).toBe(0);
+    expect(hopsOf({ ...env, TRUST_PROXY: "3" })).toBe(3);
+    expect(hopsOf({ ...env, TRUST_PROXY: "many" })).toBe(0);
     expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: "" })).toBeNull();
     expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token })).toBeInstanceOf(HouseBuyer);
     expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token })?.holds(token)).toBe(true);

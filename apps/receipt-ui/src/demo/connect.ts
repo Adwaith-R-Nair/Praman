@@ -34,6 +34,11 @@ export interface DemoDeps {
   readonly provider: ModelProvider | null;
   /** Today's allowance of new sessions and model calls, shared by every visitor. */
   readonly usage: DailyUsage;
+  /**
+   * Proxies in front of this server that append to X-Forwarded-For (TRUST_PROXY), for the
+   * per-address limit on house-buyer sessions. Left out means none: the socket's address.
+   */
+  readonly proxyHops?: number;
   /** Where PayPal sends the visitor back to. Server config, never the request's Host header. */
   readonly baseUrl: string;
   readonly now: () => Date;
@@ -94,8 +99,12 @@ function houseAnswered(session: DemoSession, house: HouseBuyer, outcome: ExecOut
  * Puts this session on the demo's shared sandbox buyer, in place of a PayPal login. One
  * of the day's house-buyer sessions is used. Nothing is charged here: the session's
  * purchases go through Praman as they would with an account connected by login.
+ *
+ * `addressAllows` answers whether this visitor's address may take one more today, and
+ * counts it. It is asked only when the session would otherwise be enrolled, and before
+ * the day's count, so a press that enrols nobody costs the address and the day nothing.
  */
-export async function connectHouseBuyer(session: DemoSession, deps: DemoDeps): Promise<void> {
+export async function connectHouseBuyer(session: DemoSession, deps: DemoDeps, addressAllows: () => boolean = () => true): Promise<void> {
   const house = houseInUse(deps);
   if (house === null) {
     session.notice = "This server has no sandbox buyer of its own. Connect a PayPal sandbox account by logging in.";
@@ -112,6 +121,10 @@ export async function connectHouseBuyer(session: DemoSession, deps: DemoDeps): P
   const now = deps.now();
   if (!house.offered(now)) {
     session.notice = HOUSE_COPY.unavailable;
+    return;
+  }
+  if (!addressAllows()) {
+    session.notice = HOUSE_COPY.addressUsedUp;
     return;
   }
   if (!(await deps.usage.take("house_session", now))) {

@@ -10,7 +10,7 @@ import { generateKeypair } from "@praman/mandate";
 import { minor } from "@praman/shared";
 import { savedMethodChoice, type DemoDeps } from "../src/demo/connect.js";
 import { HOUSE_REST_MS, HouseBuyer, houseChoiceHtml } from "../src/demo/house.js";
-import { MemoryDailyUsage } from "../src/demo/limits.js";
+import { LIMITS, MemoryDailyUsage } from "../src/demo/limits.js";
 import { COOKIE, createDemoHandler, releaseAllSessions, sweepExpiredSessions } from "../src/demo/routes.js";
 import { seedDemoCatalog } from "../src/demo/seed.js";
 import { createDemoSession, SavedMethods, SessionStore } from "../src/demo/session.js";
@@ -77,10 +77,12 @@ afterAll(async () => {
 });
 
 /** A browser with its own cookie jar. Redirects are returned, not followed. */
-function visitor() {
+function visitor(address: string | null = null) {
   let cookie: string | null = null;
   async function request(method: "GET" | "POST", path: string) {
-    const res = await fetch(`${base}${path}`, { method, redirect: "manual", headers: cookie === null ? {} : { Cookie: `${COOKIE}=${cookie}` } });
+    // The address is what a trusted proxy in front of the server would report (deps.proxyHops).
+    const headers = { ...(cookie === null ? {} : { Cookie: `${COOKIE}=${cookie}` }), ...(address === null ? {} : { "X-Forwarded-For": address }) };
+    const res = await fetch(`${base}${path}`, { method, redirect: "manual", headers });
     const match = new RegExp(`${COOKIE}=([^;]*)`).exec(res.headers.get("set-cookie") ?? "");
     if (match) cookie = match[1] === "" ? null : (match[1] ?? null);
     const text = await res.text();
@@ -539,6 +541,47 @@ describe("the daily cap on house-buyer sessions", () => {
     expect(sessionOf(tomorrow).houseBuyer).toBe(true);
   });
 
+});
+
+describe("one address can't use up the day's house-buyer sessions", () => {
+  const PER_ADDRESS = LIMITS.housePerIp.limit;
+
+  it("stops enrolling sessions from an address past its own limit, without spending the day's count", async () => {
+    // The day allows one more than a single address may take.
+    use({ ...makeDeps(new HouseBuyer(HOUSE_TOKEN), PER_ADDRESS + 1), proxyHops: 1 });
+    const from = async (address: string) => {
+      const v = visitor(address);
+      await v.post("/demo/start");
+      await v.post(HOUSE_PATH);
+      return v;
+    };
+    for (let i = 0; i < PER_ADDRESS; i++) expect(sessionOf(await from("198.51.100.7")).houseBuyer).toBe(true);
+
+    const over = await from("198.51.100.7");
+    expect(sessionOf(over)).toMatchObject({ connected: false, houseBuyer: false });
+    const page = await over.page();
+    expect(page).toContain("from your address");
+    expect(page).toContain('action="/demo/connect"');
+    // Pressing again changes nothing.
+    await over.post(HOUSE_PATH);
+    expect(sessionOf(over).houseBuyer).toBe(false);
+
+    // The refused presses took none of the day's sessions: another address gets the last one.
+    expect(sessionOf(await from("203.0.113.9")).houseBuyer).toBe(true);
+    expect(sessionOf(await from("203.0.113.10")).houseBuyer).toBe(false);
+
+    // A press that enrols nobody isn't counted against the address either.
+    use({ ...makeDeps(new HouseBuyer(HOUSE_TOKEN)), proxyHops: 1 });
+    const repeat = await from("198.51.100.8");
+    for (let i = 0; i < PER_ADDRESS + 2; i++) await repeat.post(HOUSE_PATH);
+    expect(sessionOf(await from("198.51.100.8")).houseBuyer).toBe(true);
+
+    // A day later the address may use it again.
+    for (let i = 0; i < PER_ADDRESS; i++) await from("198.51.100.9");
+    expect(sessionOf(await from("198.51.100.9")).houseBuyer).toBe(false);
+    clock += LIMITS.housePerIp.windowMs;
+    expect(sessionOf(await from("198.51.100.9")).houseBuyer).toBe(true);
+  });
 });
 
 describe("when PayPal refuses the house buyer", () => {

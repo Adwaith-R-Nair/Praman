@@ -144,6 +144,13 @@ export const DEFAULT_DAILY_HOUSE_SESSIONS = 50;
 export const LIMITS = {
   /** New demo sessions from one address. */
   startPerIp: { limit: 5, windowMs: 10 * 60 * 1000 },
+  /**
+   * Sessions put on the demo's shared sandbox buyer from one address in a day (D-85).
+   * Without it, one address starting five sessions every ten minutes could take the whole
+   * day's house-buyer sessions in under two hours and leave every later visitor the login.
+   * Fifteen leaves room for several people behind one office address.
+   */
+  housePerIp: { limit: 15, windowMs: 24 * 60 * 60 * 1000 },
   /** Button presses in one session. The story has about fifteen. */
   postsPerSession: { limit: 30, windowMs: 60 * 1000 },
   /** Trace pages, verifications and dispute bundles from one address. Each reads the database. */
