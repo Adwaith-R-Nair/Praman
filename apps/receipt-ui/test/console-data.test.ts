@@ -328,7 +328,11 @@ describe("who did what", () => {
       expect([...new Set(own.map((r) => r.actor))].sort()).toEqual(bar.actors);
       expect(own.every((r) => r.who === bar.who && r.eventType === bar.eventType)).toBe(true);
     }
-    expect(data.actors.find((a) => a.who === "harness" && a.eventType === "step_up_resolved")).toMatchObject({ actors: ["issuer"], eventPlain: "Human reviewed the step-up" });
+    // The harness's own approval is never called a human review, in the grid's Event column or on its bar (D-53).
+    expect(data.actors.find((a) => a.who === "harness" && a.eventType === "step_up_resolved")).toMatchObject({ actors: ["issuer"], eventPlain: "Test harness approved the step-up. No person reviewed it" });
+    expect(data.rows.find((r) => r.traceId === "trc_h" && r.eventType === "step_up_resolved")).toMatchObject({ actor: "issuer", eventPlain: "Test harness approved the step-up. No person reviewed it" });
+    expect(data.rows.find((r) => r.traceId === "trc_a" && r.eventType === "step_up_resolved")).toMatchObject({ actor: "issuer", eventPlain: "Human reviewed the step-up" });
+    expect(data.rows.filter((r) => r.who !== "person").map((r) => r.eventPlain).join(" ")).not.toMatch(/human/i);
     expect(data.actors.find((a) => a.who === "person" && a.eventType === "refund_requested")).toMatchObject({ actors: ["demo_visitor"] });
     // The stored actor is still on the row, untouched: the entry hash covers it.
     expect(data.rows.find((r) => r.traceId === "trc_h" && r.eventType === "intent")).toMatchObject({ actor: "agent", who: "harness", whoPlain: "Test harness", hashVerdict: "intact" });

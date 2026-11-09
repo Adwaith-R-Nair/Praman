@@ -2,7 +2,7 @@ import { prisma } from "@praman/db";
 import { amountIfPresent, computeEntryHash, computePayloadHash, deriveState, GENESIS_HASH, readCurrency, verifyChain, type EventType, type VerifyResult } from "@praman/ledger";
 import { formatMoney, isCurrency, minorFromJSON, REASON_CODES, type Currency, type ReasonCode } from "@praman/shared";
 import { HARNESS_MODEL_PREFIX } from "../data.js";
-import { BREAK_REASON_PLAIN, EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
+import { BREAK_REASON_PLAIN, EVENT_TYPE_PLAIN, HARNESS_APPROVAL_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
 
 /**
  * The operator console's data: ledger rows as the grid shows them, each with its own
@@ -295,6 +295,16 @@ function whoPlainOf(who: Who, actor: string): string {
   return who === "other" ? `${actor} (as stored)` : WHO_PLAIN[who];
 }
 
+/**
+ * A row's event in the grid's words. An event type this table doesn't know is shown as
+ * stored. The harness's own approval is named as the trace page names it, never as a
+ * human review (D-53).
+ */
+function eventPlainOf(eventType: string, who: Who): string {
+  if (who === "harness" && eventType === "step_up_resolved") return HARNESS_APPROVAL_PLAIN;
+  return isEventType(eventType) ? EVENT_TYPE_PLAIN[eventType] : eventType;
+}
+
 /** What a row says about a decision, in the grid's words. */
 function decisionOf(eventType: string, p: Record<string, unknown>): { decision: string | null; reasonCode: string | null } {
   switch (eventType) {
@@ -339,7 +349,7 @@ export function toRow(entry: ConsoleEntry, check: EntryCheck, chainVerified: boo
     who,
     whoPlain: whoPlainOf(who, entry.actor),
     eventType: entry.eventType,
-    eventPlain: isEventType(entry.eventType) ? EVENT_TYPE_PLAIN[entry.eventType] : entry.eventType,
+    eventPlain: eventPlainOf(entry.eventType, who),
     mandateId,
     mandateClaimed: own === null && claimed !== null,
     merchantId: str(p["merchant_id"]) ?? str(intentOfTrace?.["merchant_id"]),

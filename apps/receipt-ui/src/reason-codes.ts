@@ -26,6 +26,13 @@ export const EVENT_TYPE_PLAIN: Record<EventType, string> = {
 };
 
 /**
+ * What a `step_up_resolved` row is called on a trace the demo's test harness made. The
+ * harness approves its own first purchase in code, so that row is never called a human
+ * review (D-53). The trace page and the console's Event column both say this.
+ */
+export const HARNESS_APPROVAL_PLAIN = "Test harness approved the step-up. No person reviewed it";
+
+/**
  * "The cart's category isn't covered by this mandate" beats
  * CATEGORY_OUT_OF_SCOPE for a human reader. Shown together, plain language
  * first — never instead of the code, which stays visible for anyone who
