@@ -30,36 +30,40 @@ if (traceId === undefined || extra !== undefined || !TRACE_ID.test(traceId)) {
   process.exit(EXIT_NOT_AUDITED);
 }
 
-const { buildReadOnlyTools, readerOver } = await import("./read-only-toolkit.js");
-const { readTraceReadOnly } = await import("./ledger-read.js");
-const { prisma } = await import("@praman/db");
-
-const deps: AuditDeps = {
-  readTrace: readTraceReadOnly,
-  paypal: () => {
-    const clientId = process.env["PAYPAL_CLIENT_ID"];
-    const clientSecret = process.env["PAYPAL_CLIENT_SECRET"];
-    if (!clientId || !clientSecret) return null;
-    return readerOver(buildReadOnlyTools({ clientId, clientSecret }));
-  },
-};
-
-// Off unless asked for. The model is given the finished comparison and no tools.
-let narrator: Narrator | null = null;
-let narrationSkipped = false;
-if (wantsNarration) {
-  const geminiKey = process.env["GEMINI_API_KEY"];
-  if (geminiKey) {
-    const { GeminiProvider } = await import("@praman/agent-core");
-    const { narratorFor } = await import("./narrate.js");
-    narrator = narratorFor(new GeminiProvider(geminiKey, NARRATION_MODEL));
-  } else {
-    narrationSkipped = true;
-  }
-}
-
 let exitCode: number = EXIT_NOT_AUDITED;
+let disconnect: (() => Promise<void>) | null = null;
 try {
+  // Loaded inside the try. @praman/db throws while it loads when DATABASE_URL is unset,
+  // and uncaught that ends the process with Node's exit code 1, which here means a mismatch.
+  const { buildReadOnlyTools, readerOver } = await import("./read-only-toolkit.js");
+  const { readTraceReadOnly } = await import("./ledger-read.js");
+  const { prisma } = await import("@praman/db");
+  disconnect = () => prisma.$disconnect();
+
+  const deps: AuditDeps = {
+    readTrace: readTraceReadOnly,
+    paypal: () => {
+      const clientId = process.env["PAYPAL_CLIENT_ID"];
+      const clientSecret = process.env["PAYPAL_CLIENT_SECRET"];
+      if (!clientId || !clientSecret) return null;
+      return readerOver(buildReadOnlyTools({ clientId, clientSecret }));
+    },
+  };
+
+  // Off unless asked for. The model is given the finished comparison and no tools.
+  let narrator: Narrator | null = null;
+  let narrationSkipped = false;
+  if (wantsNarration) {
+    const geminiKey = process.env["GEMINI_API_KEY"];
+    if (geminiKey) {
+      const { GeminiProvider } = await import("@praman/agent-core");
+      const { narratorFor } = await import("./narrate.js");
+      narrator = narratorFor(new GeminiProvider(geminiKey, NARRATION_MODEL));
+    } else {
+      narrationSkipped = true;
+    }
+  }
+
   const result = await runAudit(deps, traceId, narrator);
   for (const line of result.lines) console.log(line);
   if (narrationSkipped) console.log("\nNarration skipped: GEMINI_API_KEY is not set. The verdict above stands.");
@@ -69,6 +73,7 @@ try {
   console.error(`Not audited: the audit stopped before a verdict. ${detail}`);
   console.error("Nothing was compared. This is neither a pass nor a fail.");
 } finally {
-  await prisma.$disconnect();
+  // A failed disconnect must not replace the exit code either.
+  if (disconnect !== null) await disconnect().catch(() => undefined);
 }
 process.exit(exitCode);
