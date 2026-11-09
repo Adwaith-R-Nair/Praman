@@ -483,7 +483,7 @@ code {
   overflow-wrap: anywhere;
 }
 
-/* Step 4's point, said once, in the colour of the decision that let it through. */
+/* Step 5's point, said once, in the colour of the decision that let it through. */
 .spotlight {
   border-left: 4px solid var(--allow);
   padding: 0.35rem 0 0.35rem var(--s2);
@@ -628,6 +628,15 @@ summary {
 
 .start p {
   max-width: 38rem;
+}
+
+/* Who the demo is about. The first thing read on the start page. */
+.persona {
+  font-size: 1.2rem;
+  line-height: 1.5;
+  border-left: 3px solid var(--seal);
+  padding-left: var(--s2);
+  margin: 0 0 var(--s2);
 }
 
 .small {

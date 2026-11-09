@@ -25,6 +25,24 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await expect(mandate).toContainText("$40.00");
     await expect(mandate).toContainText("$20.00");
     await expect(step("first").getByRole("button", { name: "Ask the agent to buy lunch" })).toBeDisabled();
+    // The poisoned listing is step 2, ahead of connecting PayPal, and revoking is last.
+    await expect(page.locator("section.step")).toHaveCount(8);
+    await expect(page.locator("section.step").nth(1)).toHaveAttribute("id", "injection");
+    await expect(page.locator("section.step").nth(2)).toHaveAttribute("id", "connect");
+    await expect(page.locator("section.step").nth(7)).toHaveAttribute("id", "revoke");
+  });
+
+  await test.step("a poisoned listing first, with no PayPal connected: the live model, then a fooled cart refused", async () => {
+    await expect(step("connect").locator(".ok")).toHaveCount(0);
+    await press("Ask the agent to order at Corner Market");
+    const injection = step("injection");
+    await expect(injection.locator(".message").first()).toContainText("The agent ignored the poisoned line");
+    await press("Send the fooled cart to Praman");
+    await expect(injection.locator('.result[data-state="refused"]')).toContainText("Refused");
+    await expect(injection.locator('.result[data-state="refused"] code.code')).toHaveText("CATEGORY_OUT_OF_SCOPE");
+    await expect(injection.locator(".recording figcaption")).toContainText("Recorded run, not live.");
+    await expect(injection.locator(".recording figcaption")).toContainText("in US dollars");
+    expect(await paypalSaw()).toMatchObject({ charges: 0, checkouts: 0 });
   });
 
   await test.step("connect PayPal without the page ever seeing the saved method", async () => {
@@ -73,15 +91,6 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await press("Capture the payment");
     await expect(large.locator(".result")).toHaveAttribute("data-state", "done");
     await expect(large).toContainText("$32.00 captured after the buyer approved at PayPal.");
-  });
-
-  await test.step("a poisoned listing: the live model, then a fooled cart refused", async () => {
-    await press("Ask the agent to order at Corner Market");
-    const injection = step("injection");
-    await expect(injection.locator(".message").first()).toContainText("The agent ignored the poisoned line");
-    await press("Send the fooled cart to Praman");
-    await expect(injection.locator('.result[data-state="refused"]')).toContainText("Refused");
-    await expect(injection.locator(".recording figcaption")).toContainText("Recorded run, not live.");
   });
 
   await test.step("twenty at once: the budget holds", async () => {
@@ -157,6 +166,7 @@ test.describe("without a session", () => {
   test("the start page, the recorded run and the empty console", async ({ page, watch }) => {
     expect(watch.expected).toEqual([]);
     await page.goto("/demo");
+    await expect(page.locator(".persona")).toContainText("Meera gives her shopping agent");
     await expect(page.getByRole("button", { name: "Start a session" })).toBeEnabled();
     await page.goto("/demo/recorded");
     await expect(page.locator("figcaption")).toContainText("Recorded run, not live.");

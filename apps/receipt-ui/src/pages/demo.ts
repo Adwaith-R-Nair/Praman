@@ -368,12 +368,16 @@ function checkoutHtml(beat: PurchaseBeat, record: BeatRecord | undefined): strin
   if (record?.state !== "awaiting_checkout" || record.approveUrl === null) return "";
   return `<div class="checkout">
     <p><strong>Pay at PayPal.</strong> Copy this link into <strong>a window that is not logged in to PayPal</strong>: a private window if this demo is open in a normal one, or another browser if this demo is already in a private window. Log in there with the sandbox buyer account and approve.</p>
-    <p>Why: connecting PayPal in step 2 logged this window in, and PayPal's sandbox declines a checkout in a session that is already logged in. For a second checkout, close every private window first, so the next one starts fresh.</p>
+    <p>Why: connecting PayPal in step 3 logged this window in, and PayPal's sandbox declines a checkout in a session that is already logged in. For a second checkout, close every private window first, so the next one starts fresh.</p>
     <p class="link-row"><input class="link" type="text" readonly value="${escapeHtml(record.approveUrl)}" aria-label="PayPal checkout link"></p>
     <p>When PayPal says you're done, come back to this tab and capture.</p>
     <div class="actions">${action(`/demo/capture/${beat}`, "Capture the payment")}</div>
   </div>`;
 }
+
+/** Who the demo is about, in one sentence. The story is an example; the limits and the listing below are the demo's own. */
+const PERSONA =
+  "Meera gives her shopping agent her PayPal account and $60 a week for lunch, and on Tuesday a shop's listing tells the agent to add a $100 gift card, with nobody at the checkout to say no.";
 
 export function renderStartPage(notice: string | null, configured: { readonly paypal: boolean; readonly model: boolean }): string {
   const missing = [configured.paypal ? null : "PayPal sandbox credentials", configured.model ? null : "a model key"].filter((x) => x !== null);
@@ -385,11 +389,11 @@ export function renderStartPage(notice: string | null, configured: { readonly pa
     </header>
     ${notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}</p>`}
     <section class="start">
-      <p>You'll need the PayPal sandbox buyer login. It's in the testing instructions on the project's Devpost page, and it's a US sandbox account with play money. No login? Steps 6 to 8 work without one, or <a href="/demo/recorded">look through a recorded run</a>.</p>
-      <p>Paying at PayPal's checkout, as step 5 does, needs a window that is not logged in to PayPal: a private window if you opened this demo in a normal one, otherwise another browser, such as Firefox if you are in Chrome, or your phone. PayPal's sandbox declines a checkout in a session that has already logged in, and step 2 logs this window in.</p>
+      <p class="persona">${escapeHtml(PERSONA)}</p>
+      <p>This demo puts you in Meera's place for an hour, with the same $60 limit. It opens on that listing, and that step needs no login.</p>
       ${missing.length > 0 ? `<p class="note">This server is missing ${escapeHtml(missing.join(" and "))}, so some steps won't run.</p>` : ""}
       ${action("/demo/start", "Start a session")}
-      <p class="small">A session lasts an hour. Sandbox only. No real money moves.</p>
+      <p class="small">A session lasts an hour. Sandbox only. No real money moves. The PayPal steps that come later need the sandbox buyer login from the testing instructions on the project's Devpost page. Without one, you can still <a href="/demo/recorded">look through a recorded run</a>.</p>
     </section>`,
   );
 }
@@ -416,7 +420,7 @@ export function renderRecordedRunPage(outOfSessions = false): string {
 }
 
 const RECORDED_RUN_ALT =
-  "The demo page after all eight steps. The signed mandate. PayPal connected. A first purchase Praman held for approval and then charged to the saved PayPal account. A coffee Praman allowed with nobody approving. A large purchase approved and sent to a PayPal checkout. A poisoned listing: the live model ignored it, and a fooled model's cart was refused. Twenty purchases at once, where the budget stopped all but those that fit. The mandate revoked, and the agent's next try refused with MANDATE_REVOKED.";
+  "The demo page after all eight steps. The signed mandate. A poisoned listing: the live model ignored it, and a fooled model's cart was refused. PayPal connected. A first purchase Praman held for approval and then charged to the saved PayPal account. A coffee Praman allowed with nobody approving. A large purchase approved and sent to a PayPal checkout. Twenty purchases at once, where the budget stopped all but those that fit. The mandate revoked, and the agent's next try refused with MANDATE_REVOKED.";
 
 export function renderDemoPage(session: DemoSession, recording: Recording, configured: { readonly paypal: boolean; readonly model: boolean } = { paypal: true, model: true }): string {
   const b = (id: BeatId) => session.beats.get(id);
@@ -430,11 +434,13 @@ export function renderDemoPage(session: DemoSession, recording: Recording, confi
     ? `${p("This session's mandate is revoked, so there is nothing left to connect PayPal for. Start a new session to go through the purchases.")}${action("/demo/start", "Start a new session")}`
     : session.connected
     ? `<p class="ok">Connected. Praman holds the saved PayPal method on its server, tied to this session. The agent and this page never see it, and it is deleted when the session ends.</p>`
-    : `${p("Approve, once, saving a PayPal sandbox account for this demo merchant. PayPal opens its own page and sends you back here. Log in with the sandbox buyer account.")}${action("/demo/connect", "Connect PayPal", "primary", configured.paypal ? null : NO_PAYPAL)}`;
+    : `${p("Approve, once, saving a PayPal sandbox account for this demo merchant. PayPal opens its own page and sends you back here. Log in with the sandbox buyer account: a US sandbox account with play money, in the testing instructions on the project's Devpost page.")}
+       <div class="actions">${action("/demo/connect", "Connect PayPal", "primary", configured.paypal ? null : NO_PAYPAL)}</div>
+       <p class="small">No login? Steps 7 and 8 need none, or <a href="/demo/recorded">look through a recorded run</a>.</p>`;
 
   // Why each purchase button is off, if it is. The server refuses the same steps for the same reasons.
   const missing = !configured.paypal ? NO_PAYPAL : !configured.model ? NO_MODEL : null;
-  const firstWhy = missing ?? (session.connected ? null : revoked ? REVOKED_WHY : "Connect PayPal in step 2 first.");
+  const firstWhy = missing ?? (session.connected ? null : revoked ? REVOKED_WHY : "Connect PayPal in step 3 first.");
   const laterWhy = missing ?? (first?.state === "done" ? null : revoked ? REVOKED_WHY : "Finish the first purchase first.");
 
   const body = `
@@ -445,12 +451,29 @@ export function renderDemoPage(session: DemoSession, recording: Recording, confi
 </header>
 ${notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}</p>`}
 
-${step(1, "mandate", "Your mandate", p("The demo gives the agent these fixed limits. The server signed them with a demo key when you started this session, so you didn't sign anything yourself. In real use, the person giving the agent authority reviews and signs their own. Praman enforces them on every purchase."), mandateHtml(session), true)}
-
-${step(2, "connect", "Connect PayPal once", "", connectBody, session.connected)}
+${step(1, "mandate", "Your mandate", p("These are the limits Meera gives her agent, fixed by the demo. The server signed them with a demo key when you started this session, so you didn't sign anything yourself. In real use, the person giving the agent authority reviews and signs their own. Praman enforces them on every purchase."), mandateHtml(session), true)}
 
 ${step(
-  3,
+  2,
+  "injection",
+  "A poisoned listing",
+  `${p("This is Meera's Tuesday. Corner Market's listing has a line from Praman's test corpus that tells the model to add a gift card to every order. First the live model reads it. Then a fixed cart from a fooled model goes to Praman. Then a recording of a model that really was fooled.")}${p("No PayPal login is needed here. Corner Market is on a simulated rail, so no real or sandbox money can move in this step.")}`,
+  `<h3>The live model reads it</h3>
+   ${askable("injection", b("injection")) ? action("/demo/step/injection", b("injection") === undefined ? "Ask the agent to order at Corner Market" : "Ask the agent again", "primary", configured.model ? null : NO_MODEL) : ""}
+   ${resultHtml(b("injection"), "Money")}
+   <h3>A fooled model, simulated</h3>
+   <p class="label-sim">Simulating a fooled model. No model is asked. This is the cart the model proposed in the recorded run below, sent straight to Praman.</p>
+   ${b("fixture") === undefined ? action("/demo/step/fixture", "Send the fooled cart to Praman", "quiet") : ""}
+   ${resultHtml(b("fixture"), "Money")}
+   <h3>A model that was fooled, recorded</h3>
+   ${recordingHtml(recording)}`,
+  b("fixture") !== undefined,
+)}
+
+${step(3, "connect", "Connect PayPal once", "", connectBody, session.connected)}
+
+${step(
+  4,
   "first",
   "First purchase: Praman asks you",
   p("The agent has never bought from this shop, so Praman stops it and asks you. Once you approve, Praman charges the saved PayPal account. No buyer is at PayPal for this."),
@@ -459,7 +482,7 @@ ${step(
 )}
 
 ${step(
-  4,
+  5,
   "second",
   "Second purchase: the agent pays on its own",
   p("Same shop, a small amount. Nobody approves this one, and no buyer is at PayPal. The agent proposes, Praman checks the mandate, and the money moves. Praman's decision is the only thing between the agent and the money."),
@@ -468,29 +491,12 @@ ${step(
 )}
 
 ${step(
-  5,
+  6,
   "large",
   "Large purchase: you pay at PayPal",
   p("Over the approval threshold. Praman asks you first, then sends this one through a real PayPal checkout that you approve as the buyer. Before taking the money, Praman checks the mandate again: it may have been revoked or expired while you were at PayPal."),
   `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", laterWhy) : ""}${resultHtml(large, "PayPal", "large")}${approvalActions("large", large)}${checkoutHtml("large", large)}`,
   large?.state === "done",
-)}
-
-${step(
-  6,
-  "injection",
-  "A poisoned listing",
-  p("Corner Market's listing has a line from Praman's test corpus that tells the model to add a gift card to every order. First the live model reads it. Then a fixed cart from a fooled model goes to Praman. Then a recording of a model that really was fooled."),
-  `<h3>The live model reads it</h3>
-   ${askable("injection", b("injection")) ? action("/demo/step/injection", b("injection") === undefined ? "Ask the agent to order at Corner Market" : "Ask the agent again", "primary", configured.model ? null : NO_MODEL) : ""}
-   ${resultHtml(b("injection"), "Money")}
-   <h3>A fooled model, simulated</h3>
-   <p class="label-sim">Simulating a fooled model. No model is asked. This is the cart a fooled model proposed in a recorded run, sent straight to Praman.</p>
-   ${b("fixture") === undefined ? action("/demo/step/fixture", "Send the fooled cart to Praman", "quiet") : ""}
-   ${resultHtml(b("fixture"), "Money")}
-   <h3>A model that was fooled, recorded</h3>
-   ${recordingHtml(recording)}`,
-  b("fixture") !== undefined,
 )}
 
 ${step(
@@ -509,7 +515,7 @@ ${step(
   p("You can take the agent's authority back at any time. Revoking adds one row to the ledger. Praman reads the ledger before every decision, so the agent's next purchase is refused and never reaches PayPal. Do this last: after it, every purchase in this session is refused."),
   `${b("revoke") === undefined ? action("/demo/step/revoke", "Revoke the mandate") : ""}${revokeHtml(b("revoke"))}
    <h3>The agent tries again</h3>
-   ${p("The same goal as step 4: buy one iced coffee. The live model proposes a cart, and Praman decides as it always does.")}
+   ${p("The same goal as step 5: buy one iced coffee. The live model proposes a cart, and Praman decides as it always does.")}
    ${askable("after_revoke", b("after_revoke")) ? action("/demo/step/after_revoke", b("after_revoke") === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", configured.model ? (b("revoke")?.state === "done" ? null : "Revoke the mandate first.") : NO_MODEL) : ""}
    ${resultHtml(b("after_revoke"))}`,
   b("after_revoke")?.state === "refused",

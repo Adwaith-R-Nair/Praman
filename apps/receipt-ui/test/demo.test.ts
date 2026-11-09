@@ -165,13 +165,50 @@ describe("the live model step on the poisoned listing", () => {
   });
 });
 
+describe("the order of the story", () => {
+  it("puts the poisoned listing first, before PayPal is connected, and the revocation last", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    const page = await v.page();
+    const ids = [...page.matchAll(/<section class="step[^"]*" id="([a-z]+)">\s*<h2><span class="step-n">(\d)<\/span>/g)].map((m) => `${m[2] ?? ""} ${m[1] ?? ""}`);
+    expect(ids).toEqual(["1 mandate", "2 injection", "3 connect", "4 first", "5 second", "6 large", "7 concurrency", "8 revoke"]);
+    // Both buttons of the poisoned listing can be pressed with nothing connected.
+    expect(page).toMatch(/<form method="post" action="\/demo\/step\/injection" class="act"><button type="submit" class="btn btn-primary">/);
+    expect(page).toMatch(/<form method="post" action="\/demo\/step\/fixture" class="act"><button type="submit" class="btn btn-quiet">/);
+    expect(page).toContain("No PayPal login is needed here.");
+  });
+
+  it("runs the poisoned listing with no PayPal connected, and the purchases still go through after it", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/step/injection");
+    await v.post("/demo/step/fixture");
+    expect(sessionOf(v).connected).toBe(false);
+    expect(sessionOf(v).beats.get("injection")).toMatchObject({ state: "awaiting_approval", reasonCode: "STEP_UP_FIRST_MERCHANT", approvalId: null });
+    expect(sessionOf(v).beats.get("fixture")).toMatchObject({ state: "refused", reasonCode: "CATEGORY_OUT_OF_SCOPE" });
+    expect(paypal.charges).toHaveLength(0);
+
+    await v.post("/demo/connect");
+    await v.get(`/demo/connect/return?approval_token_id=${SETUP_TOKEN}`);
+    await v.post("/demo/step/first");
+    await v.post("/demo/approve/first");
+    await v.post("/demo/step/second");
+    await v.post("/demo/step/large");
+    await v.post("/demo/approve/large");
+    expect(sessionOf(v).beats.get("first")).toMatchObject({ state: "done", payment: "saved_method" });
+    expect(sessionOf(v).beats.get("second")).toMatchObject({ state: "done", reasonCode: "OK" });
+    expect(sessionOf(v).beats.get("large")).toMatchObject({ state: "awaiting_checkout", payment: "checkout" });
+    expect(paypal.charges).toHaveLength(2);
+  });
+});
+
 describe("after revoking, with no PayPal connected", () => {
   it("says the session is finished and offers a new one, and won't start a connection", async () => {
     const v = visitor();
     await v.post("/demo/start");
     await v.post("/demo/step/revoke");
     const page = await v.page();
-    expect(page).not.toContain("Connect PayPal in step 2 first.");
+    expect(page).not.toContain("Connect PayPal in step 3 first.");
     expect(page).not.toContain('action="/demo/connect"');
     expect(page).toContain("mandate is revoked");
     expect(page).toContain('action="/demo/start"');
@@ -404,7 +441,7 @@ describe("the demo story", () => {
     expect(paypal.checkouts).toHaveLength(1);
     let page = await v.page();
     expect(page).toContain("https://www.sandbox.paypal.com/checkoutnow?token=");
-    // Step 2 logged this window in to PayPal, and the sandbox declines a checkout in a
+    // Step 3 logged this window in to PayPal, and the sandbox declines a checkout in a
     // session that is already logged in (D-49). A private window starts a fresh session
     // unless the demo is itself in one, and then only another browser does.
     expect(page).toContain("a window that is not logged in to PayPal");
@@ -1045,7 +1082,7 @@ describe("the demo's boundaries", () => {
     await v.post("/demo/approve/first");
     const before = await prisma.ledgerEntry.count();
 
-    // Step 4 is the cafe's. A cart naming the market, which the mandate also allows, is not sent.
+    // Step 5 is the cafe's. A cart naming the market, which the mandate also allows, is not sent.
     model.override = { merchant_id: "DEMO_MARKET", line_items: [{ sku: "SKU_INJ2_DOSA", qty: 1 }], rationale: "the market is nicer" };
     await v.post("/demo/step/second");
     const second = sessionOf(v).beats.get("second");
@@ -1118,7 +1155,7 @@ describe("the demo's boundaries", () => {
     const before = await v.page();
     // First purchase, second, large, and the agent's retry after revoking.
     expect(check(before)).toBe(4);
-    expect(before).toContain("Connect PayPal in step 2 first.");
+    expect(before).toContain("Connect PayPal in step 3 first.");
     expect(before).toContain("Finish the first purchase first.");
     expect(before).toContain("Revoke the mandate first.");
 
@@ -1127,12 +1164,15 @@ describe("the demo's boundaries", () => {
     expect(check(await v.page())).toBe(3);
   });
 
-  it("the start page sends the checkout to a window that is not logged in to PayPal", async () => {
+  it("the start page leads with Meera, not with a login", async () => {
     const page = await visitor().page();
-    expect(page).toContain("a window that is not logged in to PayPal");
-    expect(page).toContain("a private window if you opened this demo in a normal one");
-    expect(page).toContain("otherwise another browser");
-    expect(page).not.toContain("new private window");
+    const persona = page.indexOf("Meera gives her shopping agent her PayPal account");
+    expect(persona).toBeGreaterThan(-1);
+    expect(persona).toBeLessThan(page.indexOf("Start a session"));
+    // The login is one small line after the button. The window advice waits for the checkout that needs it.
+    expect(page.indexOf("sandbox buyer login")).toBeGreaterThan(page.indexOf("Start a session"));
+    expect(page).not.toContain("private window");
+    expect(page).not.toContain("You&#39;ll need");
   });
 
   it("shows a plain page, with no session, when PayPal sends a buyer back to another window", async () => {
