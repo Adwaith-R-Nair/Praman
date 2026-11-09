@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { formatMoney, minorFromJSON, REASON_CODES, type ReasonCode } from "@praman/shared";
 import type { AgentVisibleDecision } from "@praman/policy";
 import { CAFE, MARKET, MARKET_ITEM_NAMES, MARKET_PRICES, type BeatId, type PurchaseBeat } from "../demo/config.js";
-import { houseChoiceHtml, keptMethodCopy } from "../demo/house.js";
+import { HOUSE_COPY, houseChoiceHtml, keptMethodCopy } from "../demo/house.js";
 import { canAskAgain, refundable } from "../demo/story.js";
 import type { TraceView } from "../data.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
@@ -343,20 +343,37 @@ function revokeHtml(record: BeatRecord | undefined): string {
   </div>`;
 }
 
-/** Shown while any purchase step's order waits for the buyer at PayPal. */
-function checkoutHtml(beat: PurchaseBeat, record: BeatRecord | undefined): string {
+/**
+ * Shown while any purchase step's order waits for the buyer at PayPal. A session that
+ * connected by logging in to PayPal is told that login is why it needs another window.
+ * One that didn't, because it used the demo's sandbox buyer (D-85), is told what the
+ * checkout needs instead.
+ */
+function checkoutHtml(beat: PurchaseBeat, record: BeatRecord | undefined, session: DemoSession): string {
   if (record?.state !== "awaiting_checkout" || record.approveUrl === null) return "";
+  const loggedIn = session.connected && !session.houseBuyer;
+  const how = loggedIn
+    ? `<p><strong>Pay at PayPal.</strong> Copy this link into <strong>a window that is not logged in to PayPal</strong>: a private window if this demo is open in a normal one, or another browser if this demo is already in a private window. Log in there with the sandbox buyer account and approve.</p>
+    <p>Why: connecting PayPal in step 2 logged this window in, and PayPal's sandbox declines a checkout in a session that is already logged in. For a second checkout, close every private window first, so the next one starts fresh.</p>`
+    : `<p><strong>Pay at PayPal.</strong> ${escapeHtml(HOUSE_COPY.checkout)}</p>
+    <p>${escapeHtml(HOUSE_COPY.checkoutWhy)}</p>`;
   return `<div class="checkout">
-    <p><strong>Pay at PayPal.</strong> Copy this link into <strong>a window that is not logged in to PayPal</strong>: a private window if this demo is open in a normal one, or another browser if this demo is already in a private window. Log in there with the sandbox buyer account and approve.</p>
-    <p>Why: connecting PayPal in step 2 logged this window in, and PayPal's sandbox declines a checkout in a session that is already logged in. For a second checkout, close every private window first, so the next one starts fresh.</p>
+    ${how}
     <p class="link-row"><input class="link" type="text" readonly value="${escapeHtml(record.approveUrl)}" aria-label="PayPal checkout link"></p>
     <p>When PayPal says you're done, come back to this tab and capture.</p>
     <div class="actions">${action(`/demo/capture/${beat}`, "Capture the payment")}</div>
   </div>`;
 }
 
-export function renderStartPage(notice: string | null, configured: { readonly paypal: boolean; readonly model: boolean }): string {
+export function renderStartPage(notice: string | null, configured: { readonly paypal: boolean; readonly model: boolean; readonly house?: boolean }): string {
   const missing = [configured.paypal ? null : "PayPal sandbox credentials", configured.model ? null : "a model key"].filter((x) => x !== null);
+  // While the demo's sandbox buyer is offered (D-85), a login is needed for the checkout only, and the page says so.
+  const needs =
+    configured.house === true
+      ? `<p>${escapeHtml(HOUSE_COPY.start)} Or <a href="/demo/recorded">look through a recorded run</a>.</p>
+      <p>${escapeHtml(HOUSE_COPY.startCheckout)}</p>`
+      : `<p>You'll need the PayPal sandbox buyer login. It's in the testing instructions on the project's Devpost page, and it's a US sandbox account with play money. No login? Steps 6 to 8 work without one, or <a href="/demo/recorded">look through a recorded run</a>.</p>
+      <p>Paying at PayPal's checkout, as step 5 does, needs a window that is not logged in to PayPal: a private window if you opened this demo in a normal one, otherwise another browser, such as Firefox if you are in Chrome, or your phone. PayPal's sandbox declines a checkout in a session that has already logged in, and step 2 logs this window in.</p>`;
   return demoLayout(
     "Demo",
     `<header class="masthead">
@@ -365,8 +382,7 @@ export function renderStartPage(notice: string | null, configured: { readonly pa
     </header>
     ${notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}</p>`}
     <section class="start">
-      <p>You'll need the PayPal sandbox buyer login. It's in the testing instructions on the project's Devpost page, and it's a US sandbox account with play money. No login? Steps 6 to 8 work without one, or <a href="/demo/recorded">look through a recorded run</a>.</p>
-      <p>Paying at PayPal's checkout, as step 5 does, needs a window that is not logged in to PayPal: a private window if you opened this demo in a normal one, otherwise another browser, such as Firefox if you are in Chrome, or your phone. PayPal's sandbox declines a checkout in a session that has already logged in, and step 2 logs this window in.</p>
+      ${needs}
       ${missing.length > 0 ? `<p class="note">This server is missing ${escapeHtml(missing.join(" and "))}, so some steps won't run.</p>` : ""}
       ${action("/demo/start", "Start a session")}
       <p class="small">A session lasts an hour. Sandbox only. No real money moves.</p>
@@ -436,7 +452,7 @@ ${step(
   "first",
   "First purchase: Praman asks you",
   p("The agent has never bought from this shop, so Praman stops it and asks you. Once you approve, Praman charges the saved PayPal account. No buyer is at PayPal for this."),
-  `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", firstWhy) : ""}${resultHtml(first, "PayPal", "first")}${approvalActions("first", first)}${checkoutHtml("first", first)}`,
+  `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", firstWhy) : ""}${resultHtml(first, "PayPal", "first")}${approvalActions("first", first)}${checkoutHtml("first", first, session)}`,
   first?.state === "done",
 )}
 
@@ -445,7 +461,7 @@ ${step(
   "second",
   "Second purchase: the agent pays on its own",
   p("Same shop, a small amount. Nobody approves this one, and no buyer is at PayPal. The agent proposes, Praman checks the mandate, and the money moves. Praman's decision is the only thing between the agent and the money."),
-  `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", laterWhy) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second, "PayPal", "second")}${approvalActions("second", second)}${checkoutHtml("second", second)}`,
+  `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", laterWhy) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second, "PayPal", "second")}${approvalActions("second", second)}${checkoutHtml("second", second, session)}`,
   second?.state === "done",
 )}
 
@@ -454,7 +470,7 @@ ${step(
   "large",
   "Large purchase: you pay at PayPal",
   p("Over the approval threshold. Praman asks you first, then sends this one through a real PayPal checkout that you approve as the buyer. Before taking the money, Praman checks the mandate again: it may have been revoked or expired while you were at PayPal."),
-  `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", laterWhy) : ""}${resultHtml(large, "PayPal", "large")}${approvalActions("large", large)}${checkoutHtml("large", large)}`,
+  `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", laterWhy) : ""}${resultHtml(large, "PayPal", "large")}${approvalActions("large", large)}${checkoutHtml("large", large, session)}`,
   large?.state === "done",
 )}
 

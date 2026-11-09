@@ -75,7 +75,11 @@ export interface DemoSession {
   readonly harnessMandate: SignedMandate;
   /** The PayPal setup token this visitor was sent to approve, if any. Not a secret: it charges nothing. */
   setupTokenId: string | null;
-  /** True once a payment token is stored server-side for this session. The token itself is never here. */
+  /**
+   * True while this session has a saved method to pay with: its own payment token, stored
+   * server-side after a PayPal login, or the demo's shared sandbox buyer (houseBuyer).
+   * The token itself is never here.
+   */
   connected: boolean;
   /**
    * True while this session's small purchases are charged to the demo's shared sandbox

@@ -161,6 +161,10 @@ describe("with no house buyer configured", () => {
     }
     expect(story).toContain('action="/demo/connect"');
     expect(houseChoiceHtml(false)).toBe("");
+    // The start page asks for the sandbox login, as it always has.
+    expect(start).toContain("You'll need the PayPal sandbox buyer login.");
+    expect(start).toContain("Steps 6 to 8 work without one");
+    expect(start).toContain("step 2 logs this window in.");
   });
 
   it("the PayPal login path is as it was: the visitor's own account is charged, and deleted when the session ends", async () => {
@@ -296,6 +300,49 @@ describe("choosing the house buyer", () => {
     await v.post("/demo/step/first");
     await v.post("/demo/approve/first");
     expect(paypal.charges.map((c) => c.vaultId)).toEqual([PAYMENT_TOKEN]);
+  });
+});
+
+describe("what the pages say once the house buyer is offered", () => {
+  it("the start page no longer says a PayPal login is needed for everything", async () => {
+    const start = await visitor().page();
+    expect(start).not.toContain("You'll need the PayPal sandbox buyer login.");
+    expect(start).not.toContain("Steps 6 to 8 work without one");
+    expect(start).not.toContain("step 2 logs this window in.");
+    expect(start).toContain("with no PayPal login");
+    // It still says what does need the login, and where the login is.
+    expect(start).toContain("PayPal&#39;s checkout");
+    expect(start).toContain("Devpost");
+    expect(start).toContain('href="/demo/recorded"');
+
+    // While the house buyer rests, a new visitor is told what is true then: the login is needed.
+    deps.house?.refused(new Date(clock));
+    expect(await visitor().page()).toContain("You'll need the PayPal sandbox buyer login.");
+  });
+
+  it("a house session's checkout isn't told that step 2 logged its window in", async () => {
+    const v = await onHouseBuyer();
+    await v.post("/demo/step/first");
+    await v.post("/demo/approve/first");
+    await v.post("/demo/step/large");
+    await v.post("/demo/approve/large");
+    expect(sessionOf(v).beats.get("large")).toMatchObject({ state: "awaiting_checkout" });
+    const page = await v.page();
+    expect(page).toContain("Pay at PayPal.");
+    expect(page).not.toContain("connecting PayPal in step 2 logged this window in");
+    expect(page).toContain("needs a buyer at PayPal&#39;s checkout");
+    expect(page).toContain("Without that login this purchase stays unpaid and nothing is charged.");
+    expect(page).toContain('action="/demo/capture/large"');
+
+    // A session that did log in is told what it always was.
+    const own = await loggedIn();
+    await own.post("/demo/step/first");
+    await own.post("/demo/approve/first");
+    await own.post("/demo/step/large");
+    await own.post("/demo/approve/large");
+    const ownPage = await own.page();
+    expect(ownPage).toContain("connecting PayPal in step 2 logged this window in");
+    expect(ownPage).not.toContain("Without that login this purchase stays unpaid");
   });
 });
 
