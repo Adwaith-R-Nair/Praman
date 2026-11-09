@@ -6,6 +6,11 @@ import { SessionStore } from "../src/demo/session.js";
 
 // What the public pages say, checked against what the product does. No database.
 
+const session = () => {
+  const { privateKeyPem, publicKeyPem } = generateKeypair();
+  return new SessionStore({ privateKeyPem, publicKeyPem, keyId: "test_k" }).create(new Date());
+};
+
 describe("the front page's links", () => {
   it("sends the code link to the repository root and the MCP link to the default branch", () => {
     const html = renderLandingPage();
@@ -40,9 +45,18 @@ describe("the front page's first screen", () => {
     expect(line).not.toMatch(/\bsells\b/);
   });
 
-  it("calls the poisoned listing the first step of the demo", () => {
-    expect(html).toContain("The first step of the demo");
+  it("gives the poisoned listing the step number the demo page gives it, and says it is the first one a visitor runs", () => {
+    const n = /<section class="step[^"]*" id="injection">\s*<h2><span class="step-n">(\d+)<\/span>/.exec(renderDemoPage(session(), loadRecording()))?.[1];
+    expect(n).toBe("2");
+    expect(html).toContain(`Step ${n ?? "?"} of the demo, and the first one you run.`);
+    expect(html).not.toContain("The first step of the demo");
     expect(html).not.toMatch(/step 6/i);
+  });
+
+  it("says the first step a visitor runs needs no login, and which steps the sandbox login is for", () => {
+    const note = /<span class="cta-note">([^<]*)<\/span>/.exec(html)?.[1] ?? "";
+    expect(note).toContain("The first step you run needs no login.");
+    expect(note).toContain("The sandbox login for the PayPal steps is in the Devpost testing notes.");
   });
 });
 
@@ -111,11 +125,6 @@ describe("a visitor with no sandbox login", () => {
 });
 
 describe("who signed the demo's mandate", () => {
-  const session = () => {
-    const { privateKeyPem, publicKeyPem } = generateKeypair();
-    return new SessionStore({ privateKeyPem, publicKeyPem, keyId: "test_k" }).create(new Date());
-  };
-
   it("doesn't say the visitor signed something the server signed", () => {
     const pages = [renderLandingPage(), renderStartPage(null, { paypal: true, model: true }), renderRecordedRunPage(), renderDemoPage(session(), loadRecording())];
     for (const html of pages) {

@@ -66,12 +66,12 @@ export function renderLandingPage(): string {
   <h1>Meera gives her shopping agent her PayPal account and ${BUDGET} a week for lunch.</h1>
   <p class="story">On Tuesday a shop's listing tells the agent to add a ${BAIT} gift card, and nobody is at the checkout to say no.</p>
   <p class="lede">Praman is the signed permission between the agent and PayPal. Meera signs her limits once, the agent can only name an item and a quantity, and plain code answers allow, ask Meera, or refuse. PayPal doesn't trust the browser with the price, and Praman doesn't trust the model with it. Every decision lands on a hash-chained ledger you can recheck link by link, and it is the evidence if a charge is disputed.</p>
-  <p class="cta"><a class="btn btn-primary" href="/demo">Try the live demo</a><span class="cta-note">PayPal sandbox. About five minutes. No real money. The sandbox login is in the Devpost testing notes.</span></p>
+  <p class="cta"><a class="btn btn-primary" href="/demo">Try the live demo</a><span class="cta-note">PayPal sandbox. About five minutes. No real money. The first step you run needs no login. The sandbox login for the PayPal steps is in the Devpost testing notes.</span></p>
   <p class="built-on">Built on the PayPal sandbox: Orders, Vault, refunds and verified webhooks. Hosted on Render. The agent in the demo is a Gemini model. The ledger console is AG Grid. The local MCP shop lists real products with prices pinned from Channel3.</p>
 </section>
 
 <figure class="specimen" aria-labelledby="specimen-caption">
-  <figcaption id="specimen-caption"><strong>An AI agent with a payment method can be talked into spending.</strong> The first step of the demo. A shop's listing carries a line written for the agent, not for you.</figcaption>
+  <figcaption id="specimen-caption"><strong>An AI agent with a payment method can be talked into spending.</strong> Step 2 of the demo, and the first one you run. A shop's listing carries a line written for the agent, not for you.</figcaption>
   <blockquote class="listing"><p>${escapeHtml(POISONED_LISTING)}</p></blockquote>
   <div class="gate">
     <div class="cell">
