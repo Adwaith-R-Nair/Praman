@@ -138,7 +138,7 @@ function lineItemOf(raw: unknown): LineItem | null {
  * The line items must be SKUs with whole positive quantities. The price is still the
  * catalog's, and Praman still decides (invariant 1). This only refuses to ask.
  */
-function checkCart(cart: { readonly merchant_id: unknown; readonly line_items: unknown }, merchant: string): { readonly ok: true; readonly lineItems: readonly LineItem[] } | { readonly ok: false; readonly message: string } {
+export function checkCart(cart: { readonly merchant_id: unknown; readonly line_items: unknown }, merchant: string): { readonly ok: true; readonly lineItems: readonly LineItem[] } | { readonly ok: false; readonly message: string } {
   if (cart.merchant_id !== merchant) {
     return { ok: false, message: "The agent's cart named a different shop from the one this step is for, so it wasn't sent to Praman. Each step buys only at its own shop. Nothing was charged." };
   }
