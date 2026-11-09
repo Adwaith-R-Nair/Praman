@@ -9,7 +9,9 @@ import { expect, expectNoSidewaysScroll, PHONE, test, watchContext, newWatch } f
 /** What no public page or public JSON may carry (D-84). */
 const WITHHELD = ["STEP_UP_", "signed_mandate", "public_key_pem", "redaction_salt", "max_total_minor", "max_per_txn_minor", "threshold_minor"];
 
-test("the sample run is populated and public, or absent and unlinked", async ({ page, request, browser, baseURL }) => {
+test("the sample run is populated and public, or absent and unlinked", async ({ page, request, browser, baseURL, watch: pageWatch }) => {
+  // With no sample set the page is a 404 by design, and the browser logs that one answer.
+  pageWatch.expected.push(/\/sample: Failed to load resource: the server responded with a status of 404/);
   const res = await page.goto("/sample");
   if (res === null) throw new Error("no response for /sample");
 
