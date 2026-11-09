@@ -51,9 +51,20 @@ export function checkEnv(env: NodeJS.ProcessEnv): string[] {
     reasons.push("RAZORPAY_BASE_URL is set. This server only calls https://api.razorpay.com with a test-mode key, and takes no other base URL.");
   }
 
-  for (const name of ["DEMO_DAILY_MODEL_CALLS", "DEMO_DAILY_SESSIONS"]) {
+  for (const name of ["DEMO_DAILY_MODEL_CALLS", "DEMO_DAILY_SESSIONS", "DEMO_DAILY_HOUSE_SESSIONS"]) {
     const value = env[name];
     if (value !== undefined && value !== "" && !/^\d{1,7}$/.test(value)) reasons.push(`${name} must be a whole number.`);
+  }
+
+  // The demo's shared sandbox buyer (D-85). Its token is a secret: named here, never printed.
+  const houseToken = env["DEMO_HOUSE_BUYER_TOKEN"];
+  if (houseToken !== undefined && houseToken !== "") {
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(houseToken)) {
+      reasons.push("DEMO_HOUSE_BUYER_TOKEN is not a PayPal payment token id. Paste the id the consent script saved, with nothing around it.");
+    }
+    if (!env["PAYPAL_CLIENT_ID"] || !env["PAYPAL_CLIENT_SECRET"]) {
+      reasons.push("DEMO_HOUSE_BUYER_TOKEN is set without PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET. Only the sandbox app that saved that buyer can charge it.");
+    }
   }
 
   const proxyHops = env["TRUST_PROXY"];

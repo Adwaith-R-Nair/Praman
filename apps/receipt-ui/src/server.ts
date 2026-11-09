@@ -35,6 +35,8 @@ const demo = demoWiring.ok ? createDemoHandler(demoWiring.deps) : null;
 if (demoWiring.ok) {
   await seedDemoCatalog();
   const deps = demoWiring.deps;
+  // The shared sandbox buyer (D-85). Said once, so the log shows which way the switch is. Never its token.
+  console.log(`receipt-ui: house buyer ${deps.house ? "on: visitors may skip the PayPal login" : "off: DEMO_HOUSE_BUYER_TOKEN is not set, or its daily cap is 0"}`);
   // Ends expired sessions and gives up their saved PayPal methods. One failure doesn't stop the next run.
   setInterval(() => {
     sweepExpiredSessions(deps).catch((err: unknown) => console.error(`demo: session sweep failed: ${err instanceof Error ? err.name : "unknown error"}`));

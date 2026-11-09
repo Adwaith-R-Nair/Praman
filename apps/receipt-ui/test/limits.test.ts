@@ -7,6 +7,8 @@ import { generateKeypair } from "@praman/mandate";
 import { routeByRail } from "@praman/exec-core";
 import { checkEnv, checkStartup, keyFingerprint, DEVELOPER_KEY_FINGERPRINTS } from "../src/startup.js";
 import { DemoActivity, runSweeps, scheduleSweeps } from "../src/sweeps.js";
+import { HouseBuyer } from "../src/demo/house.js";
+import { demoDepsFromEnv } from "../src/demo/wiring.js";
 import { capFromEnv, clientIp, DbDailyUsage, DEFAULT_DAILY_HOUSE_SESSIONS, DEFAULT_DAILY_SESSIONS, MemoryDailyUsage, RateLimiter } from "../src/demo/limits.js";
 
 // Plan Task 13: what the hosted server refuses, and what it does when it is pushed.
@@ -75,6 +77,45 @@ describe("start-up refusals", () => {
     // The fingerprint list is checked against the key's public half.
     expect(keyFingerprint(own.priv)).toBe(keyFingerprint(own.pub));
     expect(DEVELOPER_KEY_FINGERPRINTS).not.toContain(keyFingerprint(own.priv));
+  });
+
+  it("builds the house buyer only from its secret, with PayPal credentials and a cap above zero", () => {
+    const demo = pair();
+    const env = { DEMO_MANDATE_PRIVATE_KEY: demo.priv, DEMO_MANDATE_PUBLIC_KEY: demo.pub, PAYPAL_CLIENT_ID: "sb-id", PAYPAL_CLIENT_SECRET: "sb-secret" };
+    const houseOf = (e: NodeJS.ProcessEnv) => {
+      const wiring = demoDepsFromEnv(e, 4100);
+      if (!wiring.ok) throw new Error(wiring.reason);
+      return wiring.deps.house ?? null;
+    };
+    const token = "HOUSETOKEN-77aa-NEVER-SHOWN";
+    expect(houseOf(env)).toBeNull();
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: "" })).toBeNull();
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token })).toBeInstanceOf(HouseBuyer);
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token })?.holds(token)).toBe(true);
+    // A cap of zero is a second way to switch it off, with the secret left in place.
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token, DEMO_DAILY_HOUSE_SESSIONS: "0" })).toBeNull();
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token, DEMO_DAILY_HOUSE_SESSIONS: "5" })).toBeInstanceOf(HouseBuyer);
+    // Nothing to charge it with.
+    expect(houseOf({ DEMO_MANDATE_PRIVATE_KEY: demo.priv, DEMO_MANDATE_PUBLIC_KEY: demo.pub, DEMO_HOUSE_BUYER_TOKEN: token })).toBeNull();
+  });
+
+  it("refuses a house-buyer secret that isn't a token id or has no PayPal credentials, without printing it", () => {
+    const creds = { PAYPAL_CLIENT_ID: "sb-id", PAYPAL_CLIENT_SECRET: "sb-secret" };
+    const token = "HOUSETOKEN-77aa-NEVER-SHOWN";
+    expect(checkEnv({ ...creds, DEMO_HOUSE_BUYER_TOKEN: token })).toEqual([]);
+    expect(checkEnv({ ...creds, DEMO_HOUSE_BUYER_TOKEN: "", DEMO_DAILY_HOUSE_SESSIONS: "" })).toEqual([]);
+    expect(checkEnv({ ...creds, DEMO_HOUSE_BUYER_TOKEN: token, DEMO_DAILY_HOUSE_SESSIONS: "25" })).toEqual([]);
+
+    const bad = "not a token; drop table";
+    const malformed = checkEnv({ ...creds, DEMO_HOUSE_BUYER_TOKEN: bad }).join(" ");
+    expect(malformed).toContain("DEMO_HOUSE_BUYER_TOKEN");
+    expect(malformed).not.toContain(bad);
+
+    const alone = checkEnv({ DEMO_HOUSE_BUYER_TOKEN: token }).join(" ");
+    expect(alone).toContain("PAYPAL_CLIENT_ID");
+    expect(alone).not.toContain(token);
+
+    expect(checkEnv({ DEMO_DAILY_HOUSE_SESSIONS: "lots" }).join(" ")).toContain("DEMO_DAILY_HOUSE_SESSIONS must be a whole number");
   });
 
   it("the real server process exits before listening when a check fails", async () => {
