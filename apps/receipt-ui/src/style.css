@@ -415,6 +415,73 @@ h2 {
   margin: 0;
 }
 
+/* The model's tool calls, as a numbered sequence. Every value in it is the
+   model's output or a tool's reply, so it is set in mono like other data, and
+   a reply sits inside the same stamped box as merchant text. */
+.tool-lede {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+  margin: 0 0 var(--space-2);
+}
+
+.tool-list {
+  margin: 0;
+  padding: 0 0 0 1.6rem;
+}
+
+.tool-call {
+  margin: 0 0 var(--space-2);
+  padding-left: 0.3rem;
+}
+
+.tool-call::marker {
+  font-family: var(--mono);
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+}
+
+.tool-name {
+  font-weight: 600;
+}
+
+.tool-input {
+  font-size: var(--size-sm);
+  margin: 0.2em 0;
+  overflow-wrap: anywhere;
+}
+
+.tool-label {
+  font-family: var(--mono);
+  color: var(--ink-muted);
+}
+
+.tool-none {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+  margin: 0.2em 0 0;
+}
+
+.tool-result summary {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.tool-result[open] summary {
+  margin-bottom: var(--space-1);
+}
+
+.tool-text {
+  font-family: var(--mono);
+  font-size: var(--size-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
 /* The chain, drawn as a single continuous spine rather than a list with
    connectors between items. Each entry hangs off one unbroken rule; where
    the chain is intact the rule never breaks, so a break (D-25/commit 7)

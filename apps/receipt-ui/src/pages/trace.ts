@@ -6,6 +6,7 @@ import { decisionClass, decisionLabel } from "../decision-display.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
 import { layout } from "../layout.js";
 import { EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
+import { toolCallsHtml, toolCallsOf } from "./tool-calls.js";
 
 /** Free text (goal, rationale, merchant content) may contain a literal ₹. */
 function escFreeText(value: string): string {
@@ -262,6 +263,8 @@ ${
       }<p class="rationale">${escFreeText(trace.rationale)}</p></section>`
     : ""
 }
+
+${toolCallsHtml(toolCallsOf(trace.entries))}
 
 ${
   merchantReadsHtml
