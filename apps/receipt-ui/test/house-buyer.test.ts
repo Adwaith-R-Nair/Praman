@@ -420,6 +420,54 @@ describe("the house token is never deleted at PayPal", () => {
   });
 });
 
+describe("a visitor who logs in to PayPal as the house buyer's own account", () => {
+  // PayPal may answer that login with the house token itself. The session holds it as any
+  // login session holds its token: it never chose the house buyer and isn't treated as if it had.
+  beforeEach(() => {
+    paypal.createPaymentToken = async () => ({ ok: true, value: { id: HOUSE_TOKEN } });
+  });
+
+  it("is told the truth about its saved method: it stays at PayPal when the session ends", async () => {
+    const v = await loggedIn();
+    expect(sessionOf(v)).toMatchObject({ connected: true, houseBuyer: false, holdsHouseToken: true });
+    const page = await v.page();
+    expect(page).not.toContain("deleted when the session ends");
+    expect(page).not.toContain("deletes the saved PayPal method");
+    expect(page).toContain("stays saved at PayPal when the session ends");
+    expect(page).not.toContain(HOUSE_TOKEN);
+    await v.post("/demo/end");
+    expect(paypal.deleted).toEqual([]);
+
+    // An ordinary login is still told its method is deleted, and it is.
+    paypal.createPaymentToken = FakePayPal.prototype.createPaymentToken.bind(paypal);
+    const own = await loggedIn();
+    expect(sessionOf(own).holdsHouseToken).toBe(false);
+    expect(await own.page()).toContain("deleted when the session ends");
+    await own.post("/demo/end");
+    expect(paypal.deleted).toEqual([PAYMENT_TOKEN]);
+  });
+
+  it("keeps its login when PayPal refuses the charge, and is not told it was on the demo's sandbox buyer", async () => {
+    const v = await loggedIn();
+    const s = sessionOf(v);
+    await v.post("/demo/step/first");
+    refuseCharges("INSTRUMENT_DECLINED");
+    await v.post("/demo/approve/first");
+
+    expect(paypal.charges).toHaveLength(1);
+    expect(s.beats.get("first")).toMatchObject({ state: "failed", orderStatus: "failed" });
+    // Still the login session it was: connected, with its token held, and no notice about a buyer it never chose.
+    expect(s).toMatchObject({ connected: true, houseBuyer: false });
+    expect(deps.savedMethods.has(s.id)).toBe(true);
+    expect(s.notice ?? "").not.toContain("sandbox buyer");
+    expect(await v.page()).not.toMatch(/refused the demo(&#39;|')s sandbox buyer/);
+    // The token PayPal refused is the house buyer's, so the house buyer rests all the same.
+    expect(deps.house?.offered(new Date(clock))).toBe(false);
+    expect(logs.join("\n")).toContain("INSTRUMENT_DECLINED");
+    expect(paypal.deleted).toEqual([]);
+  });
+});
+
 describe("the house token stays on the server", () => {
   it("never appears in a response, a ledger row, a record, a log or anything printed", async () => {
     const v = await onHouseBuyer();

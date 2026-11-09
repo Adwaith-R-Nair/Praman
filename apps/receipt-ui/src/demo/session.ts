@@ -83,6 +83,12 @@ export interface DemoSession {
    * that buyer's token is held by HouseBuyer and is never here.
    */
   houseBuyer: boolean;
+  /**
+   * True when this visitor logged in to PayPal as the house buyer's own sandbox account
+   * and PayPal answered with the house token. The session holds it like any login token,
+   * but it is never deleted at PayPal, so the page mustn't say it will be. A flag only.
+   */
+  holdsHouseToken: boolean;
   modelCalls: number;
   /**
    * Purchase intents this session has made. Each ask of a step takes the next number, so
@@ -135,6 +141,7 @@ export function createDemoSession(now: Date, signer: DemoSigner): DemoSession {
     setupTokenId: null,
     connected: false,
     houseBuyer: false,
+    holdsHouseToken: false,
     modelCalls: 0,
     intents: 0,
     busy: false,

@@ -376,6 +376,7 @@ export async function releaseAllSessions(deps: DemoDeps, timeoutMs: number): Pro
   for (const session of sessions) {
     session.connected = false;
     session.houseBuyer = false;
+    session.holdsHouseToken = false;
   }
   // Every session's own token. The house buyer's is shared and stays at PayPal (D-85).
   const tokens = deps.savedMethods.takeAll().filter((tokenId) => !isHouseToken(tokenId, deps));

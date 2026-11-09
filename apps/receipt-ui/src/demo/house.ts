@@ -16,8 +16,14 @@ import type { DemoSession } from "./session.js";
  * checkout, where a buyer has to be present.
  *
  * Its payment token is a secret like any other (D-50), and it is shared: it comes from
- * the server's environment and outlives every session. So it is held in this object and
- * nowhere else, it is never deleted at PayPal, and nothing here prints it.
+ * the server's environment and outlives every session. A session that chooses this buyer
+ * is never given it; the token stays in this object. No path on a server that knows the
+ * token deletes it at PayPal, and nothing here prints it.
+ *
+ * One other place can hold the same token. If a visitor logs in to PayPal as this same
+ * sandbox account, PayPal may answer with this token, and that session keeps it in
+ * SavedMethods as it would any login token. holds() keeps that copy from being deleted
+ * too. Such a session logged in, so the daily cap and the rest below don't apply to it.
  */
 export class HouseBuyer {
   readonly #tokenId: string;
@@ -63,7 +69,7 @@ export class HouseBuyer {
     return tokenId === this.#tokenId;
   }
 
-  /** PayPal refused a charge to it. Nobody is offered it, or charged to it, until the rest is over. */
+  /** PayPal refused a charge to it. Nobody is offered it, and no session that chose it is charged to it, until the rest is over. */
   refused(now: Date): void {
     const rest = Math.min(HOUSE_REST_MS * 2 ** Math.min(this.#refusals, 10), HOUSE_REST_MAX_MS);
     this.#refusals += 1;
@@ -130,6 +136,9 @@ export const HOUSE_COPY = {
   connected:
     "Connected to the demo's sandbox buyer, a PayPal sandbox account this demo keeps for visitors. Praman holds its saved method on the server. The agent and this page never see it. It stays saved at PayPal when your session ends.",
   ending: "The demo's sandbox buyer stays saved at PayPal for other visitors.",
+  sameAccount:
+    "Connected. Praman holds the saved PayPal method on its server, tied to this session. The agent and this page never see it. You logged in as the sandbox account this demo keeps for itself, so its saved method stays saved at PayPal when the session ends.",
+  sameAccountEnding: "This session's saved PayPal method is the demo's own, so it stays saved at PayPal.",
   paid: "Paid from the demo's sandbox buyer account, with no buyer present. PayPal captured it as it created the order.",
   chosen: "You're using the demo's sandbox buyer. Praman holds its saved PayPal method on the server. The agent and this page never see it.",
   unavailable: "The demo's sandbox buyer isn't available right now. Connect a PayPal sandbox account by logging in instead.",
@@ -146,6 +155,17 @@ export const HOUSE_COPY = {
 export function houseChoiceHtml(offered: boolean): string {
   if (!offered) return "";
   return `<form method="post" action="${HOUSE_PATH}" class="act"><button type="submit" class="btn btn-quiet">${escapeHtml(HOUSE_COPY.button)}</button></form><p>${escapeHtml(HOUSE_COPY.why)}</p>`;
+}
+
+/**
+ * What the page says about a saved method that outlives the session: the house buyer's,
+ * for a session that chose it or one that logged in as that same account. Null for an
+ * ordinary login, whose saved method is deleted when the session ends.
+ */
+export function keptMethodCopy(session: DemoSession): { readonly connected: string; readonly ending: string } | null {
+  if (session.houseBuyer) return { connected: HOUSE_COPY.connected, ending: HOUSE_COPY.ending };
+  if (session.holdsHouseToken) return { connected: HOUSE_COPY.sameAccount, ending: HOUSE_COPY.sameAccountEnding };
+  return null;
 }
 
 /** A step the house buyer paid for says whose account paid, in place of "your saved PayPal account". */

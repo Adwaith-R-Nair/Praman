@@ -77,15 +77,17 @@ export function routeFor(session: DemoSession, deps: DemoDeps): ExecutorRouter {
 }
 
 /**
- * What PayPal said about a charge to the house buyer. A refusal moved no money. It rests
- * the house buyer for everyone and sends this session back to the login path.
+ * What PayPal said about a charge to the house buyer's token. A refusal moved no money.
+ * It rests the house buyer for everyone, and a session that chose the house buyer goes
+ * back to the login path. A session that logged in as the same sandbox account holds
+ * that token as its own: it stays connected, and its step fails as any login session's would.
  */
 function houseAnswered(session: DemoSession, house: HouseBuyer, outcome: ExecOutcome, deps: DemoDeps): void {
   if (outcome.status === "captured") house.charged();
   if (outcome.status !== "failed") return;
   house.refused(deps.now());
   deps.log(`demo: PayPal refused the house buyer: ${outcome.failure_code ?? "no code"}. It is resting, and sessions use the PayPal login meanwhile.`);
-  leaveHouseBuyer(session, HOUSE_COPY.refused(outcome.failure_code));
+  if (session.houseBuyer) leaveHouseBuyer(session, HOUSE_COPY.refused(outcome.failure_code));
 }
 
 /**
@@ -180,6 +182,9 @@ export async function finishConnect(session: DemoSession, approvalTokenId: strin
   deps.savedMethods.put(session.id, result.value.id, session.expiresAt);
   // The visitor's own account pays from here on, even if the session was on the house buyer.
   session.houseBuyer = false;
+  // A login as the house buyer's own sandbox account can be handed the house token. It is
+  // held like any login token, and the page is told it won't be deleted when the session ends.
+  session.holdsHouseToken = isHouseToken(result.value.id, deps);
   session.connected = true;
   session.notice = "PayPal connected. Praman holds the saved method on the server. The agent and this page never see it.";
 }
@@ -196,7 +201,7 @@ export function isHouseToken(tokenId: string, deps: DemoDeps): boolean {
 async function deletePaymentToken(tokenId: string, deps: DemoDeps): Promise<void> {
   if (deps.paypal === null) return;
   if (isHouseToken(tokenId, deps)) {
-    // A login as the house buyer's own sandbox account can hand back the same token.
+    // A login as the house buyer's own sandbox account can be handed the same token.
     deps.log("demo: a session held the house buyer's saved PayPal method; it is kept at PayPal, not deleted");
     return;
   }
@@ -213,6 +218,7 @@ export async function releaseSession(session: DemoSession, deps: DemoDeps): Prom
   const tokenId = deps.savedMethods.take(session.id);
   session.connected = false;
   session.houseBuyer = false;
+  session.holdsHouseToken = false;
   if (tokenId === null) return;
   await deletePaymentToken(tokenId, deps);
 }

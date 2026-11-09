@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { formatMoney, minorFromJSON, REASON_CODES, type ReasonCode } from "@praman/shared";
 import type { AgentVisibleDecision } from "@praman/policy";
 import { CAFE, MARKET, MARKET_ITEM_NAMES, MARKET_PRICES, type BeatId, type PurchaseBeat } from "../demo/config.js";
-import { HOUSE_COPY, houseChoiceHtml } from "../demo/house.js";
+import { houseChoiceHtml, keptMethodCopy } from "../demo/house.js";
 import { canAskAgain, refundable } from "../demo/story.js";
 import type { TraceView } from "../data.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
@@ -406,10 +406,12 @@ export function renderDemoPage(session: DemoSession, recording: Recording, confi
   const notice = session.notice;
 
   const revoked = b("revoke")?.state === "done";
+  // Set when the session's saved method is the demo's own and outlives the session (D-85).
+  const kept = keptMethodCopy(session);
   const connectBody = revoked && !session.connected
     ? `${p("This session's mandate is revoked, so there is nothing left to connect PayPal for. Start a new session to go through the purchases.")}${action("/demo/start", "Start a new session")}`
     : session.connected
-    ? `<p class="ok">${session.houseBuyer ? escapeHtml(HOUSE_COPY.connected) : "Connected. Praman holds the saved PayPal method on its server, tied to this session. The agent and this page never see it, and it is deleted when the session ends."}</p>`
+    ? `<p class="ok">${kept !== null ? escapeHtml(kept.connected) : "Connected. Praman holds the saved PayPal method on its server, tied to this session. The agent and this page never see it, and it is deleted when the session ends."}</p>`
     : `${p("Approve, once, saving a PayPal sandbox account for this demo merchant. PayPal opens its own page and sends you back here. Log in with the sandbox buyer account.")}${action("/demo/connect", "Connect PayPal", "primary", configured.paypal ? null : NO_PAYPAL)}${houseChoiceHtml(configured.house === true)}`;
 
   // Why each purchase button is off, if it is. The server refuses the same steps for the same reasons.
@@ -496,7 +498,7 @@ ${step(
 )}
 
 <footer class="end">
-  <p>The session ends in an hour. ${session.houseBuyer ? escapeHtml(HOUSE_COPY.ending) : "Ending it now deletes the saved PayPal method at PayPal."} The ledger keeps everything.</p>
+  <p>The session ends in an hour. ${kept !== null ? escapeHtml(kept.ending) : "Ending it now deletes the saved PayPal method at PayPal."} The ledger keeps everything.</p>
   ${action("/demo/end", "End this session", "quiet")}
 </footer>`;
   return demoLayout("Demo", body);
