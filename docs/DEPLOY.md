@@ -123,14 +123,15 @@ Do this in a normal browser window, with a private window or a second browser re
 
 1. `https://<your address>/healthz` says `ok`.
 2. `https://<your address>/` shows the front page. **Try the live demo** opens `/demo`, and the start page loads with no "isn't configured" notes beside the buttons.
-3. **Start a session**, **Connect PayPal** with the sandbox buyer, and come back connected.
-4. Step 3: approve. The money box says the saved PayPal account was charged with no buyer present.
-5. Step 4: charged at once, nobody approved it.
-6. Step 5: approve, open the PayPal link in the private window, pay, come back and **Capture the payment**. It shows captured.
-7. Open step 5's **Ledger trace** and press **Verify this chain**. It says verified. Within a minute or two the trace should also show a **Settlement** box, from PayPal's `PAYMENT.CAPTURE.COMPLETED` webhook. If it doesn't, check the webhook's delivery history in PayPal's dashboard (Webhooks events) and the Render log.
-8. Steps 6 and 7 run, and their traces open.
-9. In the Render log, look for `receipt-ui listening`, and no `refusing to start` lines. No secret should appear anywhere in the log.
-10. Leave a checkout unpaid: on a fresh session, get step 5 to its PayPal link and don't pay. After 11 minutes, reload the demo and press **Capture the payment**. It says the order wasn't approved in time, `ORDER_RELEASED`, and nothing is charged.
+3. **Start a session**. Step 2, the poisoned listing, runs with no PayPal login: the live model answers, the fooled cart is refused with `CATEGORY_OUT_OF_SCOPE`, and the panel beside the refusal says $109.00, labelled as arithmetic, with nothing charged.
+4. Step 3: **Connect PayPal** with the sandbox buyer, and come back connected.
+5. Step 4: approve. The money box says the saved PayPal account was charged with no buyer present.
+6. Step 5: charged at once, nobody approved it.
+7. Step 6: approve, open the PayPal link in the private window, pay, come back and **Capture the payment**. It shows captured.
+8. Open step 6's **Ledger trace** and press **Verify this chain**. It says verified. Within a minute or two the trace should also show a **Settlement** box, from PayPal's `PAYMENT.CAPTURE.COMPLETED` webhook. If it doesn't, check the webhook's delivery history in PayPal's dashboard (Webhooks events) and the Render log.
+9. Step 7 runs, and its traces open.
+10. In the Render log, look for `receipt-ui listening`, and no `refusing to start` lines. No secret should appear anywhere in the log.
+11. Leave a checkout unpaid: on a fresh session, get step 6 to its PayPal link and don't pay. After 11 minutes, reload the demo and press **Capture the payment**. It says the order wasn't approved in time, `ORDER_RELEASED`, and nothing is charged.
 
 Check the per-address limit, from a terminal. This also checks that `TRUST_PROXY` is right for Render:
 
