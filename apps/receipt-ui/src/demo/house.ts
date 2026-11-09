@@ -27,13 +27,22 @@ export class HouseBuyer {
   /** The UTC day whose sessions are known to be used up. */
   #fullDay: string | null = null;
 
-  constructor(tokenId: string) {
+  /**
+   * False on a server that knows the token and must not use it: DEMO_DAILY_HOUSE_SESSIONS
+   * is 0, or it has no PayPal credentials. Nobody is then offered this buyer or charged to
+   * it, and the routes answer as if it didn't exist. The token is still known here, so
+   * holds() still keeps it from every delete at PayPal.
+   */
+  readonly on: boolean;
+
+  constructor(tokenId: string, opts: { readonly on?: boolean } = {}) {
     this.#tokenId = tokenId;
+    this.on = opts.on ?? true;
   }
 
-  /** False while PayPal's last answer about this buyer was a refusal and its rest isn't over. */
+  /** False when switched off, and while PayPal's last answer about this buyer was a refusal and its rest isn't over. */
   usable(now: Date): boolean {
-    return now.getTime() >= this.#restUntil;
+    return this.on && now.getTime() >= this.#restUntil;
   }
 
   /** Whether a new session may be shown the choice: usable, and today's sessions not known to be used up. */
@@ -49,7 +58,7 @@ export class HouseBuyer {
     return session.houseBuyer && this.usable(now) && now.getTime() < session.expiresAt.getTime() ? this.#tokenId : null;
   }
 
-  /** Whether this is the house buyer's token. Asked before any token is deleted at PayPal. */
+  /** Whether this is the house buyer's token. Asked before any token is deleted at PayPal, switched on or off. */
   holds(tokenId: string): boolean {
     return tokenId === this.#tokenId;
   }

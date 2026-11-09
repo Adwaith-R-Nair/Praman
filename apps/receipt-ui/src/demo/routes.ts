@@ -7,7 +7,7 @@ import { renderTracePage } from "../pages/trace.js";
 import { loadConsoleData, type Budget } from "../console/data.js";
 import { newStyleNonce, renderConsolePage } from "../console/page.js";
 import { SESSION_TTL_MS, type BeatId, type PurchaseBeat } from "./config.js";
-import { connectHouseBuyer, finishConnect, isHouseToken, releaseSession, startConnect, type DemoDeps } from "./connect.js";
+import { connectHouseBuyer, finishConnect, houseInUse, isHouseToken, releaseSession, startConnect, type DemoDeps } from "./connect.js";
 import { HOUSE_COPY, HOUSE_PATH, houseWording, leaveHouseBuyer } from "./house.js";
 import { LIMITS, RateLimiter } from "./limits.js";
 import type { DemoSession } from "./session.js";
@@ -145,8 +145,8 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       }
 
       const session = deps.sessions.get(readCookie(req.headers.cookie), now);
-      // Null on a server with no house buyer (D-85): then nothing below offers or accepts it.
-      const house = deps.paypal === null ? null : (deps.house ?? null);
+      // Null on a server with no house buyer, or one switched off (D-85): then nothing below offers or accepts it.
+      const house = houseInUse(deps);
       const configured = { paypal: deps.paypal !== null, model: deps.provider !== null, house: house?.offered(now) ?? false };
 
       if (method === "GET" && (path === "/demo/checkout/return" || path === "/demo/checkout/cancel")) {

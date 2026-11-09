@@ -171,6 +171,53 @@ describe("with no house buyer configured", () => {
   });
 });
 
+describe("with the secret set and the daily cap at 0", () => {
+  // DEMO_DAILY_HOUSE_SESSIONS=0 with DEMO_HOUSE_BUYER_TOKEN left in place: the documented pause.
+  beforeEach(() => use(makeDeps(new HouseBuyer(HOUSE_TOKEN, { on: false }), 0)));
+
+  it("offers and accepts nothing, like a server without the secret", async () => {
+    expect((await visitor().post(HOUSE_PATH)).status).toBe(404);
+    const v = visitor();
+    const start = await v.page();
+    await v.post("/demo/start");
+    const story = await v.page();
+    for (const html of [start, story]) {
+      expect(html).not.toContain("connect/house");
+      expect(html).not.toMatch(/demo(&#39;|')s sandbox buyer/);
+    }
+    expect((await v.post(HOUSE_PATH)).status).toBe(404);
+    expect(sessionOf(v)).toMatchObject({ connected: false, houseBuyer: false });
+
+    // Even a session flagged by mistake is never given the token to charge.
+    const s = sessionOf(v);
+    s.houseBuyer = true;
+    const req: CreateOrderRequest = { amount_minor: minor(100n), currency: "USD", idempotency_key: "k".repeat(64), receipt: "r" };
+    expect(savedMethodChoice(s, deps.savedMethods, deps.now, deps.house ?? null)(req)).toBeNull();
+    expect(deps.house?.offered(new Date(clock))).toBe(false);
+  });
+
+  it("still never deletes the house token, whatever ends a session", async () => {
+    expect(deps.house?.holds(HOUSE_TOKEN)).toBe(true);
+    const hold = async () => {
+      const v = visitor();
+      await v.post("/demo/start");
+      const s = sessionOf(v);
+      deps.savedMethods.put(s.id, HOUSE_TOKEN, s.expiresAt);
+      return v;
+    };
+    await (await hold()).post("/demo/end");
+
+    await hold();
+    clock += 61 * 60 * 1000;
+    expect(await sweepExpiredSessions(deps)).toBe(1);
+
+    await hold();
+    await loggedIn();
+    expect(await releaseAllSessions(deps, 2000)).toEqual({ sessions: 2, deleted: 1, notDeleted: 0 });
+    expect(paypal.deleted).toEqual([PAYMENT_TOKEN]);
+  });
+});
+
 describe("choosing the house buyer", () => {
   it("offers the choice beside the PayPal login, as a button and one sentence", async () => {
     const v = visitor();

@@ -23,7 +23,9 @@ export interface DemoDeps {
   readonly paypal: { readonly executor: SavedMethodCharger; readonly vault: VaultApi } | null;
   /**
    * The demo's shared sandbox buyer (D-85). Left out or null on a server with no such
-   * secret, and then the choice does not exist: no route, no page text, no charge.
+   * secret, and then the choice does not exist: no route, no page text, no charge. The
+   * same holds when it is here and switched off (`on` false), except that its token is
+   * still known, so no path deletes that token at PayPal.
    */
   readonly house?: HouseBuyer | null;
   /** How long one model call may take before the step gives up. Defaults to MODEL_DEADLINE_MS. */
@@ -37,6 +39,12 @@ export interface DemoDeps {
   readonly now: () => Date;
   /** Operator log. Never given a token, a cookie or an error's free text from PayPal. */
   readonly log: (line: string) => void;
+}
+
+/** The house buyer visitors may use on this server, or null: no secret, switched off, or no PayPal to charge it with. */
+export function houseInUse(deps: DemoDeps): HouseBuyer | null {
+  const house = deps.house ?? null;
+  return house !== null && house.on && deps.paypal !== null ? house : null;
 }
 
 const derive = (label: string, value: string): string => createHash("sha256").update(`${label}|${value}`, "utf8").digest("hex");
@@ -61,7 +69,7 @@ export function savedMethodChoice(session: DemoSession, savedMethods: SavedMetho
 export function routeFor(session: DemoSession, deps: DemoDeps): ExecutorRouter {
   const executors: Executor[] = [new SimulatedExecutor()];
   if (deps.paypal !== null) {
-    const house = deps.house ?? null;
+    const house = houseInUse(deps);
     const charger = house === null ? deps.paypal.executor : watchHouseCharges(deps.paypal.executor, house, (outcome) => houseAnswered(session, house, outcome, deps));
     executors.push(new SavedMethodExecutor(charger, savedMethodChoice(session, deps.savedMethods, deps.now, house)));
   }
@@ -86,8 +94,8 @@ function houseAnswered(session: DemoSession, house: HouseBuyer, outcome: ExecOut
  * purchases go through Praman as they would with an account connected by login.
  */
 export async function connectHouseBuyer(session: DemoSession, deps: DemoDeps): Promise<void> {
-  const house = deps.house ?? null;
-  if (house === null || deps.paypal === null) {
+  const house = houseInUse(deps);
+  if (house === null) {
     session.notice = "This server has no sandbox buyer of its own. Connect a PayPal sandbox account by logging in.";
     return;
   }
@@ -176,7 +184,11 @@ export async function finishConnect(session: DemoSession, approvalTokenId: strin
   session.notice = "PayPal connected. Praman holds the saved method on the server. The agent and this page never see it.";
 }
 
-/** The house buyer's token is shared and long-lived (D-85). No path here or in routes.ts may delete it at PayPal. */
+/**
+ * The house buyer's token is shared and long-lived (D-85). No path here or in routes.ts
+ * may delete it at PayPal. This asks the house buyer whether it is switched on or off:
+ * a server that knows the token guards it either way.
+ */
 export function isHouseToken(tokenId: string, deps: DemoDeps): boolean {
   return deps.house?.holds(tokenId) === true;
 }

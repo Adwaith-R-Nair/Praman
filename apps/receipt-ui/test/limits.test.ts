@@ -8,7 +8,7 @@ import { routeByRail } from "@praman/exec-core";
 import { checkEnv, checkStartup, keyFingerprint, DEVELOPER_KEY_FINGERPRINTS } from "../src/startup.js";
 import { DemoActivity, runSweeps, scheduleSweeps } from "../src/sweeps.js";
 import { HouseBuyer } from "../src/demo/house.js";
-import { demoDepsFromEnv } from "../src/demo/wiring.js";
+import { demoDepsFromEnv, houseStartupNote } from "../src/demo/wiring.js";
 import { capFromEnv, clientIp, DbDailyUsage, DEFAULT_DAILY_HOUSE_SESSIONS, DEFAULT_DAILY_SESSIONS, MemoryDailyUsage, RateLimiter } from "../src/demo/limits.js";
 
 // Plan Task 13: what the hosted server refuses, and what it does when it is pushed.
@@ -92,11 +92,29 @@ describe("start-up refusals", () => {
     expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: "" })).toBeNull();
     expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token })).toBeInstanceOf(HouseBuyer);
     expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token })?.holds(token)).toBe(true);
-    // A cap of zero is a second way to switch it off, with the secret left in place.
-    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token, DEMO_DAILY_HOUSE_SESSIONS: "0" })).toBeNull();
-    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token, DEMO_DAILY_HOUSE_SESSIONS: "5" })).toBeInstanceOf(HouseBuyer);
-    // Nothing to charge it with.
-    expect(houseOf({ DEMO_MANDATE_PRIVATE_KEY: demo.priv, DEMO_MANDATE_PUBLIC_KEY: demo.pub, DEMO_HOUSE_BUYER_TOKEN: token })).toBeNull();
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token })?.on).toBe(true);
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token, DEMO_DAILY_HOUSE_SESSIONS: "5" })?.on).toBe(true);
+    // A cap of zero switches it off with the secret left in place. The server still knows
+    // the token, so it can still refuse to delete it at PayPal.
+    const paused = houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token, DEMO_DAILY_HOUSE_SESSIONS: "0" });
+    expect(paused?.on).toBe(false);
+    expect(paused?.holds(token)).toBe(true);
+    expect(paused?.offered(new Date())).toBe(false);
+    // Nothing to charge it with: off, and still known.
+    const noPayPal = houseOf({ DEMO_MANDATE_PRIVATE_KEY: demo.priv, DEMO_MANDATE_PUBLIC_KEY: demo.pub, DEMO_HOUSE_BUYER_TOKEN: token });
+    expect(noPayPal?.on).toBe(false);
+    expect(noPayPal?.holds(token)).toBe(true);
+  });
+
+  it("says at start-up which way the house-buyer switch is, and nothing on a server without the secret", () => {
+    const token = "HOUSETOKEN-77aa-NEVER-SHOWN";
+    expect(houseStartupNote(null)).toBeNull();
+    const on = houseStartupNote(new HouseBuyer(token));
+    expect(on).toContain("house buyer on");
+    const off = houseStartupNote(new HouseBuyer(token, { on: false }));
+    expect(off).toContain("house buyer off");
+    expect(off).toContain("not deleted");
+    expect(`${on ?? ""}${off ?? ""}`).not.toContain(token);
   });
 
   it("refuses a house-buyer secret that isn't a token id or has no PayPal credentials, without printing it", () => {
