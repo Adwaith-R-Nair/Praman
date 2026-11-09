@@ -77,6 +77,12 @@ export interface DemoSession {
   setupTokenId: string | null;
   /** True once a payment token is stored server-side for this session. The token itself is never here. */
   connected: boolean;
+  /**
+   * True while this session's small purchases are charged to the demo's shared sandbox
+   * buyer (D-85) rather than an account the visitor connected by logging in. A flag only:
+   * that buyer's token is held by HouseBuyer and is never here.
+   */
+  houseBuyer: boolean;
   modelCalls: number;
   /**
    * Purchase intents this session has made. Each ask of a step takes the next number, so
@@ -128,6 +134,7 @@ export function createDemoSession(now: Date, signer: DemoSigner): DemoSession {
     harnessMandate: signMandate(mandateDoc(`mnd_demo_${ref}_h`, [HARNESS], HARNESS_LIMITS, now, expiresAt), signer.privateKeyPem, signer.keyId),
     setupTokenId: null,
     connected: false,
+    houseBuyer: false,
     modelCalls: 0,
     intents: 0,
     busy: false,

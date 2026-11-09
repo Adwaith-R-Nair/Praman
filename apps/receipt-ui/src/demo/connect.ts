@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import type { ModelProvider } from "@praman/agent-core";
-import { routeByRail, SimulatedExecutor, type Executor, type ExecutorRouter } from "@praman/exec-core";
+import { routeByRail, SimulatedExecutor, type ExecOutcome, type Executor, type ExecutorRouter } from "@praman/exec-core";
 import { SavedMethodExecutor, type SavedMethodCharger, type SavedMethodChoice, type SetupToken, type VaultResult } from "@praman/paypal-exec";
 import { minorFromJSON, ZERO_MINOR } from "@praman/shared";
+import { HOUSE_COPY, leaveHouseBuyer, watchHouseCharges, type HouseBuyer } from "./house.js";
 import type { DailyUsage } from "./limits.js";
 import type { DemoSession, SavedMethods, SessionStore } from "./session.js";
 
@@ -20,6 +21,11 @@ export interface DemoDeps {
   readonly publicKeyPem: string;
   /** Null when this server has no PayPal sandbox credentials. */
   readonly paypal: { readonly executor: SavedMethodCharger; readonly vault: VaultApi } | null;
+  /**
+   * The demo's shared sandbox buyer (D-85). Left out or null on a server with no such
+   * secret, and then the choice does not exist: no route, no page text, no charge.
+   */
+  readonly house?: HouseBuyer | null;
   /** How long one model call may take before the step gives up. Defaults to MODEL_DEADLINE_MS. */
   readonly modelDeadlineMs?: number;
   /** Null when this server has no model configured. */
@@ -40,18 +46,72 @@ const derive = (label: string, value: string): string => createHash("sha256").up
  * below the signed mandate's approval threshold, when this session has a saved method.
  * At or above it, the buyer approves at PayPal's checkout too. Both inputs are the
  * server's: the amount T1 authorised from the catalog, and the mandate it signed.
+ *
+ * The saved method is the one this session connected by logging in to PayPal or, for a
+ * session that chose it, the demo's shared sandbox buyer (D-85). The threshold is the
+ * same for both, so the shared buyer never pays for what a buyer must be present for.
  */
-export function savedMethodChoice(session: DemoSession, savedMethods: SavedMethods, now: () => Date): SavedMethodChoice {
+export function savedMethodChoice(session: DemoSession, savedMethods: SavedMethods, now: () => Date, house: HouseBuyer | null = null): SavedMethodChoice {
   const doc = session.mandate.document;
   const threshold = doc.version === 2 ? minorFromJSON(doc.step_up.threshold_minor) : ZERO_MINOR;
-  return (req) => (req.amount_minor < threshold ? savedMethods.get(session.id, now()) : null);
+  return (req) => (req.amount_minor < threshold ? (savedMethods.get(session.id, now()) ?? house?.tokenFor(session, now()) ?? null) : null);
 }
 
 /** This session's rails. Built per request, so the saved method it can reach is only ever its own. */
 export function routeFor(session: DemoSession, deps: DemoDeps): ExecutorRouter {
   const executors: Executor[] = [new SimulatedExecutor()];
-  if (deps.paypal !== null) executors.push(new SavedMethodExecutor(deps.paypal.executor, savedMethodChoice(session, deps.savedMethods, deps.now)));
+  if (deps.paypal !== null) {
+    const house = deps.house ?? null;
+    const charger = house === null ? deps.paypal.executor : watchHouseCharges(deps.paypal.executor, house, (outcome) => houseAnswered(session, house, outcome, deps));
+    executors.push(new SavedMethodExecutor(charger, savedMethodChoice(session, deps.savedMethods, deps.now, house)));
+  }
   return routeByRail(executors);
+}
+
+/**
+ * What PayPal said about a charge to the house buyer. A refusal moved no money. It rests
+ * the house buyer for everyone and sends this session back to the login path.
+ */
+function houseAnswered(session: DemoSession, house: HouseBuyer, outcome: ExecOutcome, deps: DemoDeps): void {
+  if (outcome.status === "captured") house.charged();
+  if (outcome.status !== "failed") return;
+  house.refused(deps.now());
+  deps.log(`demo: PayPal refused the house buyer: ${outcome.failure_code ?? "no code"}. It is resting, and sessions use the PayPal login meanwhile.`);
+  leaveHouseBuyer(session, HOUSE_COPY.refused(outcome.failure_code));
+}
+
+/**
+ * Puts this session on the demo's shared sandbox buyer, in place of a PayPal login. One
+ * of the day's house-buyer sessions is used. Nothing is charged here: the session's
+ * purchases go through Praman as they would with an account connected by login.
+ */
+export async function connectHouseBuyer(session: DemoSession, deps: DemoDeps): Promise<void> {
+  const house = deps.house ?? null;
+  if (house === null || deps.paypal === null) {
+    session.notice = "This server has no sandbox buyer of its own. Connect a PayPal sandbox account by logging in.";
+    return;
+  }
+  if (session.beats.get("revoke")?.state === "done") {
+    session.notice = "This session's mandate is revoked. Start a new session to connect PayPal.";
+    return;
+  }
+  if (session.connected) {
+    session.notice = "PayPal is already connected for this session.";
+    return;
+  }
+  const now = deps.now();
+  if (!house.offered(now)) {
+    session.notice = HOUSE_COPY.unavailable;
+    return;
+  }
+  if (!(await deps.usage.take("house_session", now))) {
+    house.capReached(now);
+    session.notice = HOUSE_COPY.usedUp;
+    return;
+  }
+  session.houseBuyer = true;
+  session.connected = true;
+  session.notice = HOUSE_COPY.chosen;
 }
 
 /** Sends this visitor to PayPal to approve saving their sandbox account. Returns where to go. */
@@ -110,12 +170,24 @@ export async function finishConnect(session: DemoSession, approvalTokenId: strin
     return;
   }
   deps.savedMethods.put(session.id, result.value.id, session.expiresAt);
+  // The visitor's own account pays from here on, even if the session was on the house buyer.
+  session.houseBuyer = false;
   session.connected = true;
   session.notice = "PayPal connected. Praman holds the saved method on the server. The agent and this page never see it.";
 }
 
+/** The house buyer's token is shared and long-lived (D-85). No path here or in routes.ts may delete it at PayPal. */
+export function isHouseToken(tokenId: string, deps: DemoDeps): boolean {
+  return deps.house?.holds(tokenId) === true;
+}
+
 async function deletePaymentToken(tokenId: string, deps: DemoDeps): Promise<void> {
   if (deps.paypal === null) return;
+  if (isHouseToken(tokenId, deps)) {
+    // A login as the house buyer's own sandbox account can hand back the same token.
+    deps.log("demo: a session held the house buyer's saved PayPal method; it is kept at PayPal, not deleted");
+    return;
+  }
   try {
     const result = await deps.paypal.vault.deletePaymentToken(tokenId);
     deps.log(`demo: released a saved PayPal method for an ended session: ${result.ok ? "deleted at PayPal" : result.code}`);
@@ -128,6 +200,7 @@ async function deletePaymentToken(tokenId: string, deps: DemoDeps): Promise<void
 export async function releaseSession(session: DemoSession, deps: DemoDeps): Promise<void> {
   const tokenId = deps.savedMethods.take(session.id);
   session.connected = false;
+  session.houseBuyer = false;
   if (tokenId === null) return;
   await deletePaymentToken(tokenId, deps);
 }

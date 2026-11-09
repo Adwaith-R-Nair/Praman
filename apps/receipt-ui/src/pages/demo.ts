@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { formatMoney, minorFromJSON, REASON_CODES, type ReasonCode } from "@praman/shared";
 import type { AgentVisibleDecision } from "@praman/policy";
 import { CAFE, MARKET, MARKET_ITEM_NAMES, MARKET_PRICES, type BeatId, type PurchaseBeat } from "../demo/config.js";
+import { HOUSE_COPY, houseChoiceHtml } from "../demo/house.js";
 import { canAskAgain, refundable } from "../demo/story.js";
 import type { TraceView } from "../data.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
@@ -397,7 +398,7 @@ export function renderRecordedRunPage(outOfSessions = false): string {
 const RECORDED_RUN_ALT =
   "The demo page after all eight steps. The signed mandate. PayPal connected. A first purchase Praman held for approval and then charged to the saved PayPal account. A coffee Praman allowed with nobody approving. A large purchase approved and sent to a PayPal checkout. A poisoned listing: the live model ignored it, and a fooled model's cart was refused. Twenty purchases at once, where the budget stopped all but those that fit. The mandate revoked, and the agent's next try refused with MANDATE_REVOKED.";
 
-export function renderDemoPage(session: DemoSession, recording: Recording, configured: { readonly paypal: boolean; readonly model: boolean } = { paypal: true, model: true }): string {
+export function renderDemoPage(session: DemoSession, recording: Recording, configured: { readonly paypal: boolean; readonly model: boolean; readonly house?: boolean } = { paypal: true, model: true }): string {
   const b = (id: BeatId) => session.beats.get(id);
   const first = b("first");
   const second = b("second");
@@ -408,8 +409,8 @@ export function renderDemoPage(session: DemoSession, recording: Recording, confi
   const connectBody = revoked && !session.connected
     ? `${p("This session's mandate is revoked, so there is nothing left to connect PayPal for. Start a new session to go through the purchases.")}${action("/demo/start", "Start a new session")}`
     : session.connected
-    ? `<p class="ok">Connected. Praman holds the saved PayPal method on its server, tied to this session. The agent and this page never see it, and it is deleted when the session ends.</p>`
-    : `${p("Approve, once, saving a PayPal sandbox account for this demo merchant. PayPal opens its own page and sends you back here. Log in with the sandbox buyer account.")}${action("/demo/connect", "Connect PayPal", "primary", configured.paypal ? null : NO_PAYPAL)}`;
+    ? `<p class="ok">${session.houseBuyer ? escapeHtml(HOUSE_COPY.connected) : "Connected. Praman holds the saved PayPal method on its server, tied to this session. The agent and this page never see it, and it is deleted when the session ends."}</p>`
+    : `${p("Approve, once, saving a PayPal sandbox account for this demo merchant. PayPal opens its own page and sends you back here. Log in with the sandbox buyer account.")}${action("/demo/connect", "Connect PayPal", "primary", configured.paypal ? null : NO_PAYPAL)}${houseChoiceHtml(configured.house === true)}`;
 
   // Why each purchase button is off, if it is. The server refuses the same steps for the same reasons.
   const missing = !configured.paypal ? NO_PAYPAL : !configured.model ? NO_MODEL : null;
@@ -495,7 +496,7 @@ ${step(
 )}
 
 <footer class="end">
-  <p>The session ends in an hour. Ending it now deletes the saved PayPal method at PayPal. The ledger keeps everything.</p>
+  <p>The session ends in an hour. ${session.houseBuyer ? escapeHtml(HOUSE_COPY.ending) : "Ending it now deletes the saved PayPal method at PayPal."} The ledger keeps everything.</p>
   ${action("/demo/end", "End this session", "quiet")}
 </footer>`;
   return demoLayout("Demo", body);
