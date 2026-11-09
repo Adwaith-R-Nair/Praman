@@ -117,8 +117,16 @@
     { headerName: "Seq", field: "seq", width: 84, pinned: "left", filter: "agNumberColumnFilter", valueGetter: function (p) { return p.data ? Number(p.data.seq) : null; }, sort: "desc" },
     { headerName: "Time (UTC)", field: "ts", width: 172, filter: "agTextColumnFilter", valueFormatter: function (p) { return p.value ? p.value.replace("T", " ").slice(0, 19) : ""; } },
     { headerName: "Event", field: "eventPlain", width: 220, tooltipField: "eventType", filter: "agTextColumnFilter" },
-    { headerName: "Mandate", field: "mandateId", width: 200, valueFormatter: function (p) { return p.data && p.data.mandateClaimed ? p.value + " (claimed, unverified)" : p.value || ""; } },
-    { headerName: "Merchant", field: "merchantId", width: 140 },
+    {
+      headerName: "Decision",
+      field: "decision",
+      width: 116,
+      cellClassRules: {
+        "cell-allow": function (p) { return p.value === "ALLOW" || p.value === "APPROVED"; },
+        "cell-step-up": function (p) { return p.value === "STEP_UP"; },
+        "cell-deny": function (p) { return p.value === "DENY" || p.value === "REJECTED" || p.value === "REVOKED"; },
+      },
+    },
     {
       headerName: "Amount",
       field: "amountMinor",
@@ -130,16 +138,8 @@
       getQuickFilterText: function (p) { return p.data && p.data.amount ? p.data.amount : ""; },
     },
     { headerName: "Cur.", field: "currency", width: 76 },
-    {
-      headerName: "Decision",
-      field: "decision",
-      width: 116,
-      cellClassRules: {
-        "cell-allow": function (p) { return p.value === "ALLOW" || p.value === "APPROVED"; },
-        "cell-step-up": function (p) { return p.value === "STEP_UP"; },
-        "cell-deny": function (p) { return p.value === "DENY" || p.value === "REJECTED" || p.value === "REVOKED"; },
-      },
-    },
+    { headerName: "Merchant", field: "merchantId", width: 140 },
+    { headerName: "Mandate", field: "mandateId", width: 200, valueFormatter: function (p) { return p.data && p.data.mandateClaimed ? p.value + " (claimed, unverified)" : p.value || ""; } },
     { headerName: "Status", field: "status", width: 110 },
     { headerName: "Reason code", field: "reasonCode", width: 220, tooltipField: "reasonPlain", cellClass: "cell-code" },
     { headerName: "In plain words", field: "reasonPlain", width: 300, flex: 1, minWidth: 220 },
