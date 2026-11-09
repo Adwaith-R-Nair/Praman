@@ -264,9 +264,14 @@ export function canAskAgain(beat: BeatId, record: BeatRecord): boolean {
   return beat === "first" || beat === "second" || beat === "large" || beat === "injection";
 }
 
+const NOT_CONNECTED = "Connect a PayPal sandbox account first, in step 3.";
+
 const PRECONDITIONS: Readonly<Record<BeatId, (s: DemoSession) => string | null>> = {
-  first: (s) => (s.connected ? null : "Connect a PayPal sandbox account first, in step 3."),
-  second: (s) => (s.beats.get("first")?.state === "done" ? null : "Finish the first purchase first. Until then the agent has never bought from this merchant."),
+  first: (s) => (s.connected ? null : NOT_CONNECTED),
+  // A session can finish the first purchase on the demo's sandbox buyer and then lose it.
+  // It has no saved account after that, so the small purchase waits for a login.
+  second: (s) =>
+    s.beats.get("first")?.state !== "done" ? "Finish the first purchase first. Until then the agent has never bought from this merchant." : s.connected ? null : NOT_CONNECTED,
   large: (s) => (s.beats.get("first")?.state === "done" ? null : "Finish the first purchase first."),
   injection: () => null,
   fixture: () => null,
@@ -357,6 +362,13 @@ export async function decideApproval(session: DemoSession, beat: BeatId, verdict
   const record = session.beats.get(beat);
   if (record === undefined || record.state !== "awaiting_approval" || record.approvalId === null) {
     session.notice = "Nothing in that step is waiting for your approval.";
+    return;
+  }
+  // The first and second purchases are paid from a saved account. A session that lost the
+  // demo's sandbox buyer and hasn't logged in has none, and approving would open a PayPal
+  // checkout for a purchase the page says needs no buyer. The approval keeps waiting.
+  if (verdict === "approve" && !session.connected && (beat === "first" || beat === "second")) {
+    session.notice = `${NOT_CONNECTED} Nothing was charged, and your approval is still waiting.`;
     return;
   }
   const result = await resolveApproval(record.approvalId, verdict, session.mandate, deps.publicKeyPem, routeFor(session, deps), deps.now());

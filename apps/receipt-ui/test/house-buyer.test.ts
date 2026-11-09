@@ -740,6 +740,45 @@ describe("when PayPal refuses the house buyer", () => {
     expect(paypal.charges).toHaveLength(1);
   });
 
+  it("pressing Approve again without logging in still makes no checkout", async () => {
+    const a = await onHouseBuyer();
+    const b = await onHouseBuyer();
+    await a.post("/demo/step/first");
+    await b.post("/demo/step/first");
+    refuseCharges("PAYEE_ACCOUNT_RESTRICTED");
+    await a.post("/demo/approve/first");
+    await b.post("/demo/approve/first");
+    expect(sessionOf(b)).toMatchObject({ connected: false, houseBuyer: false });
+
+    // The first press sent this session back to step 3. It hasn't logged in, so a second
+    // press has no saved account to charge and must not turn into a PayPal checkout.
+    await b.post("/demo/approve/first");
+    expect(sessionOf(b).beats.get("first")).toMatchObject({ state: "awaiting_approval" });
+    expect(paypal.checkouts).toHaveLength(0);
+    expect(paypal.charges).toHaveLength(1);
+    expect(await b.page()).toContain("Connect a PayPal sandbox account first");
+  });
+
+  it("a second purchase is not asked for after the session lost the house buyer", async () => {
+    const a = await onHouseBuyer();
+    const b = await onHouseBuyer();
+    await b.post("/demo/step/first");
+    await b.post("/demo/approve/first");
+    expect(sessionOf(b).beats.get("first")).toMatchObject({ state: "done" });
+    await a.post("/demo/step/first");
+    refuseCharges("PAYEE_ACCOUNT_RESTRICTED");
+    await a.post("/demo/approve/first");
+    const chargesBefore = paypal.charges.length;
+
+    await b.post("/demo/step/second");
+    expect(sessionOf(b)).toMatchObject({ connected: false, houseBuyer: false });
+    await b.post("/demo/step/second");
+    expect(sessionOf(b).beats.get("second")?.state ?? "not run").not.toBe("awaiting_checkout");
+    expect(sessionOf(b).beats.get("second")?.state ?? "not run").not.toBe("done");
+    expect(paypal.checkouts).toHaveLength(0);
+    expect(paypal.charges).toHaveLength(chargesBefore);
+  });
+
   it("offers the choice again after a rest, and rests twice as long if PayPal refuses again", async () => {
     const house = new HouseBuyer(HOUSE_TOKEN);
     const t0 = new Date("2026-11-10T09:00:00.000Z");

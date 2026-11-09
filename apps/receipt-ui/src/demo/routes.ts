@@ -317,7 +317,8 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       if (method === "POST" && name !== undefined) {
         // PayPal has refused the house buyer, in this session or another. A session still
         // on it goes back to the login path before a purchase is asked for or approved,
-        // so no intent is made that it has no way to pay for.
+        // so no intent is made that it has no way to pay for. Later presses are held by
+        // the story's own checks until the session has logged in.
         if (house !== null && session.houseBuyer && !house.usable(now) && !session.busy && isPurchase(name) && (verb === "step" || verb === "approve")) {
           leaveHouseBuyer(session, HOUSE_COPY.gone);
           redirect(res, "/demo#connect");
