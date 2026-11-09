@@ -1,5 +1,7 @@
 # Praman — High Level Design (HLD)
 
+> This document describes the September 2026 Razorpay Buildathon entry. For the current system, which also runs on PayPal, read [README.md](../README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
+
 > **Doc map.** `ARCHITECTURE.md` is the reviewer-facing summary (read first, 5 min). **This HLD** is the system decomposition — components, boundaries, flows, failure modes. `LLD.md` is implementation-level contracts — schemas, signatures, SQL. `DECISIONS.md` records *why* each major choice was made.
 
 ---

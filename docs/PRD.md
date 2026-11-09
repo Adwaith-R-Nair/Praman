@@ -1,5 +1,7 @@
 # Praman — Product & Technical Specification
 
+> This document describes the September 2026 Razorpay Buildathon entry. For the current system, which also runs on PayPal, read [README.md](../README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
+
 **Praman** (प्रमाण — *proof*) is a control plane for agent-initiated payments. It sits between an AI buyer agent and a Razorpay merchant, and makes every rupee an agent moves **bounded, explainable, and replayable**.
 
 - **Submission:** Razorpay AI Buildathon 2026, Track 01 — AI Growth & Agentic Commerce

@@ -1,5 +1,7 @@
 # Praman — Roadmap
 
+> This document describes the September 2026 Razorpay Buildathon entry. For the current system, which also runs on PayPal, read [README.md](../README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
+
 Eight phases across nine days. Each phase has an **exit criterion** that is demoable and an **understanding gate** you must pass before advancing.
 
 The rule: *if you cannot explain the phase you just finished without looking at the code, you do not start the next one.* That rule is the difference between a project you built and a project that happened near you.
