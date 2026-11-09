@@ -7,7 +7,7 @@ import { buildBundleStandalone } from "@praman/dispute";
 import { append } from "@praman/ledger";
 import { generateKeypair } from "@praman/mandate";
 import { createApp, type Handler } from "../src/app.js";
-import { publicConsoleData, STEP_UP_REASON_WITHHELD, type ConsoleData, type ConsoleRow } from "../src/console/data.js";
+import { countActors, publicConsoleData, STEP_UP_REASON_WITHHELD, type ConsoleData, type ConsoleRow } from "../src/console/data.js";
 import { renderConsolePage } from "../src/console/page.js";
 import { MAIN_LIMITS } from "../src/demo/config.js";
 import type { DemoDeps } from "../src/demo/connect.js";
@@ -284,6 +284,48 @@ describe("the public sample", () => {
     }
   });
 
+  it("counts who did what from the published rows, and names the test harness only where the public bundle does", async () => {
+    const v = await runSession();
+    pin(v);
+    const data = JSON.parse((await anyone().get("/sample/data")).text) as ConsoleData;
+
+    // The chart is the published rows, counted: every row once, under what the row itself says.
+    expect(data.actors).toEqual(countActors(data.rows));
+    expect(data.actors.reduce((n, a) => n + a.rows, 0)).toBe(data.rows.length);
+    const did = (who: string) => data.actors.filter((a) => a.who === who).map((a) => a.eventType);
+    expect(did("agent")).toEqual(["intent", "agent_transcript"]);
+    expect(did("person")).toEqual(["step_up_resolved", "mandate_revoked"]);
+    expect(did("harness")).toEqual(["intent", "step_up_resolved"]);
+    expect(did("praman")).toEqual(expect.arrayContaining(["decision", "api_call", "outcome"]));
+    expect(did("other")).toEqual([]);
+
+    // A bar carries counts and fixed words, plus what its rows already publish. Nothing else.
+    const fixed = new Set(["Agent", "Praman", "Person", "Test harness"]);
+    for (const bar of data.actors) {
+      expect(Object.keys(bar).sort()).toEqual(["actors", "did", "eventPlain", "eventType", "rows", "who", "whoPlain"]);
+      expect(fixed.has(bar.whoPlain), bar.whoPlain).toBe(true);
+      expect(bar.did).toMatch(/^[a-z ]+$/);
+      const own = data.rows.filter((r) => r.whoPlain === bar.whoPlain && r.eventType === bar.eventType);
+      expect(own.length).toBe(bar.rows);
+      expect([...new Set(own.map((r) => r.actor))].sort()).toEqual(bar.actors);
+      expect(own.every((r) => r.eventPlain === bar.eventPlain)).toBe(true);
+    }
+
+    // "Test harness" is said of exactly the traces whose public bundle says so itself.
+    for (const traceId of new Set(data.rows.map((r) => r.traceId))) {
+      const bundle = await buildBundleStandalone(traceId);
+      const byHarness = (bundle?.agent.model_id ?? "").startsWith("harness/");
+      const rows = data.rows.filter((r) => r.traceId === traceId);
+      expect(rows.some((r) => r.who === "harness"), traceId).toBe(byHarness);
+      for (const row of rows.filter((r) => r.who === "harness")) {
+        expect(["agent", "issuer"]).toContain(row.actor);
+        if (row.eventType === "step_up_resolved") expect(bundle?.approval?.by).toBe("test_harness");
+      }
+      // The stored actor is published as it is, on the row and in the bundle's chain.
+      for (const row of rows) expect(bundle?.chain.entries.find((e) => e.seq === row.seq)?.actor, `seq ${row.seq}`).toBe(row.actor);
+    }
+  });
+
   it("links every trace to its public page and its public bundle, with no script needed", async () => {
     const v = await runSession();
     const s = sessionOf(v);
@@ -365,7 +407,7 @@ describe("the public sample", () => {
 
 describe("publicConsoleData", () => {
   const row = (over: Partial<ConsoleRow>): ConsoleRow => ({
-    seq: "1", ts: "2026-11-09T10:00:00.000Z", traceId: "t", actor: "praman", eventType: "decision", eventPlain: "Policy engine decided", mandateId: "m", mandateClaimed: false, merchantId: "M", rail: null,
+    seq: "1", ts: "2026-11-09T10:00:00.000Z", traceId: "t", actor: "praman", who: "praman", whoPlain: "Praman", eventType: "decision", eventPlain: "Policy engine decided", mandateId: "m", mandateClaimed: false, merchantId: "M", rail: null,
     amountMinor: "1250", currency: "USD", amount: "$12.50", decision: null, status: null, reasonCode: null, reasonPlain: null, orderId: null, captureId: null, refundId: null,
     prevHash: "0".repeat(64), payloadHash: "a".repeat(64), entryHash: "b".repeat(64),
     check: { payloadIntact: true, fieldsIntact: true, linked: true, recomputedPayloadHash: "a".repeat(64), recomputedEntryHash: "b".repeat(64) }, hashVerdict: "intact", chainVerified: true,
@@ -387,6 +429,7 @@ describe("publicConsoleData", () => {
       spend: [{ mandateId: "m", currency: "USD", budgetMinor: "6000", budgetLabel: "$60.00", spentNowMinor: "1250", spentNowLabel: "$12.50", revoked: false, points: [] }],
       decisions: [{ reasonCode: "STEP_UP_THRESHOLD", reasonPlain: "over the threshold", allow: 0, stepUp: 1, deny: 0 }],
       rails: [],
+      actors: [],
     };
     const pub = publicConsoleData(full);
     expect(pub.rows.map((r) => r.reasonCode)).toEqual([null, "MANDATE_BUDGET_EXHAUSTED", "OK", null]);
@@ -394,6 +437,8 @@ describe("publicConsoleData", () => {
     expect(pub.rows[3]?.reasonPlain).toBe(STEP_UP_REASON_WITHHELD);
     expect(pub.spend).toEqual([{ ...full.spend[0], budgetMinor: null, budgetLabel: null }]);
     expect(pub.decisions.map((d) => d.reasonCode).sort()).toEqual(["MANDATE_BUDGET_EXHAUSTED", "OK"]);
+    // Who did what is counted from the published rows too, and a count names no reason.
+    expect(pub.actors.map((a) => [a.whoPlain, a.eventType, a.rows])).toEqual([["Praman", "decision", 3], ["Praman", "step_up_resolved", 1]]);
     expect(JSON.stringify(pub)).not.toMatch(/STEP_UP_|6000|\$60\.00|threshold/);
     // The full copy is untouched.
     expect(full.rows[0]?.reasonCode).toBe("STEP_UP_THRESHOLD");
@@ -401,7 +446,7 @@ describe("publicConsoleData", () => {
 });
 
 describe("the sample loader", () => {
-  const view = (n: number): SampleView => ({ data: { generatedAt: n.toString(), rows: [], truncated: false, chain: { ok: true, checked: 0, head: null, brokenAtSeq: null, breakReason: null, breakReasonPlain: null }, spend: [], decisions: [], rails: [] }, traces: [] });
+  const view = (n: number): SampleView => ({ data: { generatedAt: n.toString(), rows: [], truncated: false, chain: { ok: true, checked: 0, head: null, brokenAtSeq: null, breakReason: null, breakReasonPlain: null }, spend: [], decisions: [], rails: [], actors: [] }, traces: [] });
 
   it("shares one load for a minute, then loads again", async () => {
     let t = 1_000_000;

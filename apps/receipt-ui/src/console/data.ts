@@ -1,11 +1,12 @@
 import { prisma } from "@praman/db";
 import { amountIfPresent, computeEntryHash, computePayloadHash, deriveState, GENESIS_HASH, readCurrency, verifyChain, type EventType, type VerifyResult } from "@praman/ledger";
 import { formatMoney, isCurrency, minorFromJSON, REASON_CODES, type Currency, type ReasonCode } from "@praman/shared";
+import { HARNESS_MODEL_PREFIX } from "../data.js";
 import { BREAK_REASON_PLAIN, EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
 
 /**
  * The operator console's data: ledger rows as the grid shows them, each with its own
- * hash check, the whole chain verified once, and what the three charts draw. Built on
+ * hash check, the whole chain verified once, and what the four charts draw. Built on
  * the server from the ledger alone. Nothing here decides anything: it reads rows that
  * are already written, and it never sends a payload, a transcript or merchant text,
  * only ids, codes, amounts and hashes.
@@ -49,11 +50,22 @@ export interface EntryCheck {
   readonly recomputedEntryHash: string | null;
 }
 
+/**
+ * Who a row is counted under. It is the ledger's own actor column, read with one more
+ * fact from the ledger: whether the trace's intent says the test harness made it.
+ * "other" is an actor this table doesn't know, shown as it is stored.
+ */
+export type Who = "agent" | "praman" | "person" | "provider" | "reconciler" | "system" | "harness" | "other";
+
 export interface ConsoleRow {
   readonly seq: string;
   readonly ts: string;
   readonly traceId: string;
+  /** The actor as the row stores it. The entry hash covers it. */
   readonly actor: string;
+  readonly who: Who;
+  /** `who` in words, for the grid: "Agent", "Praman", "Person"... */
+  readonly whoPlain: string;
   readonly eventType: string;
   readonly eventPlain: string;
   readonly mandateId: string | null;
@@ -126,6 +138,21 @@ export interface RailCount {
   readonly statuses: Readonly<Record<string, number>>;
 }
 
+/** One bar of the "who did what" chart: the rows one actor wrote of one event type. */
+export interface ActorCount {
+  readonly who: Who;
+  /** What the grid's Who column holds on these rows, so a bar can filter to them. */
+  readonly whoPlain: string;
+  readonly eventType: string;
+  /** What the grid's Event column holds on these rows. */
+  readonly eventPlain: string;
+  /** What was done, in a few words: "proposed a purchase". The stored event type when it isn't a known one. */
+  readonly did: string;
+  /** The actor values these rows store. */
+  readonly actors: readonly string[];
+  readonly rows: number;
+}
+
 export interface ConsoleData {
   readonly generatedAt: string;
   readonly rows: readonly ConsoleRow[];
@@ -135,6 +162,7 @@ export interface ConsoleData {
   readonly spend: readonly SpendSeries[];
   readonly decisions: readonly ReasonCount[];
   readonly rails: readonly RailCount[];
+  readonly actors: readonly ActorCount[];
 }
 
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
@@ -199,6 +227,74 @@ function currencyOf(payload: Record<string, unknown>): Currency | null {
   }
 }
 
+/**
+ * Every actor value this codebase writes to the ledger, and who that is. `issuer` is the
+ * person who signed the mandate, approving, rejecting or revoking; `operator` and
+ * `demo_visitor` are the two people who can ask for a refund; `webhook` is a row written
+ * on a verified provider webhook; `reconciler` is Praman's own sweep; `system` writes
+ * the chain's checkpoints.
+ */
+const WHO_OF_ACTOR: ReadonlyMap<string, Who> = new Map([
+  ["agent", "agent"],
+  ["praman", "praman"],
+  ["issuer", "person"],
+  ["operator", "person"],
+  ["demo_visitor", "person"],
+  ["webhook", "provider"],
+  ["reconciler", "reconciler"],
+  ["system", "system"],
+]);
+
+/** The chart's order, top to bottom, and the grid's words for each. */
+const WHO_PLAIN: Readonly<Record<Exclude<Who, "other">, string>> = {
+  agent: "Agent",
+  praman: "Praman",
+  person: "Person",
+  provider: "Provider webhook",
+  reconciler: "Reconciler",
+  system: "System",
+  harness: "Test harness",
+};
+const WHO_ORDER: readonly Who[] = ["agent", "praman", "person", "provider", "reconciler", "system", "harness", "other"];
+
+/** What a row of each type records, as something its actor did. In the order a purchase runs. */
+const DID: Readonly<Record<EventType, string>> = {
+  intent: "proposed a purchase",
+  agent_transcript: "had its tool calls recorded",
+  decision: "decided",
+  capture_decision: "re-checked before capture",
+  api_call: "called the payment provider",
+  outcome: "recorded a payment result",
+  step_up_resolved: "answered a request for approval",
+  mandate_revoked: "revoked a mandate",
+  refund_requested: "asked for a refund",
+  refund_outcome: "recorded a refund result",
+  settlement: "reported the final result",
+  checkpoint: "wrote a chain checkpoint",
+};
+const DID_ORDER = Object.keys(DID);
+
+/** True when a trace's intent row says the demo's test harness made it, with no model (model id "harness/..."). */
+function isHarnessIntent(intent: Record<string, unknown>): boolean {
+  return (str(intent["model_id"]) ?? "").startsWith(HARNESS_MODEL_PREFIX);
+}
+
+/**
+ * Who a row is counted under. The stored actor decides, with one exception the ledger
+ * itself records: on a trace the test harness made, the proposal is stored as `agent`
+ * and the harness's own approval as `issuer`, though no model and no person acted. The
+ * trace page and the dispute bundle read those rows the same way (`approval.by`).
+ */
+export function whoOf(actor: string, eventType: string, harnessTrace: boolean): Who {
+  if (harnessTrace && (actor === "agent" || (actor === "issuer" && eventType === "step_up_resolved"))) return "harness";
+  return WHO_OF_ACTOR.get(actor) ?? "other";
+}
+
+/** `who` in the grid's words. An actor the table doesn't know is shown as stored, and marked so it can't pass for a known one. */
+function whoPlainOf(who: Who, actor: string): string {
+  return who === "other" ? `${actor} (as stored)` : WHO_PLAIN[who];
+}
+
 /** What a row says about a decision, in the grid's words. */
 function decisionOf(eventType: string, p: Record<string, unknown>): { decision: string | null; reasonCode: string | null } {
   switch (eventType) {
@@ -220,8 +316,12 @@ function decisionOf(eventType: string, p: Record<string, unknown>): { decision: 
   }
 }
 
-/** Shapes one ledger row for the grid. The trace's intent fills in the mandate and merchant when the row itself doesn't name them. */
-export function toRow(entry: ConsoleEntry, check: EntryCheck, chainVerified: boolean, intentOfTrace: Record<string, unknown> | null): ConsoleRow {
+/**
+ * Shapes one ledger row for the grid. The trace's intent fills in the mandate and merchant
+ * when the row itself doesn't name them. `harnessTrace` says whether that intent is the
+ * test harness's, which the caller knows even when the intent row itself wasn't read.
+ */
+export function toRow(entry: ConsoleEntry, check: EntryCheck, chainVerified: boolean, intentOfTrace: Record<string, unknown> | null, harnessTrace: boolean): ConsoleRow {
   const p = payloadOf(entry);
   const claimed = str(p["claimed_mandate_id"]);
   const own = str(p["mandate_id"]);
@@ -230,11 +330,14 @@ export function toRow(entry: ConsoleEntry, check: EntryCheck, chainVerified: boo
   const currency = amountMinor === null ? null : currencyOf(p);
   const { decision, reasonCode } = decisionOf(entry.eventType, p);
   const isOutcomeLike = ["outcome", "api_call", "settlement", "refund_requested", "refund_outcome"].includes(entry.eventType);
+  const who = whoOf(entry.actor, entry.eventType, harnessTrace);
   return {
     seq: entry.seq.toString(),
     ts: entry.ts.toISOString(),
     traceId: entry.traceId,
     actor: entry.actor,
+    who,
+    whoPlain: whoPlainOf(who, entry.actor),
     eventType: entry.eventType,
     eventPlain: isEventType(entry.eventType) ? EVENT_TYPE_PLAIN[entry.eventType] : entry.eventType,
     mandateId,
@@ -357,6 +460,30 @@ export function countRails(rows: readonly ConsoleRow[]): RailCount[] {
 }
 
 /**
+ * Who did what: the rows counted by who wrote them and by event type, one count per pair.
+ * Ordered agent, Praman, person and then the rest, and within each by the order a
+ * purchase runs, so the chart reads top to bottom as the story does. Rows are only
+ * counted here; no amount is read.
+ */
+export function countActors(rows: readonly ConsoleRow[]): ActorCount[] {
+  const counts = new Map<string, { who: Who; whoPlain: string; eventType: string; eventPlain: string; actors: Set<string>; rows: number }>();
+  for (const row of rows) {
+    const key = JSON.stringify([row.whoPlain, row.eventType]);
+    const c = counts.get(key) ?? { who: row.who, whoPlain: row.whoPlain, eventType: row.eventType, eventPlain: row.eventPlain, actors: new Set<string>(), rows: 0 };
+    c.actors.add(row.actor);
+    c.rows += 1;
+    counts.set(key, c);
+  }
+  const eventOrder = (eventType: string): number => {
+    const i = DID_ORDER.indexOf(eventType);
+    return i === -1 ? DID_ORDER.length : i;
+  };
+  return [...counts.values()]
+    .map((c) => ({ who: c.who, whoPlain: c.whoPlain, eventType: c.eventType, eventPlain: c.eventPlain, did: isEventType(c.eventType) ? DID[c.eventType] : c.eventType, actors: [...c.actors].sort(), rows: c.rows }))
+    .sort((a, b) => WHO_ORDER.indexOf(a.who) - WHO_ORDER.indexOf(b.who) || a.whoPlain.localeCompare(b.whoPlain) || eventOrder(a.eventType) - eventOrder(b.eventType) || a.eventType.localeCompare(b.eventType));
+}
+
+/**
  * Loads the console for one scope. For a visitor that is every trace that names one of
  * their mandates, which takes in the revocation row too. For a local operator it is the
  * newest `limit` rows of the whole ledger. The chain is walked from genesis once, the
@@ -388,10 +515,23 @@ export async function loadConsoleData(scope: ConsoleScope, budgets: ReadonlyMap<
     const intents = new Map<string, Record<string, unknown>>();
     for (const e of entries) if (e.eventType === "intent" && !intents.has(e.traceId)) intents.set(e.traceId, payloadOf(e));
 
+    // The traces the test harness made. Each says so on its intent row, which the operator's
+    // newest-rows window can cut off from the rows after it, so those intents are asked for.
+    const harnessTraces = new Set<string>();
+    for (const [traceId, intent] of intents) if (isHarnessIntent(intent)) harnessTraces.add(traceId);
+    if (truncated) {
+      const cutOff = [...new Set(entries.map((e) => e.traceId))].filter((t) => !intents.has(t));
+      const found = cutOff.length === 0 ? [] : await tx.$queryRaw<{ trace_id: string }[]>`
+        SELECT DISTINCT trace_id FROM ledger_entry
+        WHERE event_type = 'intent' AND trace_id = ANY(${cutOff}) AND payload->>'model_id' LIKE ${`${HARNESS_MODEL_PREFIX}%`}
+      `;
+      for (const t of found) harnessTraces.add(t.trace_id);
+    }
+
     const rows = entries.map((e) => {
       const prev = e.seq === 1n ? GENESIS_HASH : (prevHashBySeq.get((e.seq - 1n).toString()) ?? null);
       const verified = chainResult.ok || e.seq < chainResult.brokenAt;
-      return toRow(e, checkEntry(e, prev), verified, intents.get(e.traceId) ?? null);
+      return toRow(e, checkEntry(e, prev), verified, intents.get(e.traceId) ?? null, harnessTraces.has(e.traceId));
     });
 
     // Spend per mandate: only mandates with a verified id, in one currency each.
@@ -418,7 +558,7 @@ export async function loadConsoleData(scope: ConsoleScope, budgets: ReadonlyMap<
       });
     }
 
-    return { generatedAt: now.toISOString(), rows, truncated, chain, spend, decisions: countDecisions(rows), rails: countRails(rows) };
+    return { generatedAt: now.toISOString(), rows, truncated, chain, spend, decisions: countDecisions(rows), rails: countRails(rows), actors: countActors(rows) };
   });
 }
 
@@ -431,7 +571,9 @@ export const STEP_UP_REASON_WITHHELD = "Praman asked a person first. Why is with
  * on a row that asked a person, since a step-up's reason says a limit was crossed. A row
  * never holds a payload, so the signed mandate, a refusal's `detail` and a row's
  * redaction salt were never here to remove. The decisions chart is counted again from
- * the rows as published, so it can't show a code a row no longer does.
+ * the rows as published, so it can't show a code a row no longer does, and so is who
+ * did what. That chart names the test harness, which the public bundle names as well
+ * (`agent.model_id`, `approval.by`).
  */
 export function publicConsoleData(data: ConsoleData): ConsoleData {
   const rows = data.rows.map((row) =>
@@ -442,6 +584,7 @@ export function publicConsoleData(data: ConsoleData): ConsoleData {
     rows,
     spend: data.spend.map((s) => ({ ...s, budgetMinor: null, budgetLabel: null })),
     decisions: countDecisions(rows),
+    actors: countActors(rows),
   };
 }
 
