@@ -18,8 +18,9 @@ const pem = (b64: string): string => Buffer.from(b64, "base64").toString("utf8")
  * DEMO_HOUSE_BUYER_TOKEN is the switch for the demo's shared sandbox buyer (D-85): the
  * payment token of one sandbox account the builder approved saving. Unset, there is no
  * house buyer. Set with DEMO_DAILY_HOUSE_SESSIONS at 0, or with no PayPal credentials to
- * charge it with, it is switched off: nothing offers it or charges it, and the server
- * still knows the token, so it still never deletes it at PayPal.
+ * charge it with, it is switched off: nothing offers it, no session is put on it, and the
+ * server still knows the token, so it still never deletes it at PayPal. A visitor who logs
+ * in as that same sandbox account can still be charged on it, as any login is (D-85).
  */
 export function demoDepsFromEnv(env: NodeJS.ProcessEnv, port: number): DemoWiring {
   const privateB64 = env["DEMO_MANDATE_PRIVATE_KEY"];

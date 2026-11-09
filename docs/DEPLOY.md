@@ -171,7 +171,7 @@ You consent once, as that sandbox buyer, on your own machine:
 7. In the sandbox dashboard, check that buyer account has a balance or a funding source that will last. The story charges it $17.00 a session, and the cap is 50 sessions a day.
 8. If you run the demo on your own machine with the same PayPal app, add the token to your local `.env` as `DEMO_HOUSE_BUYER_TOKEN` with `DEMO_DAILY_HOUSE_SESSIONS=0`. The local server then offers nothing and still refuses to delete that token. `.env` is gitignored.
 
-To switch it off, set `DEMO_DAILY_HOUSE_SESSIONS` to `0` in Render and deploy. Leave `DEMO_HOUSE_BUYER_TOKEN` in place. Visitors then see the demo exactly as it was before this step: the choice is gone and its address is a 404. The server still knows the token, so it still won't delete it, and the log says `receipt-ui: house buyer off`.
+To switch it off, set `DEMO_DAILY_HOUSE_SESSIONS` to `0` in Render and deploy. Leave `DEMO_HOUSE_BUYER_TOKEN` in place. Visitors then see the demo exactly as it was before this step: the choice is gone and a POST to its address is a 404. The server still knows the token, so it still won't delete it, and the log says `receipt-ui: house buyer off`.
 
 Deleting `DEMO_HOUSE_BUYER_TOKEN` also switches it off, and removes the guard with it, as above. Do that only when the token no longer matters.
 

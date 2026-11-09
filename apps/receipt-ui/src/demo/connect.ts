@@ -102,7 +102,8 @@ function houseAnswered(session: DemoSession, house: HouseBuyer, outcome: ExecOut
  *
  * `addressAllows` answers whether this visitor's address may take one more today, and
  * counts it. It is asked only when the session would otherwise be enrolled, and before
- * the day's count, so a press that enrols nobody costs the address and the day nothing.
+ * the day's count, so a press refused for its address costs the day nothing. The press
+ * that finds the day used up is still counted against its address.
  */
 export async function connectHouseBuyer(session: DemoSession, deps: DemoDeps, addressAllows: () => boolean = () => true): Promise<void> {
   const house = houseInUse(deps);
