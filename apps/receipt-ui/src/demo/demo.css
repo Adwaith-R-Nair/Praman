@@ -379,6 +379,54 @@ code {
   box-shadow: 0 2px 0 var(--deny);
 }
 
+/* A step-up as one card: what, how much, why, and the two answers. In the asking colour. */
+.approval {
+  background: var(--paper-raised);
+  border: 2px solid var(--step-up);
+  box-shadow: 0 2px 0 var(--step-up);
+  padding: var(--s2);
+  margin: var(--s2) 0;
+}
+
+.approval .message {
+  margin: 0 0 var(--s2);
+}
+
+.approval-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--s1) var(--s2);
+  margin: 0;
+}
+
+.approval-facts dt {
+  font-style: italic;
+  color: var(--ink-muted);
+  font-size: 0.95rem;
+}
+
+.approval-facts dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.approval .cart {
+  margin: 0;
+}
+
+.approval .item {
+  font-weight: 700;
+}
+
+.approval .shop {
+  color: var(--ink-muted);
+  font-size: 0.95rem;
+}
+
+.approval .small {
+  margin: var(--s1) 0 0;
+}
+
 .stamp {
   display: inline-block;
   font-size: 1.35rem;
@@ -722,6 +770,15 @@ summary {
 
   .gate {
     grid-template-columns: 1fr;
+  }
+
+  .approval-facts {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+
+  .approval-facts dd {
+    margin-bottom: var(--s1);
   }
 
   .cell-praman {

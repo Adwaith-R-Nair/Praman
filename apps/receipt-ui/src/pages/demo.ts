@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { addMinor, formatMoney, minor, minorFromJSON, mulMinor, REASON_CODES, ZERO_MINOR, type Minor, type ReasonCode } from "@praman/shared";
 import type { AgentVisibleDecision } from "@praman/policy";
-import { CAFE, FOOLED_CART, MARKET, MARKET_ITEM_NAMES, MARKET_PRICES, type BeatId, type PurchaseBeat } from "../demo/config.js";
+import { CAFE, CAFE_ITEMS, FOOLED_CART, MARKET, MARKET_ITEM_NAMES, MARKET_PRICES, type BeatId, type PurchaseBeat } from "../demo/config.js";
 import { canAskAgain, refundable } from "../demo/story.js";
 import type { TraceView } from "../data.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
@@ -234,9 +234,56 @@ function noGateHtml(record: BeatRecord): string {
   </aside>`;
 }
 
+/** What an item is called in its shop's catalog, for the page. Praman and the ledger use the SKU. */
+function itemTitle(sku: string): string | null {
+  return CAFE_ITEMS.find((i) => i.sku === sku)?.title ?? MARKET_ITEM_NAMES[sku] ?? null;
+}
+
+/**
+ * A purchase Praman stopped to ask about, as one card: what the agent wants to buy, the
+ * price Praman worked out from the catalog, why it is asking, and the two answers. Both
+ * buttons post to this step's fixed route, and resolveApproval checks the mandate again
+ * before anything is paid. Nothing here approves anything by being shown.
+ */
+function approvalCardHtml(beat: PurchaseBeat, record: BeatRecord): string {
+  const cart = record.proposal;
+  const items =
+    cart === null
+      ? ""
+      : cart.lineItems
+          .map((i) => {
+            const title = itemTitle(i.sku);
+            return `<li>${title === null ? "" : `<span class="item">${escapeHtml(title)}</span> `}<code>${escapeHtml(`${i.qty.toString()} × ${i.sku}`)}</code></li>`;
+          })
+          .join("");
+  const shop = cart === null ? "" : `<span class="shop">${escapeHtml(`at ${MERCHANT_NAMES[cart.merchantId] ?? cart.merchantId}`)}</span>`;
+  const plain = reasonPlain(record.reasonCode);
+  return `<div class="result" data-state="${escapeHtml(record.state)}">
+    <div class="approval">
+      <div class="stamp stamp-step-up">Asked you first</div>
+      <p class="message">${escapeHtml(record.message)}</p>
+      ${recordedModelHtml(record)}
+      <dl class="approval-facts">
+        <dt>The agent wants to buy</dt>
+        <dd><ul class="cart">${items}</ul>${shop}</dd>
+        <dt>Catalog price</dt>
+        <dd>${record.amountMinor === null ? "" : `<span class="amount">${escapeHtml(usd(record.amountMinor))}</span>`}</dd>
+        <dt>Why Praman asks</dt>
+        <dd>${plain === null ? "" : `${escapeHtml(plain)} `}${record.reasonCode === null ? "" : `<code class="code">${escapeHtml(record.reasonCode)}</code>`}</dd>
+      </dl>
+      ${cart === null ? "" : `<p class="rationale">${escapeHtml(cart.rationale)}</p>`}
+      <div class="actions">${action(`/demo/approve/${beat}`, "Approve")}${action(`/demo/reject/${beat}`, "Reject", "quiet")}</div>
+      <p class="small">Nothing is charged unless you approve.</p>
+    </div>
+    ${agentViewHtml(record.agentView)}
+    ${traceLinks(record.traceId, beat)}
+  </div>`;
+}
+
 function resultHtml(record: BeatRecord | undefined, moneyLabel = "PayPal", purchase: PurchaseBeat | null = null, aside = ""): string {
   if (record === undefined) return "";
   if (record.state === "no_proposal") return `<p class="note">${escapeHtml(record.message)}</p>`;
+  if (purchase !== null && record.state === "awaiting_approval" && record.approvalId !== null) return approvalCardHtml(purchase, record);
   return `<div class="result" data-state="${escapeHtml(record.state)}">
     ${gate(record, moneyLabel)}
     ${aside}
@@ -249,11 +296,6 @@ function resultHtml(record: BeatRecord | undefined, moneyLabel = "PayPal", purch
 /** Whether a step's button is offered: before it runs, and again only when nothing can have been charged. */
 function askable(beat: BeatId, record: BeatRecord | undefined): boolean {
   return record === undefined || canAskAgain(beat, record);
-}
-
-function approvalActions(beat: BeatId, record: BeatRecord | undefined): string {
-  if (record?.state !== "awaiting_approval") return "";
-  return `<div class="actions">${action(`/demo/approve/${beat}`, "Approve this purchase")}${action(`/demo/reject/${beat}`, "Reject it", "quiet")}</div>`;
 }
 
 function step(n: number, id: string, title: string, intro: string, body: string, done: boolean): string {
@@ -516,7 +558,7 @@ ${step(
   "first",
   "First purchase: Praman asks you",
   p("The agent has never bought from this shop, so Praman stops it and asks you. Once you approve, Praman charges the saved PayPal account. No buyer is at PayPal for this."),
-  `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", firstWhy) : ""}${resultHtml(first, "PayPal", "first")}${approvalActions("first", first)}${checkoutHtml("first", first)}`,
+  `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", firstWhy) : ""}${resultHtml(first, "PayPal", "first")}${checkoutHtml("first", first)}`,
   first?.state === "done",
 )}
 
@@ -525,7 +567,7 @@ ${step(
   "second",
   "Second purchase: the agent pays on its own",
   p("Same shop, a small amount. Nobody approves this one, and no buyer is at PayPal. The agent proposes, Praman checks the mandate, and the money moves. Praman's decision is the only thing between the agent and the money."),
-  `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", laterWhy) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second, "PayPal", "second")}${approvalActions("second", second)}${checkoutHtml("second", second)}`,
+  `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", laterWhy) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second, "PayPal", "second")}${checkoutHtml("second", second)}`,
   second?.state === "done",
 )}
 
@@ -534,7 +576,7 @@ ${step(
   "large",
   "Large purchase: you pay at PayPal",
   p("Over the approval threshold. Praman asks you first, then sends this one through a real PayPal checkout that you approve as the buyer. Before taking the money, Praman checks the mandate again: it may have been revoked or expired while you were at PayPal."),
-  `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", laterWhy) : ""}${resultHtml(large, "PayPal", "large")}${approvalActions("large", large)}${checkoutHtml("large", large)}`,
+  `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", laterWhy) : ""}${resultHtml(large, "PayPal", "large")}${checkoutHtml("large", large)}`,
   large?.state === "done",
 )}
 

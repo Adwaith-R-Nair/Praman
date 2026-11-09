@@ -62,8 +62,13 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await expect(first.locator(".result")).toHaveAttribute("data-state", "awaiting_approval");
     await expect(first.locator(".stamp")).toHaveText("Asked you first");
     await expect(first.locator(".amount")).toHaveText("$12.50");
+    // One card: the item, the catalog price, the reason with its code, and both answers.
+    const card = first.locator(".approval");
+    await expect(card).toContainText("Veggie Burrito Bowl");
+    await expect(card.locator("code.code")).toHaveText("STEP_UP_FIRST_MERCHANT");
+    await expect(card.getByRole("button", { name: "Reject", exact: true })).toBeEnabled();
     expect(await paypalSaw()).toMatchObject({ charges: 0 });
-    await press("Approve this purchase");
+    await press("Approve");
     await expect(first.locator(".result")).toHaveAttribute("data-state", "done");
     await expect(first).toContainText("$12.50 charged to the saved PayPal account");
     expect(await paypalSaw()).toMatchObject({ charges: 1 });
@@ -82,7 +87,7 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await press("Ask the agent to buy a team lunch");
     const large = step("large");
     await expect(large.locator(".result")).toHaveAttribute("data-state", "awaiting_approval");
-    await press("Approve this purchase");
+    await press("Approve");
     await expect(large.locator(".result")).toHaveAttribute("data-state", "awaiting_checkout");
     expect(await large.getByLabel("PayPal checkout link").inputValue()).toContain(`${PAYPAL}checkoutnow`);
     expect(await paypalSaw()).toMatchObject({ charges: 2, checkouts: 1 });

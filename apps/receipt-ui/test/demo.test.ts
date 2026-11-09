@@ -395,7 +395,43 @@ describe("the demo story", () => {
     expect(first).toMatchObject({ state: "awaiting_approval", reasonCode: "STEP_UP_FIRST_MERCHANT", agentView: { kind: "STEP_UP", amount_minor: 1250n } });
     const page = await v.page();
     expect(page).toContain("STEP_UP_FIRST_MERCHANT");
-    expect(page).toContain("Approve this purchase");
+    expect(page).toContain(">Approve</button>");
+  });
+
+  it("shows a step-up as one card: the item, the catalog price, the reason and both answers", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    const page = await v.page();
+    const card = /<div class="approval">[\s\S]*?<p class="small">Nothing is charged unless you approve\.<\/p>\s*<\/div>/.exec(page)?.[0] ?? "";
+    expect(card).toContain("Asked you first");
+    expect(card).toContain("Veggie Burrito Bowl");
+    expect(card).toContain("1 × SKU_CAFE_BOWL");
+    expect(card).toContain("at Praman Demo Cafe");
+    expect(card).toContain('<dt>Catalog price</dt>');
+    expect(card).toContain('<span class="amount">$12.50</span>');
+    expect(card).toContain("This is the first purchase from this merchant under this mandate.");
+    expect(card).toContain('<code class="code">STEP_UP_FIRST_MERCHANT</code>');
+    expect(card).toContain('<form method="post" action="/demo/approve/first" class="act"><button type="submit" class="btn btn-primary">Approve</button></form>');
+    expect(card).toContain('<form method="post" action="/demo/reject/first" class="act"><button type="submit" class="btn btn-quiet">Reject</button></form>');
+    // The card stands in for the three boxes while it waits, and the approval id stays on the server.
+    expect(page).not.toContain('<div class="gate">');
+    expect(page).not.toContain(sessionOf(v).beats.get("first")?.approvalId ?? "no approval id");
+    expect(paypal.charges).toHaveLength(0);
+  });
+
+  it("rejecting from the card charges nothing, records the rejection and lets the agent be asked again", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    const traceId = sessionOf(v).beats.get("first")?.traceId ?? null;
+    await v.post("/demo/reject/first");
+    expect(sessionOf(v).beats.get("first")).toMatchObject({ state: "refused", approvalId: null });
+    const page = await v.page();
+    expect(page).toContain("You rejected it. Nothing was charged.");
+    expect(page).not.toContain('<div class="approval">');
+    expect(page).toContain("Ask the agent again");
+    expect(paypal.charges).toHaveLength(0);
+    const resolved = (await ledgerFor(traceId)).filter((r) => r.eventType === "step_up_resolved").map((r) => r.payload);
+    expect(resolved).toEqual([expect.objectContaining({ verdict: "reject" })]);
   });
 
   it("gives the full signed mandate only to the session that owns the trace", async () => {
