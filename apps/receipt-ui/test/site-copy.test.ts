@@ -36,6 +36,8 @@ describe("the front page's first screen", () => {
     const line = /<p class="built-on">([^<]*)<\/p>/.exec(html)?.[1] ?? "";
     for (const name of ["PayPal sandbox", "Render", "AG Grid", "Channel3", "Gemini"]) expect(line, name).toContain(name);
     expect(line).toMatch(/local MCP shop[^.]*Channel3/);
+    // The products are real and the retailer is never paid, so the page must not say the shop sells them.
+    expect(line).not.toMatch(/\bsells\b/);
   });
 
   it("calls the poisoned listing the first step of the demo", () => {
