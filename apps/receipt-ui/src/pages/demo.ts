@@ -139,16 +139,27 @@ function decisionHtml(record: BeatRecord): string {
     ${kind === "STEP_UP" && (record.state === "done" || record.state === "awaiting_checkout") ? `<p class="cell-body"><strong>You approved.</strong> Praman checked the mandate again before paying.</p>` : ""}`;
 }
 
+/**
+ * Who was at PayPal's checkout, in the words payments people use for it. Said only where
+ * it is true of the purchase: a saved-account charge has no buyer at PayPal and rests on
+ * the mandate signed before it, and a checkout is approved by the buyer at PayPal.
+ */
+const BUYER_NOT_PRESENT = "Buyer not present, approved earlier in the signed mandate";
+const BUYER_PRESENT = "Buyer present";
+
 function moneyHtml(record: BeatRecord): string {
   const amount = record.amountMinor === null ? "" : usd(record.amountMinor);
   let what: string;
   let tone = "none";
+  let presence: string | null = null;
   if (record.state === "done" && record.payment === "saved_method" && record.orderStatus === "captured" && record.paymentId === null) {
     what = `${amount} charged to the saved PayPal account. No buyer was present.`;
     tone = "moved";
+    presence = BUYER_NOT_PRESENT;
   } else if (record.state === "done" && record.payment === "checkout") {
     what = `${amount} captured after the buyer approved at PayPal.`;
     tone = "moved";
+    presence = BUYER_PRESENT;
   } else if (record.state === "done" && record.payment === "simulated") {
     what = `${amount} paid on the simulated rail. No real or sandbox money.`;
     tone = "moved";
@@ -158,6 +169,7 @@ function moneyHtml(record: BeatRecord): string {
   } else if (record.state === "awaiting_checkout") {
     what = `A PayPal checkout order for ${amount} is waiting for the buyer. Nothing is charged until Praman captures it.`;
     tone = "waiting";
+    presence = BUYER_PRESENT;
   } else if (record.state === "pending") {
     what = "Unknown yet. The budget stays held until the sweep settles it.";
     tone = "waiting";
@@ -165,7 +177,7 @@ function moneyHtml(record: BeatRecord): string {
     what = "Nothing charged.";
   }
   const ids = [record.orderId ? `order ${record.orderId}` : null, record.failureCode ? `PayPal said ${record.failureCode}` : null].filter((x) => x !== null);
-  return `<p class="cell-body money-${tone}">${escapeHtml(what)}</p>${refundLine(record)}${ids.length > 0 ? `<p class="ids">${escapeHtml(ids.join(", "))}</p>` : ""}`;
+  return `${presence === null ? "" : `<p class="presence">${escapeHtml(presence)}</p>`}<p class="cell-body money-${tone}">${escapeHtml(what)}</p>${refundLine(record)}${ids.length > 0 ? `<p class="ids">${escapeHtml(ids.join(", "))}</p>` : ""}`;
 }
 
 /** Under a paid purchase: whether its money went back, or where to ask for that. */
@@ -557,7 +569,7 @@ ${step(
   4,
   "first",
   "First purchase: Praman asks you",
-  p("The agent has never bought from this shop, so Praman stops it and asks you. Once you approve, Praman charges the saved PayPal account. No buyer is at PayPal for this."),
+  p("The agent has never bought from this shop, so Praman stops it and asks you. Once you approve, Praman charges the saved PayPal account. No buyer is at PayPal for this: buyer not present, approved earlier in the signed mandate."),
   `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", firstWhy) : ""}${resultHtml(first, "PayPal", "first")}${checkoutHtml("first", first)}`,
   first?.state === "done",
 )}
@@ -566,7 +578,7 @@ ${step(
   5,
   "second",
   "Second purchase: the agent pays on its own",
-  p("Same shop, a small amount. Nobody approves this one, and no buyer is at PayPal. The agent proposes, Praman checks the mandate, and the money moves. Praman's decision is the only thing between the agent and the money."),
+  p("Same shop, a small amount. Buyer not present: nobody approves this one, and no buyer is at PayPal. The agent proposes, Praman checks the mandate, and the money moves. Praman's decision is the only thing between the agent and the money."),
   `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", laterWhy) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second, "PayPal", "second")}${checkoutHtml("second", second)}`,
   second?.state === "done",
 )}
@@ -575,7 +587,7 @@ ${step(
   6,
   "large",
   "Large purchase: you pay at PayPal",
-  p("Over the approval threshold. Praman asks you first, then sends this one through a real PayPal checkout that you approve as the buyer. Before taking the money, Praman checks the mandate again: it may have been revoked or expired while you were at PayPal."),
+  p("Over the approval threshold, so this one is buyer present. Praman asks you first, then sends it through a real PayPal checkout that you approve as the buyer. Before taking the money, Praman checks the mandate again: it may have been revoked or expired while you were at PayPal."),
   `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", laterWhy) : ""}${resultHtml(large, "PayPal", "large")}${checkoutHtml("large", large)}`,
   large?.state === "done",
 )}

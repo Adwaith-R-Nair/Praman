@@ -71,6 +71,7 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await press("Approve");
     await expect(first.locator(".result")).toHaveAttribute("data-state", "done");
     await expect(first).toContainText("$12.50 charged to the saved PayPal account");
+    await expect(first.locator(".presence")).toHaveText("Buyer not present, approved earlier in the signed mandate");
     expect(await paypalSaw()).toMatchObject({ charges: 1 });
   });
 
@@ -80,6 +81,7 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await expect(second.locator(".result")).toHaveAttribute("data-state", "done");
     await expect(second.locator(".stamp")).toHaveText("Allowed");
     await expect(second.locator(".spotlight")).toContainText("Only Praman's ALLOW");
+    await expect(second.locator(".presence")).toHaveText("Buyer not present, approved earlier in the signed mandate");
     expect(await paypalSaw()).toMatchObject({ charges: 2 });
   });
 
@@ -90,6 +92,7 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await press("Approve");
     await expect(large.locator(".result")).toHaveAttribute("data-state", "awaiting_checkout");
     expect(await large.getByLabel("PayPal checkout link").inputValue()).toContain(`${PAYPAL}checkoutnow`);
+    await expect(large.locator(".presence")).toHaveText("Buyer present");
     expect(await paypalSaw()).toMatchObject({ charges: 2, checkouts: 1 });
 
     await press("Capture the payment");

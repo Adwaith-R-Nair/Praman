@@ -315,6 +315,42 @@ describe("the fooled cart", () => {
   });
 });
 
+describe("who was at PayPal's checkout", () => {
+  const presence = (page: string, step: string) => {
+    const section = new RegExp(`<section class="step[^"]*" id="${step}">[\\s\\S]*?</section>`).exec(page)?.[0] ?? "";
+    return [...section.matchAll(/<p class="presence">([^<]*)<\/p>/g)].map((m) => m[1]);
+  };
+
+  it("says buyer not present on saved-account charges and buyer present on the checkout", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    // Waiting for the visitor: no payment yet, so nothing is said about a buyer.
+    expect(presence(await v.page(), "first")).toEqual([]);
+    await v.post("/demo/approve/first");
+    await v.post("/demo/step/second");
+    await v.post("/demo/step/large");
+    await v.post("/demo/approve/large");
+    let page = await v.page();
+    expect(presence(page, "first")).toEqual(["Buyer not present, approved earlier in the signed mandate"]);
+    expect(presence(page, "second")).toEqual(["Buyer not present, approved earlier in the signed mandate"]);
+    expect(presence(page, "large")).toEqual(["Buyer present"]);
+    paypal.approveAll();
+    await v.post("/demo/capture/large");
+    page = await v.page();
+    expect(sessionOf(v).beats.get("large")).toMatchObject({ state: "done", payment: "checkout" });
+    expect(presence(page, "large")).toEqual(["Buyer present"]);
+  });
+
+  it("says neither where no PayPal payment was made: a refusal, the simulated rail, the harness", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/step/injection");
+    await v.post("/demo/step/fixture");
+    await v.post("/demo/step/concurrency");
+    expect(await v.page()).not.toContain('<p class="presence">');
+  });
+});
+
 describe("the same cart with no gate", () => {
   it("adds up the catalog's prices in minor units, and gives no total for an item with no price", () => {
     expect(catalogTotalMinor(FOOLED_CART.line_items, MARKET_PRICES)).toBe(10900n);

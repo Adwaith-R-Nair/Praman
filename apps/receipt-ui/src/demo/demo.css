@@ -481,6 +481,17 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* Who was at PayPal's checkout: buyer present, or not. A label over the money line. */
+.presence {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--seal);
+  margin: 0 0 0.25rem;
+}
+
 .money-moved {
   color: var(--allow);
   font-weight: 700;
