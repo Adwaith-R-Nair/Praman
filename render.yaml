@@ -62,6 +62,12 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      # Optional, and the switch for the demo's shared sandbox buyer (D-85): the payment
+      # token `pnpm house-buyer` saved. Leave it empty and visitors connect PayPal by
+      # logging in, as before. docs/DEPLOY.md, step 9. DEMO_DAILY_HOUSE_SESSIONS (default
+      # 50) caps how many sessions a day may use it; add it in the dashboard to change it.
+      - key: DEMO_HOUSE_BUYER_TOKEN
+        sync: false
       # Optional. Unset, the server has no Razorpay rail: the demo uses PayPal and the
       # simulated rail, and a Razorpay record would be left for `pnpm reconcile`.
       - key: RAZORPAY_KEY_ID

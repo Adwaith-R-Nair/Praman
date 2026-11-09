@@ -7,8 +7,9 @@ import { renderTracePage } from "../pages/trace.js";
 import { loadConsoleData, type Budget } from "../console/data.js";
 import { newStyleNonce, renderConsolePage } from "../console/page.js";
 import { SESSION_TTL_MS, type BeatId, type PurchaseBeat } from "./config.js";
-import { finishConnect, releaseSession, startConnect, type DemoDeps } from "./connect.js";
-import { LIMITS, RateLimiter } from "./limits.js";
+import { connectHouseBuyer, finishConnect, houseInUse, isHouseToken, releaseSession, startConnect, type DemoDeps } from "./connect.js";
+import { HOUSE_COPY, HOUSE_PATH, houseWording, leaveHouseBuyer } from "./house.js";
+import { clientIp, LIMITS, RateLimiter } from "./limits.js";
 import type { DemoSession } from "./session.js";
 import { captureCheckout, decideApproval, refundPurchase, runBeat } from "./story.js";
 
@@ -81,6 +82,8 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
   const consoleLoads = new RateLimiter(LIMITS.postsPerSession.limit, LIMITS.postsPerSession.windowMs);
   // The same allowance as the public trace page, per session rather than per address.
   const traceLoads = new RateLimiter(LIMITS.publicPerIp.limit, LIMITS.publicPerIp.windowMs);
+  // Sessions one address may put on the house buyer in a day, so one address can't take them all (D-85).
+  const houseByAddress = new RateLimiter(LIMITS.housePerIp.limit, LIMITS.housePerIp.windowMs);
 
   const send = (res: ServerResponse, status: number, html: string, extra: Record<string, string> = {}) => {
     res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", ...SECURITY_HEADERS, ...extra });
@@ -144,7 +147,9 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       }
 
       const session = deps.sessions.get(readCookie(req.headers.cookie), now);
-      const configured = { paypal: deps.paypal !== null, model: deps.provider !== null };
+      // Null on a server with no house buyer, or one switched off (D-85): then nothing below offers or accepts it.
+      const house = houseInUse(deps);
+      const configured = { paypal: deps.paypal !== null, model: deps.provider !== null, house: house?.offered(now) ?? false };
 
       if (method === "GET" && (path === "/demo/checkout/return" || path === "/demo/checkout/cancel")) {
         // Usually opened in a private window or another browser, with no session, so it says what to do and does nothing.
@@ -209,7 +214,7 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
           return;
         }
         // A path that doesn't exist even with a session gets a 404, not the start page.
-        if (!SESSION_PATHS.test(path)) {
+        if (!SESSION_PATHS.test(path) && !(house !== null && path === HOUSE_PATH)) {
           send(res, 404, renderNotFoundPage());
           return;
         }
@@ -242,6 +247,13 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       if (method === "POST" && path === "/demo/connect") {
         const location = await exclusive(session, () => startConnect(session, deps));
         redirect(res, location ?? "/demo#connect");
+        return;
+      }
+
+      // Only on a server that has a house buyer. Without one this path is a 404, below.
+      if (method === "POST" && path === HOUSE_PATH && house !== null) {
+        await exclusive(session, () => connectHouseBuyer(session, deps, () => houseByAddress.take(clientIp(req, deps.proxyHops ?? 0), now)));
+        redirect(res, "/demo#connect");
         return;
       }
 
@@ -303,13 +315,23 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       }
 
       if (method === "POST" && name !== undefined) {
+        // PayPal has refused the house buyer, in this session or another. A session still
+        // on it goes back to the login path before a purchase is asked for or approved,
+        // so no intent is made that it has no way to pay for.
+        if (house !== null && session.houseBuyer && !house.usable(now) && !session.busy && isPurchase(name) && (verb === "step" || verb === "approve")) {
+          leaveHouseBuyer(session, HOUSE_COPY.gone);
+          redirect(res, "/demo#connect");
+          return;
+        }
         if (verb === "step" && isStep(name, STEPS)) {
           await exclusive(session, () => runBeat(session, name, deps));
+          if (isPurchase(name)) houseWording(session, name);
           redirect(res, `/demo#${name === "fixture" ? "injection" : name === "after_revoke" ? "revoke" : name}`);
           return;
         }
         if ((verb === "approve" || verb === "reject") && isPurchase(name)) {
           await exclusive(session, () => decideApproval(session, name, verb, deps));
+          houseWording(session, name);
           redirect(res, `/demo#${name}`);
           return;
         }
@@ -353,8 +375,13 @@ export async function sweepExpiredSessions(deps: DemoDeps): Promise<number> {
  */
 export async function releaseAllSessions(deps: DemoDeps, timeoutMs: number): Promise<{ sessions: number; deleted: number; notDeleted: number }> {
   const sessions = deps.sessions.endAll();
-  for (const session of sessions) session.connected = false;
-  const tokens = deps.savedMethods.takeAll();
+  for (const session of sessions) {
+    session.connected = false;
+    session.houseBuyer = false;
+    session.holdsHouseToken = false;
+  }
+  // Every session's own token. The house buyer's is shared and stays at PayPal (D-85).
+  const tokens = deps.savedMethods.takeAll().filter((tokenId) => !isHouseToken(tokenId, deps));
   if (tokens.length === 0) return { sessions: sessions.length, deleted: 0, notDeleted: 0 };
   if (deps.paypal === null) {
     deps.log(`demo: shutdown: ${tokens.length.toString()} saved PayPal methods dropped; no PayPal credentials to delete them with`);

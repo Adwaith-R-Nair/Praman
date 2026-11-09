@@ -75,8 +75,24 @@ export interface DemoSession {
   readonly harnessMandate: SignedMandate;
   /** The PayPal setup token this visitor was sent to approve, if any. Not a secret: it charges nothing. */
   setupTokenId: string | null;
-  /** True once a payment token is stored server-side for this session. The token itself is never here. */
+  /**
+   * True while this session has a saved method to pay with: its own payment token, stored
+   * server-side after a PayPal login, or the demo's shared sandbox buyer (houseBuyer).
+   * The token itself is never here.
+   */
   connected: boolean;
+  /**
+   * True while this session's small purchases are charged to the demo's shared sandbox
+   * buyer (D-85) rather than an account the visitor connected by logging in. A flag only:
+   * that buyer's token is held by HouseBuyer and is never here.
+   */
+  houseBuyer: boolean;
+  /**
+   * True when this visitor logged in to PayPal as the house buyer's own sandbox account
+   * and PayPal answered with the house token. The session holds it like any login token,
+   * but it is never deleted at PayPal, so the page mustn't say it will be. A flag only.
+   */
+  holdsHouseToken: boolean;
   modelCalls: number;
   /**
    * Purchase intents this session has made. Each ask of a step takes the next number, so
@@ -128,6 +144,8 @@ export function createDemoSession(now: Date, signer: DemoSigner): DemoSession {
     harnessMandate: signMandate(mandateDoc(`mnd_demo_${ref}_h`, [HARNESS], HARNESS_LIMITS, now, expiresAt), signer.privateKeyPem, signer.keyId),
     setupTokenId: null,
     connected: false,
+    houseBuyer: false,
+    holdsHouseToken: false,
     modelCalls: 0,
     intents: 0,
     busy: false,

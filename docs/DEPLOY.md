@@ -73,8 +73,11 @@ These Render asks you for:
 | `PAYPAL_CLIENT_SECRET` | The same app's sandbox secret | Yes, for PayPal |
 | `PAYPAL_WEBHOOK_ID` | Leave empty for now. Step 6 fills it in. | After step 6 |
 | `GEMINI_API_KEY` | Your Gemini API key | Yes, for the live model |
+| `DEMO_HOUSE_BUYER_TOKEN` | Leave empty for now. Step 9 fills it in, if you want visitors to be able to skip the PayPal login. | No |
 | `RAZORPAY_KEY_ID` | Leave empty. The demo doesn't use Razorpay; its shops use PayPal and a simulated rail. If you set it, it must start with `rzp_test_`. | No |
 | `RAZORPAY_KEY_SECRET` | Leave empty, or the matching test-mode secret | No |
+
+One more name is read if you add it in the dashboard: `DEMO_DAILY_HOUSE_SESSIONS`, how many sessions per UTC day may use the house buyer from step 9. Unset, it is 50. Set to `0`, the house buyer is off even with its token in place, and the server still refuses to delete that token at PayPal.
 
 Leave out `MANDATE_PRIVATE_KEY`, `MANDATE_PUBLIC_KEY` and every `LANGFUSE_*` name. Don't add them later.
 
@@ -85,6 +88,7 @@ Leave out `MANDATE_PRIVATE_KEY`, `MANDATE_PUBLIC_KEY` and every `LANGFUSE_*` nam
 - The demo key is missing, isn't a key pair, is the local mandate key, or is one of the developer keys from a `.env`.
 - `MANDATE_PRIVATE_KEY` is set at all.
 - `DEMO_BASE_URL` doesn't start with `https://`.
+- `DEMO_HOUSE_BUYER_TOKEN` isn't a PayPal token id, or is set without `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`.
 
 ## 5. Check the address
 
@@ -144,6 +148,34 @@ The first five answer `303` and the rest `429`, even though each request claims 
 - If all eight answer `303`, or the refusals come and go, the limit is reading an entry that changes between requests. On Render the header is the visitor, then a Cloudflare edge address, then Render's proxy, and the two proxy entries vary, so `TRUST_PROXY` must be `3` (D-78). Check that it is.
 - If the phone also gets "Too many new demo sessions", the entry being read is shared by other visitors. Check `TRUST_PROXY` is `3` in Render's Environment.
 
+## 9. Optional: the house buyer, so visitors can skip the PayPal login
+
+Without this step a visitor connects PayPal by logging in as a sandbox buyer. With it, step 2 of the demo also offers **Use the demo's sandbox buyer**: the session's purchases below the mandate's approval line are charged to one sandbox account you approved saving, under that visitor's own signed mandate. Purchases at or above the line still go to PayPal's checkout, where a buyer has to log in. D-85 has the reasons and the limits. The main one: strangers charge that sandbox account, within each session's mandate ($60.00), and it is sandbox money.
+
+**Use a sandbox buyer account kept for this alone.** Make a second Personal sandbox account (developer.paypal.com, Testing Tools, Sandbox Accounts) and use it for nothing else. It must not be the account whose login goes in the Devpost testing instructions, and you shouldn't connect it on the demo by logging in yourself. The reason is where the delete guard lives:
+
+- A server refuses to delete this token only if it was started with `DEMO_HOUSE_BUYER_TOKEN` set. It can't guard a token it was never told.
+- Any other server using the same PayPal app deletes the token a PayPal login gives it when that session ends, expires, or the server stops. That is `pnpm receipt-ui` on your machine, and the hosted server once the secret is removed.
+- If someone connects there by logging in as the house buyer's account, and PayPal answers with the same token, the house token is deleted. Every house session is then refused, charging nothing, until you consent again.
+- Whether PayPal answers a second approval by the same account with the same token or a new one has not been checked against the sandbox. With an account nobody else logs in to, it doesn't matter.
+
+You consent once, as that sandbox buyer, on your own machine:
+
+1. Your local `.env` must have the same `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` as Render. Only the app that saved a buyer can charge it.
+2. Run `pnpm house-buyer`. It asks PayPal's sandbox for an approval page and prints its address.
+3. Open that address in a private window. Log in as the sandbox **buyer** you made for this and agree. PayPal then sends the browser to the address the script named: your local `DEMO_BASE_URL`, or `http://localhost:4100/` if that is unset. Nothing there needs doing. If no server is running there the browser shows a connection error, and that is fine: the approval is already given.
+4. Back in the terminal, press Enter. The script asks PayPal for the payment token and writes it to `~/.praman/house-buyer-token`, a file outside the repo that only you can read. It never prints the token. If PayPal gives no answer, press Enter to ask again: it repeats the same request. If you stop there instead, the script says a token may exist at PayPal that it didn't write down, and you run it again from step 2. To put the file somewhere else, pass a path: `pnpm house-buyer /some/path/outside/the/repo`. It refuses a path inside the repo and never overwrites a file.
+5. Open the file in an editor and copy its one line. In Render, open the service, **Environment**, set `DEMO_HOUSE_BUYER_TOKEN` to it, and press **Save, rebuild, and deploy**. Don't paste it into a chat, an issue or a commit.
+6. The Render log now says `receipt-ui: house buyer on`. Start a session in a fresh private window: step 2 shows **Use the demo's sandbox buyer**. Press it, run step 3 and approve. The step says it was paid from the demo's sandbox buyer account, with no buyer present.
+7. In the sandbox dashboard, check that buyer account has a balance or a funding source that will last. The story charges it $17.00 a session, and the cap is 50 sessions a day.
+8. If you run the demo on your own machine with the same PayPal app, add the token to your local `.env` as `DEMO_HOUSE_BUYER_TOKEN` with `DEMO_DAILY_HOUSE_SESSIONS=0`. The local server then offers nothing and still refuses to delete that token. `.env` is gitignored.
+
+To switch it off, set `DEMO_DAILY_HOUSE_SESSIONS` to `0` in Render and deploy. Leave `DEMO_HOUSE_BUYER_TOKEN` in place. Visitors then see the demo exactly as it was before this step: the choice is gone and its address is a 404. The server still knows the token, so it still won't delete it, and the log says `receipt-ui: house buyer off`.
+
+Deleting `DEMO_HOUSE_BUYER_TOKEN` also switches it off, and removes the guard with it, as above. Do that only when the token no longer matters.
+
+A server with `DEMO_HOUSE_BUYER_TOKEN` set never deletes this token at PayPal, whatever ends a session. If the token itself should go, delete it with PayPal's vault API (`DELETE /v3/vault/payment-tokens/<id>`) using the same app. Nothing in this repo does that for you.
+
 ## When something goes wrong
 
 - **The build fails at `corepack enable`.** Change the start of the build command in the Render dashboard (Settings, Build Command) to `npm install -g pnpm@11.24.0 &&` instead of `corepack enable pnpm &&`, and deploy again.
@@ -153,4 +185,6 @@ The first five answer `303` and the rest `429`, even though each request claims 
 - **The first page is slow.** Render was asleep, or Neon was. The first request after a sleep can take 30 to 60 seconds. Check the cron job is running.
 - **Steps say they replayed a recorded answer.** The day's 400 model calls are used up. It resets at 00:00 UTC. Raising `DEMO_DAILY_MODEL_CALLS` in `render.yaml` raises the Gemini bill too.
 - **Start a session goes to a page headed "Recorded run, not live".** The day's new sessions are used up: 200 by default, for everyone together. It resets at 00:00 UTC. Set `DEMO_DAILY_SESSIONS` in Render's Environment to change it. You can open that page any time at `/demo/recorded` to see what visitors get.
+- **Step 2 no longer offers the demo's sandbox buyer.** Either the day's house-buyer sessions are used up (50 by default, resets at 00:00 UTC, `DEMO_DAILY_HOUSE_SESSIONS` changes it), or PayPal refused a charge to it. A refusal is in the log as `demo: PayPal refused the house buyer: <code>`. Nothing was charged, and the choice comes back after 30 minutes, then an hour, doubling up to a day while PayPal keeps refusing. Refusals that arrive together count once. Check the sandbox buyer's balance and that the token is still saved. The PayPal login keeps working throughout.
+- **A visitor is told the demo's sandbox buyer "has been used from your address as often as it allows in a day".** One address may put 15 sessions a day on the house buyer, so one address can't use up the day's 50. The count is in memory: it clears after 24 hours or on a restart. The PayPal login still works for that visitor.
 - **A restart.** Render can restart a free service at any time. Visitors' sessions are in memory, so they end and visitors start again. The ledger, the daily counts and every trace are in Neon and stay.

@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { addMinor, formatMoney, minor, minorFromJSON, mulMinor, REASON_CODES, ZERO_MINOR, type Minor, type ReasonCode } from "@praman/shared";
 import type { AgentVisibleDecision } from "@praman/policy";
 import { CAFE, CAFE_ITEMS, FOOLED_CART, MARKET, MARKET_ITEM_NAMES, MARKET_PRICES, type BeatId, type PurchaseBeat } from "../demo/config.js";
+import { HOUSE_COPY, houseChoiceHtml, keptMethodCopy } from "../demo/house.js";
 import { canAskAgain, refundable } from "../demo/story.js";
 import type { TraceView } from "../data.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
@@ -455,12 +456,22 @@ function revokeHtml(record: BeatRecord | undefined): string {
   </div>`;
 }
 
-/** Shown while any purchase step's order waits for the buyer at PayPal. */
-function checkoutHtml(beat: PurchaseBeat, record: BeatRecord | undefined): string {
+/**
+ * Shown while any purchase step's order waits for the buyer at PayPal. A session that
+ * connected by logging in to PayPal is told that login is why it needs another window.
+ * One that didn't, because it used the demo's sandbox buyer (D-85), is told what the
+ * checkout needs instead.
+ */
+function checkoutHtml(beat: PurchaseBeat, record: BeatRecord | undefined, session: DemoSession): string {
   if (record?.state !== "awaiting_checkout" || record.approveUrl === null) return "";
+  const loggedIn = session.connected && !session.houseBuyer;
+  const how = loggedIn
+    ? `<p><strong>Pay at PayPal.</strong> Copy this link into <strong>a window that is not logged in to PayPal</strong>: a private window if this demo is open in a normal one, or another browser if this demo is already in a private window. Log in there with the sandbox buyer account and approve.</p>
+    <p>Why: connecting PayPal in step 3 logged this window in, and PayPal's sandbox declines a checkout in a session that is already logged in. For a second checkout, close every private window first, so the next one starts fresh.</p>`
+    : `<p><strong>Pay at PayPal.</strong> ${escapeHtml(HOUSE_COPY.checkout)}</p>
+    <p>${escapeHtml(HOUSE_COPY.checkoutWhy)}</p>`;
   return `<div class="checkout">
-    <p><strong>Pay at PayPal.</strong> Copy this link into <strong>a window that is not logged in to PayPal</strong>: a private window if this demo is open in a normal one, or another browser if this demo is already in a private window. Log in there with the sandbox buyer account and approve.</p>
-    <p>Why: connecting PayPal in step 3 logged this window in, and PayPal's sandbox declines a checkout in a session that is already logged in. For a second checkout, close every private window first, so the next one starts fresh.</p>
+    ${how}
     <p class="link-row"><input class="link" type="text" readonly value="${escapeHtml(record.approveUrl)}" aria-label="PayPal checkout link"></p>
     <p>When PayPal says you're done, come back to this tab and capture.</p>
     <div class="actions">${action(`/demo/capture/${beat}`, "Capture the payment")}</div>
@@ -471,8 +482,13 @@ function checkoutHtml(beat: PurchaseBeat, record: BeatRecord | undefined): strin
 const PERSONA =
   "Meera gives her shopping agent her PayPal account and $60 a week for lunch, and on Tuesday a shop's listing tells the agent to add a $100 gift card, with nobody at the checkout to say no.";
 
-export function renderStartPage(notice: string | null, configured: { readonly paypal: boolean; readonly model: boolean }): string {
+export function renderStartPage(notice: string | null, configured: { readonly paypal: boolean; readonly model: boolean; readonly house?: boolean }): string {
   const missing = [configured.paypal ? null : "PayPal sandbox credentials", configured.model ? null : "a model key"].filter((x) => x !== null);
+  // The login line under the Start button. While the demo's sandbox buyer is offered (D-85), a login is needed for PayPal's checkout only, and the line says so.
+  const login =
+    configured.house === true
+      ? `${escapeHtml(HOUSE_COPY.start)} Or <a href="/demo/recorded">look through a recorded run</a>.`
+      : `The PayPal steps that come later need the sandbox buyer login from the testing instructions on the project's Devpost page. Without one, you can still <a href="/demo/recorded">look through a recorded run</a>.`;
   return demoLayout(
     "Demo",
     `<header class="masthead">
@@ -485,7 +501,7 @@ export function renderStartPage(notice: string | null, configured: { readonly pa
       <p>This demo puts you in Meera's place for an hour, with the same $60 limit. It opens on that listing, and that step needs no login.</p>
       ${missing.length > 0 ? `<p class="note">This server is missing ${escapeHtml(missing.join(" and "))}, so some steps won't run.</p>` : ""}
       ${action("/demo/start", "Start a session")}
-      <p class="small">A session lasts an hour. Sandbox only. No real money moves. The PayPal steps that come later need the sandbox buyer login from the testing instructions on the project's Devpost page. Without one, you can still <a href="/demo/recorded">look through a recorded run</a>.</p>
+      <p class="small">A session lasts an hour. Sandbox only. No real money moves. ${login}</p>
     </section>`,
   );
 }
@@ -514,7 +530,7 @@ export function renderRecordedRunPage(outOfSessions = false): string {
 const RECORDED_RUN_ALT =
   "The demo page after all eight steps. The signed mandate. A poisoned listing: the live model ignored it, and a fooled model's cart was refused. PayPal connected. A first purchase Praman held for approval and then charged to the saved PayPal account. A coffee Praman allowed with nobody approving. A large purchase approved and sent to a PayPal checkout. Twenty purchases at once, where the budget stopped all but those that fit. The mandate revoked, and the agent's next try refused with MANDATE_REVOKED.";
 
-export function renderDemoPage(session: DemoSession, recording: Recording, configured: { readonly paypal: boolean; readonly model: boolean } = { paypal: true, model: true }): string {
+export function renderDemoPage(session: DemoSession, recording: Recording, configured: { readonly paypal: boolean; readonly model: boolean; readonly house?: boolean } = { paypal: true, model: true }): string {
   const b = (id: BeatId) => session.beats.get(id);
   const first = b("first");
   const second = b("second");
@@ -523,13 +539,15 @@ export function renderDemoPage(session: DemoSession, recording: Recording, confi
   const notice = session.notice;
 
   const revoked = b("revoke")?.state === "done";
+  // Set when the session's saved method is the demo's own and outlives the session (D-85).
+  const kept = keptMethodCopy(session);
   const connectBody = revoked && !session.connected
     ? `${p("This session's mandate is revoked, so there is nothing left to connect PayPal for. Start a new session to go through the purchases.")}${action("/demo/start", "Start a new session")}`
     : session.connected
-    ? `<p class="ok">Connected. Praman holds the saved PayPal method on its server, tied to this session. The agent and this page never see it, and it is deleted when the session ends.</p>`
+    ? `<p class="ok">${kept !== null ? escapeHtml(kept.connected) : "Connected. Praman holds the saved PayPal method on its server, tied to this session. The agent and this page never see it, and it is deleted when the session ends."}</p>`
     : `${p("Approve, once, saving a PayPal sandbox account for this demo merchant. PayPal opens its own page and sends you back here. Log in with the sandbox buyer account: a US sandbox account with play money, in the testing instructions on the project's Devpost page.")}
        <div class="actions">${action("/demo/connect", "Connect PayPal", "primary", configured.paypal ? null : NO_PAYPAL)}</div>
-       <p class="small">No login? Steps 7 and 8 need none, or <a href="/demo/recorded">look through a recorded run</a>.</p>`;
+       <p class="small">No login? Steps 7 and 8 need none, or <a href="/demo/recorded">look through a recorded run</a>.</p>${houseChoiceHtml(configured.house === true)}`;
 
   // Why each purchase button is off, if it is. The server refuses the same steps for the same reasons.
   const missing = !configured.paypal ? NO_PAYPAL : !configured.model ? NO_MODEL : null;
@@ -570,7 +588,7 @@ ${step(
   "first",
   "First purchase: Praman asks you",
   p("The agent has never bought from this shop, so Praman stops it and asks you. Once you approve, Praman charges the saved PayPal account. No buyer is at PayPal for this: buyer not present, approved earlier in the signed mandate."),
-  `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", firstWhy) : ""}${resultHtml(first, "PayPal", "first")}${checkoutHtml("first", first)}`,
+  `${askable("first", first) ? action("/demo/step/first", first === undefined ? "Ask the agent to buy lunch" : "Ask the agent again", "primary", firstWhy) : ""}${resultHtml(first, "PayPal", "first")}${checkoutHtml("first", first, session)}`,
   first?.state === "done",
 )}
 
@@ -579,7 +597,7 @@ ${step(
   "second",
   "Second purchase: the agent pays on its own",
   p("Same shop, a small amount. Buyer not present: nobody approves this one, and no buyer is at PayPal. The agent proposes, Praman checks the mandate, and the money moves. Praman's decision is the only thing between the agent and the money."),
-  `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", laterWhy) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second, "PayPal", "second")}${checkoutHtml("second", second)}`,
+  `${askable("second", second) ? action("/demo/step/second", second === undefined ? "Ask the agent to buy a coffee" : "Ask the agent again", "primary", laterWhy) : ""}${second?.state === "done" && second.agentView?.kind === "ALLOW" && second.payment === "saved_method" ? `<p class="spotlight">No person approved this payment and no buyer saw it. Only Praman's ALLOW let it through.</p>` : ""}${resultHtml(second, "PayPal", "second")}${checkoutHtml("second", second, session)}`,
   second?.state === "done",
 )}
 
@@ -588,7 +606,7 @@ ${step(
   "large",
   "Large purchase: you pay at PayPal",
   p("Over the approval threshold, so this one is buyer present. Praman asks you first, then sends it through a real PayPal checkout that you approve as the buyer. Before taking the money, Praman checks the mandate again: it may have been revoked or expired while you were at PayPal."),
-  `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", laterWhy) : ""}${resultHtml(large, "PayPal", "large")}${checkoutHtml("large", large)}`,
+  `${askable("large", large) ? action("/demo/step/large", large === undefined ? "Ask the agent to buy a team lunch" : "Ask the agent again", "primary", laterWhy) : ""}${resultHtml(large, "PayPal", "large")}${checkoutHtml("large", large, session)}`,
   large?.state === "done",
 )}
 
@@ -615,7 +633,7 @@ ${step(
 )}
 
 <footer class="end">
-  <p>The session ends in an hour. Ending it now deletes the saved PayPal method at PayPal. The ledger keeps everything.</p>
+  <p>The session ends in an hour. ${kept !== null ? escapeHtml(kept.ending) : "Ending it now deletes the saved PayPal method at PayPal."} The ledger keeps everything.</p>
   ${action("/demo/end", "End this session", "quiet")}
 </footer>`;
   return demoLayout("Demo", body);

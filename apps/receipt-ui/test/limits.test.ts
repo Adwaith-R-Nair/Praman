@@ -7,7 +7,9 @@ import { generateKeypair } from "@praman/mandate";
 import { routeByRail } from "@praman/exec-core";
 import { checkEnv, checkStartup, keyFingerprint, DEVELOPER_KEY_FINGERPRINTS } from "../src/startup.js";
 import { DemoActivity, runSweeps, scheduleSweeps } from "../src/sweeps.js";
-import { capFromEnv, clientIp, DbDailyUsage, MemoryDailyUsage, RateLimiter } from "../src/demo/limits.js";
+import { HouseBuyer } from "../src/demo/house.js";
+import { demoDepsFromEnv, houseStartupNote } from "../src/demo/wiring.js";
+import { capFromEnv, clientIp, DbDailyUsage, DEFAULT_DAILY_HOUSE_SESSIONS, DEFAULT_DAILY_SESSIONS, MemoryDailyUsage, RateLimiter } from "../src/demo/limits.js";
 
 // Plan Task 13: what the hosted server refuses, and what it does when it is pushed.
 
@@ -75,6 +77,71 @@ describe("start-up refusals", () => {
     // The fingerprint list is checked against the key's public half.
     expect(keyFingerprint(own.priv)).toBe(keyFingerprint(own.pub));
     expect(DEVELOPER_KEY_FINGERPRINTS).not.toContain(keyFingerprint(own.priv));
+  });
+
+  it("builds the house buyer only from its secret, with PayPal credentials and a cap above zero", () => {
+    const demo = pair();
+    const env = { DEMO_MANDATE_PRIVATE_KEY: demo.priv, DEMO_MANDATE_PUBLIC_KEY: demo.pub, PAYPAL_CLIENT_ID: "sb-id", PAYPAL_CLIENT_SECRET: "sb-secret" };
+    const houseOf = (e: NodeJS.ProcessEnv) => {
+      const wiring = demoDepsFromEnv(e, 4100);
+      if (!wiring.ok) throw new Error(wiring.reason);
+      return wiring.deps.house ?? null;
+    };
+    const token = "HOUSETOKEN-77aa-NEVER-SHOWN";
+    expect(houseOf(env)).toBeNull();
+    // The per-address limit on house-buyer sessions reads the same proxy count as the rest of the server.
+    const hopsOf = (e: NodeJS.ProcessEnv) => {
+      const wiring = demoDepsFromEnv(e, 4100);
+      return wiring.ok ? wiring.deps.proxyHops : null;
+    };
+    expect(hopsOf(env)).toBe(0);
+    expect(hopsOf({ ...env, TRUST_PROXY: "3" })).toBe(3);
+    expect(hopsOf({ ...env, TRUST_PROXY: "many" })).toBe(0);
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: "" })).toBeNull();
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token })).toBeInstanceOf(HouseBuyer);
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token })?.holds(token)).toBe(true);
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token })?.on).toBe(true);
+    expect(houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token, DEMO_DAILY_HOUSE_SESSIONS: "5" })?.on).toBe(true);
+    // A cap of zero switches it off with the secret left in place. The server still knows
+    // the token, so it can still refuse to delete it at PayPal.
+    const paused = houseOf({ ...env, DEMO_HOUSE_BUYER_TOKEN: token, DEMO_DAILY_HOUSE_SESSIONS: "0" });
+    expect(paused?.on).toBe(false);
+    expect(paused?.holds(token)).toBe(true);
+    expect(paused?.offered(new Date())).toBe(false);
+    // Nothing to charge it with: off, and still known.
+    const noPayPal = houseOf({ DEMO_MANDATE_PRIVATE_KEY: demo.priv, DEMO_MANDATE_PUBLIC_KEY: demo.pub, DEMO_HOUSE_BUYER_TOKEN: token });
+    expect(noPayPal?.on).toBe(false);
+    expect(noPayPal?.holds(token)).toBe(true);
+  });
+
+  it("says at start-up which way the house-buyer switch is, and nothing on a server without the secret", () => {
+    const token = "HOUSETOKEN-77aa-NEVER-SHOWN";
+    expect(houseStartupNote(null)).toBeNull();
+    const on = houseStartupNote(new HouseBuyer(token));
+    expect(on).toContain("house buyer on");
+    const off = houseStartupNote(new HouseBuyer(token, { on: false }));
+    expect(off).toContain("house buyer off");
+    expect(off).toContain("not deleted");
+    expect(`${on ?? ""}${off ?? ""}`).not.toContain(token);
+  });
+
+  it("refuses a house-buyer secret that isn't a token id or has no PayPal credentials, without printing it", () => {
+    const creds = { PAYPAL_CLIENT_ID: "sb-id", PAYPAL_CLIENT_SECRET: "sb-secret" };
+    const token = "HOUSETOKEN-77aa-NEVER-SHOWN";
+    expect(checkEnv({ ...creds, DEMO_HOUSE_BUYER_TOKEN: token })).toEqual([]);
+    expect(checkEnv({ ...creds, DEMO_HOUSE_BUYER_TOKEN: "", DEMO_DAILY_HOUSE_SESSIONS: "" })).toEqual([]);
+    expect(checkEnv({ ...creds, DEMO_HOUSE_BUYER_TOKEN: token, DEMO_DAILY_HOUSE_SESSIONS: "25" })).toEqual([]);
+
+    const bad = "not a token; drop table";
+    const malformed = checkEnv({ ...creds, DEMO_HOUSE_BUYER_TOKEN: bad }).join(" ");
+    expect(malformed).toContain("DEMO_HOUSE_BUYER_TOKEN");
+    expect(malformed).not.toContain(bad);
+
+    const alone = checkEnv({ DEMO_HOUSE_BUYER_TOKEN: token }).join(" ");
+    expect(alone).toContain("PAYPAL_CLIENT_ID");
+    expect(alone).not.toContain(token);
+
+    expect(checkEnv({ DEMO_DAILY_HOUSE_SESSIONS: "lots" }).join(" ")).toContain("DEMO_DAILY_HOUSE_SESSIONS must be a whole number");
   });
 
   it("the real server process exits before listening when a check fails", async () => {
@@ -205,6 +272,26 @@ describe("the limits themselves", () => {
       ["2026-11-09", "session", 5],
       ["2026-11-10", "session", 1],
     ]);
+  });
+
+  it("counts house-buyer sessions as a kind of their own, and allows none where no cap is given", async () => {
+    const now = new Date("2026-11-10T10:00:00Z");
+    const usage = new DbDailyUsage({ session: 1, model_call: 0, house_session: 3 });
+    const results = await Promise.all(Array.from({ length: 8 }, () => usage.take("house_session", now)));
+    expect(results.filter(Boolean)).toHaveLength(3);
+    // A restart doesn't refill it, and it is counted apart from the day's sessions.
+    expect(await new DbDailyUsage({ session: 1, model_call: 0, house_session: 3 }).take("house_session", now)).toBe(false);
+    expect(await usage.take("session", now)).toBe(true);
+    // A server with no house buyer gives no cap for it.
+    expect(await new DbDailyUsage({ session: 5, model_call: 5 }).take("house_session", new Date("2026-11-11T10:00:00Z"))).toBe(false);
+    expect(await new MemoryDailyUsage({ session: 5, model_call: 5 }).take("house_session", now)).toBe(false);
+    const rows = await prisma.demoUsage.findMany({ orderBy: { kind: "asc" } });
+    expect(rows.map((r) => [r.day, r.kind, r.used])).toEqual([
+      ["2026-11-10", "house_session", 3],
+      ["2026-11-10", "session", 1],
+    ]);
+    expect(DEFAULT_DAILY_HOUSE_SESSIONS).toBeGreaterThan(0);
+    expect(DEFAULT_DAILY_HOUSE_SESSIONS).toBeLessThan(DEFAULT_DAILY_SESSIONS);
   });
 
   it("the memory cap counts the same way", async () => {
