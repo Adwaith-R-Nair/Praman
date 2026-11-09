@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, paypal-hackathon]
   pull_request:
 
 jobs:
