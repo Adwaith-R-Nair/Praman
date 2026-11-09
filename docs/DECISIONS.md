@@ -3082,3 +3082,19 @@ On the Agent Toolkit, the README and the mapping say what is true today: no code
 **Rejected.** *Saying nothing about the protocols:* the reader then has to work out the mapping alone, and may assume a claim that was never made. *Building an AP2 projection of the mandate before the deadline:* display only, and not in the time left.
 
 **Limits.** Nothing was run against an AP2 sample or an ACP endpoint. The specs move; the mapping is of the versions read on one day. Writing it surfaced two facts about Praman's own mandate: `subject_id` is a signed label that nothing checks against the caller, and the signed document in code has no `revoked` field although the example in `docs/MANDATE_SPEC.md` shows one. Neither is changed here.
+
+### D-91 · A transaction waits up to 15 seconds to start and 30 to finish · Accepted (implementer's decision, for the builder to check)
+
+On 9 Nov 2026 the hosted demo's twenty-at-once step failed on the builder's first press. Render's log read `Transaction API error: Unable to start a transaction in the given time`. The ledger showed 19 of the 20 intents decided and one with no row at all. The builder pressed again and it worked, which left 14 refusals on the ledger twice.
+
+Every money transaction first takes its mandate's advisory lock (D-05), so intents for one mandate queue. Prisma's defaults give a transaction 2 seconds to get a connection and start, and 5 seconds to finish. On a local database the whole queue clears in milliseconds. On the hosted one each query is a network round trip, and the connection pool holds ten, so the intents at the back wait on both. A test that holds the lock for 6 seconds reproduced it: all 20 intents threw.
+
+**Decided.** `packages/db` builds the Prisma client with `maxWait` 15 seconds and `timeout` 30 seconds, for every transaction. An intent at the back of a queue now waits for its turn and is decided, instead of being thrown out undecided.
+
+**Why this is safe.** No rail call is made inside a transaction (D-22), so a transaction is database work only, and the added time is spent waiting for the lock, never holding it across a payment. The lock still serialises decisions per mandate, so budgets and velocity are read and written as before. A transaction that does run out of time still rolls back whole and fails closed: nothing is charged and nothing half-written remains.
+
+**What this rules out.** Treating a slow queue as an error. Raising the limits per call site, which would leave the next call site on the defaults.
+
+**Rejected.** *Running the twenty intents a few at a time:* the step exists to show them arriving together. *Retrying a thrown intent in the demo:* it hides the cause, and a production caller would hit the same error. *A larger connection pool alone:* it removes the wait for a connection but not the 5 second limit on finishing, which the same test also hit.
+
+**Limits.** A queue longer than 15 seconds still throws for the intents that never start. The demo's twenty-at-once step still shows a server error page if any of its intents throws, and pressing it again repeats the refused intents on the ledger; that was left as it is. The hosted fix is unproven until the step is run there again. The session of 9 Nov keeps its 14 repeated refusals, since the ledger is append-only.
