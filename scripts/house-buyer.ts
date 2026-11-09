@@ -35,10 +35,11 @@ const result = await consentAsHouseBuyer(
   {
     say: (line) => console.log(line),
     waitForApproval: async () => {
-      await lines.question("Press Enter once PayPal has shown the approval as done. ");
+      await lines.question("Press Enter once PayPal has sent the browser on from its approval page. ");
     },
+    askAgain: async () => (await lines.question("Press Enter to ask PayPal again, or type q and Enter to stop. ")).trim().toLowerCase() !== "q",
   },
-).catch((err: unknown): ConsentResult => ({ ok: false, reason: `PayPal couldn't be asked (${err instanceof Error ? err.name : "unknown error"}). Nothing was saved.` }));
+).catch((err: unknown): ConsentResult => ({ ok: false, reason: `It stopped on an error it didn't expect (${err instanceof Error ? err.name : "unknown error"}). No token was written.` }));
 lines.close();
 
 if (!result.ok) {

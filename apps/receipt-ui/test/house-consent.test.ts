@@ -14,12 +14,15 @@ const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 let dir: string;
 let said: string[];
 let approvals: number;
+/** What the builder answers each time PayPal gives no answer: true asks again. */
+let again: boolean[];
 
 const io = {
   say: (line: string) => said.push(line),
   waitForApproval: async () => {
     approvals += 1;
   },
+  askAgain: async () => again.shift() ?? false,
 };
 const opts = (outPath: string) => ({ outPath, repoRoot: REPO, returnUrl: "https://praman-demo.onrender.com/", requestId: "house-setup-test" });
 
@@ -27,6 +30,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "praman-house-"));
   said = [];
   approvals = 0;
+  again = [];
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
@@ -101,5 +105,99 @@ describe("consenting once as the demo's sandbox buyer", () => {
     expect(third).toMatchObject({ ok: false });
     expect(JSON.stringify(third)).not.toContain("secret-looking");
     expect(existsSync(join(dir, "c"))).toBe(false);
+  });
+  it("treats a file at the repo's root whose name starts with two dots as inside the repo", () => {
+    expect(tokenFileProblem(join(REPO, "..house-buyer-token.test-should-never-exist"), REPO)).toContain("inside the repo");
+    expect(tokenFileProblem(join(REPO, "..", "house-buyer-token.test-should-never-exist"), REPO)).toBeNull();
+  });
+
+  it("says the file couldn't be made, and asks PayPal nothing, when the token file can't be created", async () => {
+    const paypal = new FakePayPal();
+    let asked = 0;
+    const createSetupToken = paypal.createSetupToken.bind(paypal);
+    paypal.createSetupToken = async () => {
+      asked += 1;
+      return createSetupToken();
+    };
+    // A plain file where the token's folder would have to be.
+    writeFileSync(join(dir, "not-a-folder"), "x");
+    const result = await consentAsHouseBuyer(paypal, opts(join(dir, "not-a-folder", "house-buyer-token")), io);
+    expect(result).toMatchObject({ ok: false });
+    expect(JSON.stringify(result)).toContain("couldn't be created");
+    expect(JSON.stringify(result)).toContain("PayPal was not asked");
+    expect(asked).toBe(0);
+    expect(approvals).toBe(0);
+  });
+
+  it("leaves no file and blames nothing on the builder when PayPal gives no answer to the first request", async () => {
+    const paypal = new FakePayPal();
+    paypal.createSetupToken = async () => {
+      throw new Error("ECONNRESET with a secret-looking body");
+    };
+    const out = join(dir, "house-buyer-token");
+    const result = await consentAsHouseBuyer(paypal, opts(out), io);
+    expect(result).toMatchObject({ ok: false });
+    expect(JSON.stringify(result)).toContain("gave no answer");
+    expect(JSON.stringify(result)).not.toContain("secret-looking");
+    expect(existsSync(out)).toBe(false);
+    expect(approvals).toBe(0);
+  });
+
+  it("asks PayPal again with the same request when the payment token got no answer, and saves the token it then gets", async () => {
+    const paypal = new FakePayPal();
+    const requests: string[] = [];
+    let tries = 0;
+    paypal.createPaymentToken = async (setupTokenId: string, requestId?: string) => {
+      requests.push(`${setupTokenId}|${requestId ?? ""}`);
+      tries += 1;
+      if (tries < 3) throw new Error("ETIMEDOUT");
+      return { ok: true, value: { id: PAYMENT_TOKEN } };
+    };
+    again = [true, true];
+    const out = join(dir, "house-buyer-token");
+    const result = await consentAsHouseBuyer(paypal, opts(out), io);
+    expect(result).toEqual({ ok: true, path: out });
+    expect(readFileSync(out, "utf8")).toBe(PAYMENT_TOKEN);
+    // Each try was the same request, so PayPal can answer the first one's result rather than make another token.
+    expect(requests).toHaveLength(3);
+    expect(new Set(requests).size).toBe(1);
+    expect(approvals).toBe(1);
+    expect(said.join("\n")).not.toContain(PAYMENT_TOKEN);
+  });
+
+  it("says a token may exist at PayPal when the builder stops after no answer, or PayPal refuses the retry", async () => {
+    const lost = new FakePayPal();
+    lost.createPaymentToken = async () => {
+      throw new Error("ETIMEDOUT");
+    };
+    again = [false];
+    const stopped = await consentAsHouseBuyer(lost, opts(join(dir, "a")), io);
+    expect(stopped).toMatchObject({ ok: false });
+    expect(JSON.stringify(stopped)).toContain("may have made a payment token");
+    expect(JSON.stringify(stopped)).not.toContain("Nothing was saved.");
+    expect(existsSync(join(dir, "a"))).toBe(false);
+
+    // The first try is lost, and the second is told the setup token is used up.
+    const used = new FakePayPal();
+    let tries = 0;
+    used.createPaymentToken = async () => {
+      tries += 1;
+      if (tries === 1) throw new Error("ETIMEDOUT");
+      return { ok: false, code: "SETUP_TOKEN_ALREADY_USED" };
+    };
+    again = [true];
+    const refused = await consentAsHouseBuyer(used, opts(join(dir, "b")), io);
+    expect(refused).toMatchObject({ ok: false });
+    expect(JSON.stringify(refused)).toContain("SETUP_TOKEN_ALREADY_USED");
+    expect(JSON.stringify(refused)).toContain("may have made a payment token");
+    expect(existsSync(join(dir, "b"))).toBe(false);
+  });
+
+  it("tells the builder where PayPal sends the browser, and that an error page there is fine", async () => {
+    await consentAsHouseBuyer(new FakePayPal(), opts(join(dir, "house-buyer-token")), io);
+    const shown = said.join("\n");
+    expect(shown).toContain("https://praman-demo.onrender.com/");
+    expect(shown).not.toContain("the demo's front page");
+    expect(shown).toContain("error page");
   });
 });
