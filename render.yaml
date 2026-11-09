@@ -68,6 +68,11 @@ services:
       # 50) caps how many sessions a day may use it; add it in the dashboard to change it.
       - key: DEMO_HOUSE_BUYER_TOKEN
         sync: false
+      # Optional, and not a secret: the mandate ids of one past demo session, comma-separated,
+      # which /sample then shows to anyone, read-only (D-88). Leave it empty and there is no
+      # sample page and no link to one. docs/DEPLOY.md, step 10.
+      - key: SAMPLE_MANDATE_IDS
+        sync: false
       # Optional. Unset, the server has no Razorpay rail: the demo uses PayPal and the
       # simulated rail, and a Razorpay record would be left for `pnpm reconcile`.
       - key: RAZORPAY_KEY_ID

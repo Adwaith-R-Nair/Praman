@@ -74,6 +74,7 @@ These Render asks you for:
 | `PAYPAL_WEBHOOK_ID` | Leave empty for now. Step 6 fills it in. | After step 6 |
 | `GEMINI_API_KEY` | Your Gemini API key | Yes, for the live model |
 | `DEMO_HOUSE_BUYER_TOKEN` | Leave empty for now. Step 9 fills it in, if you want visitors to be able to skip the PayPal login. | No |
+| `SAMPLE_MANDATE_IDS` | Leave empty for now. Step 10 fills it in, if you want a public sample run at `/sample`. Not a secret. | No |
 | `RAZORPAY_KEY_ID` | Leave empty. The demo doesn't use Razorpay; its shops use PayPal and a simulated rail. If you set it, it must start with `rzp_test_`. | No |
 | `RAZORPAY_KEY_SECRET` | Leave empty, or the matching test-mode secret | No |
 
@@ -176,7 +177,21 @@ Deleting `DEMO_HOUSE_BUYER_TOKEN` also switches it off, and removes the guard wi
 
 A server with `DEMO_HOUSE_BUYER_TOKEN` set never deletes this token at PayPal, whatever ends a session. If the token itself should go, delete it with PayPal's vault API (`DELETE /v3/vault/payment-tokens/<id>`) using the same app. Nothing in this repo does that for you.
 
+## 10. Optional: pin a sample run at /sample
+
+`/sample` shows one past demo session to anyone, read-only: its ledger rows in the console, with a link to each trace's public page and public dispute bundle. It carries no budgets and no step-up reasons (D-88). Until you name a session, `/sample` is a 404 and nothing links to it.
+
+1. On the hosted site, run one whole session, all eight steps, paying the checkout in step 6. This is the run strangers will read, so let each step finish.
+2. Before ending that session, open **Open your ledger console**. The tiles at the top name its two mandates: `mnd_demo_<ref>` for the story and `mnd_demo_<ref>_h` for the twenty-at-once step. Copy both ids. They are also in the grid's Mandate column.
+3. In Render, open the service, **Environment**, and set `SAMPLE_MANDATE_IDS` to the two ids with a comma between them and nothing else, for example `mnd_demo_ab12cd34ef56,mnd_demo_ab12cd34ef56_h`. Press **Save, rebuild, and deploy**. The ledger rows are in Neon, so the restart doesn't lose them.
+4. Open `https://<your address>/sample` in a private window. It should say **Chain verified** and list that session's rows. The front page now has a **See a sample run** line under the demo button, and `/traces` links to it too.
+5. From your machine, run `pnpm e2e:hosted`. `e2e/hosted/sample.spec.ts` makes GET requests only and should print a line starting `sample: populated`. If it prints `sample: none is set on this server`, the variable didn't take.
+
+The sample shows that session's sandbox order and capture ids, which its public trace pages already show. To take the sample down, empty the variable and deploy.
+
 ## When something goes wrong
+
+- **`/sample` says "No sample run on this server" after step 10.** The value is empty or malformed, and a malformed value is treated as none. It takes at most four ids, comma-separated, each made only of letters, digits, `_` and `-`. No quotes and no spaces inside an id.
 
 - **The build fails at `corepack enable`.** Change the start of the build command in the Render dashboard (Settings, Build Command) to `npm install -g pnpm@11.24.0 &&` instead of `corepack enable pnpm &&`, and deploy again.
 - **The build fails at `migrate deploy`.** `DIRECT_DATABASE_URL` is probably the pooled string. Use the one without `-pooler`.
