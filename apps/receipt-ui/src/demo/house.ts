@@ -27,7 +27,7 @@ import type { DemoSession } from "./session.js";
  */
 export class HouseBuyer {
   readonly #tokenId: string;
-  /** Refusals from PayPal in a row. Each one doubles the rest. */
+  /** Rests in a row with no captured charge between them. Each one is twice as long as the last. */
   #refusals = 0;
   #restUntil = 0;
   /** The UTC day whose sessions are known to be used up. */
@@ -69,8 +69,14 @@ export class HouseBuyer {
     return tokenId === this.#tokenId;
   }
 
-  /** PayPal refused a charge to it. Nobody is offered it, and no session that chose it is charged to it, until the rest is over. */
+  /**
+   * PayPal refused a charge to it. Nobody is offered it, and no session that chose it is
+   * charged to it, until the rest is over. A refusal that lands while it is already
+   * resting is the same trouble heard again, from a charge sent before the rest began,
+   * so it neither lengthens the rest nor counts toward the next one.
+   */
   refused(now: Date): void {
+    if (now.getTime() < this.#restUntil) return;
     const rest = Math.min(HOUSE_REST_MS * 2 ** Math.min(this.#refusals, 10), HOUSE_REST_MAX_MS);
     this.#refusals += 1;
     this.#restUntil = now.getTime() + rest;
@@ -95,7 +101,7 @@ export class HouseBuyer {
   }
 }
 
-/** How long the house buyer rests after PayPal refuses it once. Twice as long after each refusal in a row. */
+/** How long the house buyer rests after PayPal refuses it. Twice as long each time it is refused again after a rest, with no captured charge between. */
 export const HOUSE_REST_MS = 30 * 60 * 1000;
 const HOUSE_REST_MAX_MS = 24 * 60 * 60 * 1000;
 

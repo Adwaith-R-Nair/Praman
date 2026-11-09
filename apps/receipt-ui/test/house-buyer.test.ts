@@ -635,6 +635,36 @@ describe("when PayPal refuses the house buyer", () => {
     expect(house.offered(at(24 * 60 * 60 * 1000))).toBe(true);
   });
 
+  it("refusals that land together are one refusal: the rest is 30 minutes, not doubled for each", async () => {
+    const house = new HouseBuyer(HOUSE_TOKEN);
+    const t0 = new Date("2026-11-10T09:00:00.000Z");
+    for (let i = 0; i < 4; i++) house.refused(new Date(t0.getTime() + i));
+    expect(house.offered(new Date(t0.getTime() + HOUSE_REST_MS - 1))).toBe(false);
+    expect(house.offered(new Date(t0.getTime() + HOUSE_REST_MS))).toBe(true);
+    // The next refusal after that rest is the second in a row.
+    house.refused(new Date(t0.getTime() + HOUSE_REST_MS));
+    expect(house.offered(new Date(t0.getTime() + 3 * HOUSE_REST_MS - 1))).toBe(false);
+    expect(house.offered(new Date(t0.getTime() + 3 * HOUSE_REST_MS))).toBe(true);
+
+    // Four sessions approve at the same moment. PayPal takes a while, then refuses each.
+    const visitors = await Promise.all(Array.from({ length: 4 }, () => onHouseBuyer()));
+    await Promise.all(visitors.map((v) => v.post("/demo/step/first")));
+    refuseCharges("INSTRUMENT_DECLINED");
+    const refuse = paypal.chargeSavedMethod;
+    paypal.chargeSavedMethod = async (req, vaultId) => {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      return refuse(req, vaultId);
+    };
+    await Promise.all(visitors.map((v) => v.post("/demo/approve/first")));
+    expect(paypal.charges).toHaveLength(4);
+    expect(paypal.orders.size).toBe(0);
+    expect(deps.house?.offered(new Date(clock + HOUSE_REST_MS - 1))).toBe(false);
+    clock += HOUSE_REST_MS;
+    const next = visitor();
+    await next.post("/demo/start");
+    expect(await next.page()).toContain(CHOICE_MARK);
+  });
+
   it("a charge with no answer is not a refusal: the record stays pending and the house buyer stays", async () => {
     const v = await onHouseBuyer();
     await v.post("/demo/step/first");
