@@ -40,6 +40,7 @@ process.env["DATABASE_URL"] = target.href;
 const { generateKeypair } = await import("@praman/mandate");
 const { createApp } = await import("../apps/receipt-ui/src/app.js");
 const { createDemoHandler } = await import("../apps/receipt-ui/src/demo/routes.js");
+const { HouseBuyer } = await import("../apps/receipt-ui/src/demo/house.js");
 const { MemoryDailyUsage } = await import("../apps/receipt-ui/src/demo/limits.js");
 const { seedDemoCatalog } = await import("../apps/receipt-ui/src/demo/seed.js");
 const { SavedMethods, SessionStore } = await import("../apps/receipt-ui/src/demo/session.js");
@@ -53,18 +54,35 @@ await seedDemoCatalog();
 
 const paypal = new FakePayPal(`${baseUrl}/__e2e/paypal/connect`);
 const { privateKeyPem, publicKeyPem } = generateKeypair();
+const demoDeps = (standIn: InstanceType<typeof FakePayPal>) => ({
+  sessions: new SessionStore({ privateKeyPem, publicKeyPem, keyId: "e2e_demo_k1" }),
+  savedMethods: new SavedMethods(),
+  publicKeyPem,
+  paypal: { executor: standIn, vault: standIn },
+  provider: new ScriptedModel(),
+  baseUrl,
+  now: () => new Date(),
+  log: (line: string) => console.error(line),
+});
+
+// The real server reads DEMO_HOUSE_BUYER_TOKEN once at start-up, so a process either has
+// the demo's shared sandbox buyer (D-85) or it doesn't. The suite needs both, so there
+// are two demos here, each with its own sessions and its own stand-in PayPal: one as a
+// server without the secret, and one with a stand-in token. A request header a test sets
+// picks the second, for the demo and for /__e2e/paypal. The header exists in this file
+// only; the app never reads it.
+const HOUSE_HEADER = "x-e2e-house";
+const HOUSE_TOKEN = "E2E-HOUSE-TOKEN";
+const housePaypal = new FakePayPal(`${baseUrl}/__e2e/paypal/connect`);
+const plainDemo = createDemoHandler({ ...demoDeps(paypal), usage: new MemoryDailyUsage({ session: 1000, model_call: 1000 }) });
+const houseDemo = createDemoHandler({
+  ...demoDeps(housePaypal),
+  usage: new MemoryDailyUsage({ session: 1000, model_call: 1000, house_session: 1000 }),
+  house: new HouseBuyer(HOUSE_TOKEN),
+});
+
 const app = createApp({
-  demo: createDemoHandler({
-    sessions: new SessionStore({ privateKeyPem, publicKeyPem, keyId: "e2e_demo_k1" }),
-    savedMethods: new SavedMethods(),
-    publicKeyPem,
-    usage: new MemoryDailyUsage({ session: 1000, model_call: 1000 }),
-    paypal: { executor: paypal, vault: paypal },
-    provider: new ScriptedModel(),
-    baseUrl,
-    now: () => new Date(),
-    log: (line) => console.error(line),
-  }),
+  demo: (req, res) => (req.headers[HOUSE_HEADER] === "1" ? houseDemo : plainDemo)(req, res),
   webhooks: { ...payPalWebhookDepsFromEnv({}), webhookId: null },
   hsts: false,
   proxyHops: 0,
@@ -81,9 +99,12 @@ const listener: RequestListener = (req, res) => {
     return;
   }
   if (req.url === "/__e2e/paypal") {
-    if (req.method === "POST") paypal.approveAll();
+    const asked = req.headers[HOUSE_HEADER] === "1" ? housePaypal : paypal;
+    if (req.method === "POST") asked.approveAll();
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ charges: paypal.charges.length, checkouts: paypal.checkouts.length, refunds: paypal.refunds.length }));
+    // house_charges: how many of the charges named the stand-in house token. A count, never the token.
+    const houseCharges = asked.charges.filter((charge) => charge.vaultId === HOUSE_TOKEN).length;
+    res.end(JSON.stringify({ charges: asked.charges.length, house_charges: houseCharges, checkouts: asked.checkouts.length, refunds: asked.refunds.length, deleted: asked.deleted.length }));
     return;
   }
   void app(req, res);

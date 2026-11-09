@@ -149,29 +149,31 @@ export const HOUSE_COPY = {
   chosen: "You're using the demo's sandbox buyer. Praman holds its saved PayPal method on the server. The agent and this page never see it.",
   unavailable: "The demo's sandbox buyer isn't available right now. Connect a PayPal sandbox account by logging in instead.",
   usedUp: "Today's sessions on the demo's sandbox buyer are used up. Connect a PayPal sandbox account by logging in instead.",
-  /** The start page's first paragraph while the choice is offered. Plain text; the page adds the link to the recorded run. */
+  /** The start page's line about logins while the choice is offered. Plain text; the page adds the link to the recorded run. */
   start:
     "You can run the small purchases with no PayPal login: start a session, then press Use the demo's sandbox buyer where it asks you to connect PayPal. Only PayPal's checkout, for the large purchase, needs the PayPal sandbox buyer login. That login is in the testing instructions on the project's Devpost page, and it's a US sandbox account with play money. Without it that one purchase stays unpaid and nothing is charged.",
-  /** The start page's second paragraph while the choice is offered. */
-  startCheckout:
-    "Paying at PayPal's checkout is best done in a private window. PayPal's sandbox declines a checkout in a window that is already logged in to PayPal, and connecting PayPal by logging in logs this window in.",
   /** A checkout order for a session that never logged in to PayPal in this window. */
   checkout:
     "A purchase at or above your mandate's approval line needs a buyer at PayPal's checkout, so it can't be charged to a saved account. Copy this link into a private window. Log in there with the PayPal sandbox buyer account, which is in the testing instructions on the project's Devpost page, and approve. Without that login this purchase stays unpaid and nothing is charged.",
   checkoutWhy: "Why a private window: PayPal's sandbox declines a checkout in a window that is already logged in to PayPal. For a second checkout, close every private window first, so the next one starts fresh.",
   addressUsedUp: "The demo's sandbox buyer has been used from your address as often as it allows in a day. Connect a PayPal sandbox account by logging in instead.",
-  gone: "The demo's sandbox buyer isn't available right now. Nothing was asked and nothing was charged. Connect a PayPal sandbox account by logging in, in step 2, then press the button again.",
+  gone: "The demo's sandbox buyer isn't available right now. Nothing was asked and nothing was charged. Connect a PayPal sandbox account by logging in, in step 3, then press the button again.",
   refused: (code: string | null) =>
     `PayPal refused the demo's sandbox buyer${code === null ? "" : ` (${code})`}. Nothing was charged. That step won't run again in this session. To go on, start a new session and connect a PayPal sandbox account by logging in.`,
 } as const;
 
 /**
- * The choice as the connect step shows it: one button and one sentence. Empty when this
- * server has no house buyer, or isn't offering it now, so the page then says nothing of it.
+ * The choice as the Connect PayPal step shows it: one button, which goes in the step's row
+ * of buttons after the PayPal login, and one sentence, which goes under that row. Both are
+ * empty when this server has no house buyer, or isn't offering it now, so the page then
+ * says nothing of it and the step is as it is without this feature.
  */
-export function houseChoiceHtml(offered: boolean): string {
-  if (!offered) return "";
-  return `<form method="post" action="${HOUSE_PATH}" class="act"><button type="submit" class="btn btn-quiet">${escapeHtml(HOUSE_COPY.button)}</button></form><p>${escapeHtml(HOUSE_COPY.why)}</p>`;
+export function houseChoice(offered: boolean): { readonly button: string; readonly why: string } {
+  if (!offered) return { button: "", why: "" };
+  return {
+    button: `<form method="post" action="${HOUSE_PATH}" class="act"><button type="submit" class="btn btn-quiet">${escapeHtml(HOUSE_COPY.button)}</button></form>`,
+    why: `<p class="small">${escapeHtml(HOUSE_COPY.why)}</p>`,
+  };
 }
 
 /**

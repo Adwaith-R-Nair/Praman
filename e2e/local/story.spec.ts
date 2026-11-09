@@ -34,6 +34,9 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
 
   await test.step("a poisoned listing first, with no PayPal connected: the live model, then a fooled cart refused", async () => {
     await expect(step("connect").locator(".ok")).toHaveCount(0);
+    // This server has no shared sandbox buyer, so the connect step offers the PayPal login and nothing else.
+    await expect(step("connect").locator(".actions button")).toHaveText(["Connect PayPal"]);
+    await expect(page.getByRole("button", { name: "Use the demo's sandbox buyer" })).toHaveCount(0);
     await press("Ask the agent to order at Corner Market");
     const injection = step("injection");
     await expect(injection.locator(".message").first()).toContainText("The agent ignored the poisoned line");

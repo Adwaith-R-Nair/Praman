@@ -9,11 +9,12 @@ import { verifyChain } from "@praman/ledger";
 import { generateKeypair } from "@praman/mandate";
 import { minor } from "@praman/shared";
 import { savedMethodChoice, type DemoDeps } from "../src/demo/connect.js";
-import { HOUSE_REST_MS, HouseBuyer, houseChoiceHtml } from "../src/demo/house.js";
+import { HOUSE_COPY, HOUSE_REST_MS, HouseBuyer, houseChoice } from "../src/demo/house.js";
 import { LIMITS, MemoryDailyUsage } from "../src/demo/limits.js";
 import { COOKIE, createDemoHandler, releaseAllSessions, sweepExpiredSessions } from "../src/demo/routes.js";
 import { seedDemoCatalog } from "../src/demo/seed.js";
 import { createDemoSession, SavedMethods, SessionStore } from "../src/demo/session.js";
+import { loadRecording, renderDemoPage } from "../src/pages/demo.js";
 import { FakePayPal, PAYMENT_TOKEN, ScriptedModel, SETUP_TOKEN } from "./stand-ins.js";
 
 // The demo's shared sandbox buyer (D-85), against the test database. The model is scripted
@@ -160,7 +161,7 @@ describe("with no house buyer configured", () => {
       expect(html).not.toMatch(/demo(&#39;|')s sandbox buyer/);
     }
     expect(story).toContain('action="/demo/connect"');
-    expect(houseChoiceHtml(false)).toBe("");
+    expect(houseChoice(false)).toEqual({ button: "", why: "" });
     // The start page and the connect step say what needs the sandbox login, as they do without this feature.
     expect(start).toContain("The PayPal steps that come later need the sandbox buyer login");
     expect(story).toContain("No login? Steps 7 and 8 need none");
@@ -230,14 +231,51 @@ describe("choosing the house buyer", () => {
     const page = await v.page();
     expect(page).toContain('action="/demo/connect"');
     expect(page).toContain(CHOICE_MARK);
-    const html = houseChoiceHtml(true);
-    expect(html).toContain(CHOICE_MARK);
-    expect(html).toContain('method="post"');
-    expect(html).toContain("Use the demo&#39;s sandbox buyer");
-    expect(html.match(/<button/g)).toHaveLength(1);
-    expect(html.match(/<p>/g)).toHaveLength(1);
-    expect(html).toContain("sandbox money");
-    expect(html).not.toMatch(/<script|style=|onclick/i);
+    const { button, why } = houseChoice(true);
+    expect(button).toContain(CHOICE_MARK);
+    expect(button).toContain('method="post"');
+    expect(button).toContain("Use the demo&#39;s sandbox buyer");
+    expect(button.match(/<button/g)).toHaveLength(1);
+    expect(why.match(/<p[ >]/g)).toHaveLength(1);
+    expect(why).toContain("sandbox money");
+    expect(`${button}${why}`).not.toMatch(/<script|style=|onclick/i);
+  });
+
+  it("puts the choice in the Connect PayPal step's own row of buttons, after the login and quieter than it", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    const page = await v.page();
+    const connect = /<section class="step" id="connect">[\s\S]*?<\/section>/.exec(page)?.[0] ?? "";
+    const row = /<div class="actions">([\s\S]*?)<\/div>/.exec(connect)?.[1] ?? "";
+    const forms = row.match(/<form [^>]*>[\s\S]*?<\/form>/g) ?? [];
+    expect(forms).toHaveLength(2);
+    expect(forms[0]).toContain('action="/demo/connect"');
+    expect(forms[0]).toContain("btn-primary");
+    expect(forms[1]).toContain(CHOICE_MARK);
+    expect(forms[1]).toContain("btn-quiet");
+    // The sentence about it follows the row, and no other step carries the choice.
+    expect(connect.indexOf("sandbox money")).toBeGreaterThan(connect.indexOf("</div>"));
+    expect(page.split(CHOICE_MARK)).toHaveLength(2);
+  });
+
+  it("adds the button and its sentence to the connect step and changes nothing else on the page", () => {
+    const { privateKeyPem, publicKeyPem } = generateKeypair();
+    const session = createDemoSession(new Date(clock), { privateKeyPem, publicKeyPem, keyId: "test_demo_k1" });
+    const recording = loadRecording();
+    const without = renderDemoPage(session, recording, { paypal: true, model: true });
+    const offered = renderDemoPage(session, recording, { paypal: true, model: true, house: true });
+    const { button, why } = houseChoice(true);
+    expect(renderDemoPage(session, recording, { paypal: true, model: true, house: false })).toBe(without);
+    expect(offered).not.toBe(without);
+    expect(offered.replace(button, "").replace(why, "")).toBe(without);
+  });
+
+  it("names the Connect PayPal step by its number when it sends a session back to log in", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    const n = /<section class="step" id="connect">\s*<h2><span class="step-n">(\d+)<\/span>/.exec(await v.page())?.[1];
+    expect(n).toBe("3");
+    expect(HOUSE_COPY.gone).toContain(`in step ${n ?? "?"},`);
   });
 
   it("charges the house buyer only after Praman allows it, under the visitor's own mandate", async () => {

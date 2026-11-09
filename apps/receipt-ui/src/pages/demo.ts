@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { addMinor, formatMoney, minor, minorFromJSON, mulMinor, REASON_CODES, ZERO_MINOR, type Minor, type ReasonCode } from "@praman/shared";
 import type { AgentVisibleDecision } from "@praman/policy";
 import { CAFE, CAFE_ITEMS, FOOLED_CART, MARKET, MARKET_ITEM_NAMES, MARKET_PRICES, type BeatId, type PurchaseBeat } from "../demo/config.js";
-import { HOUSE_COPY, houseChoiceHtml, keptMethodCopy } from "../demo/house.js";
+import { HOUSE_COPY, houseChoice, keptMethodCopy } from "../demo/house.js";
 import { canAskAgain, refundable } from "../demo/story.js";
 import type { TraceView } from "../data.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
@@ -541,13 +541,15 @@ export function renderDemoPage(session: DemoSession, recording: Recording, confi
   const revoked = b("revoke")?.state === "done";
   // Set when the session's saved method is the demo's own and outlives the session (D-85).
   const kept = keptMethodCopy(session);
+  // The other way to connect, beside the PayPal login. Both parts are empty unless this server offers it now.
+  const house = houseChoice(configured.house === true);
   const connectBody = revoked && !session.connected
     ? `${p("This session's mandate is revoked, so there is nothing left to connect PayPal for. Start a new session to go through the purchases.")}${action("/demo/start", "Start a new session")}`
     : session.connected
     ? `<p class="ok">${kept !== null ? escapeHtml(kept.connected) : "Connected. Praman holds the saved PayPal method on its server, tied to this session. The agent and this page never see it, and it is deleted when the session ends."}</p>`
     : `${p("Approve, once, saving a PayPal sandbox account for this demo merchant. PayPal opens its own page and sends you back here. Log in with the sandbox buyer account: a US sandbox account with play money, in the testing instructions on the project's Devpost page.")}
-       <div class="actions">${action("/demo/connect", "Connect PayPal", "primary", configured.paypal ? null : NO_PAYPAL)}</div>
-       <p class="small">No login? Steps 7 and 8 need none, or <a href="/demo/recorded">look through a recorded run</a>.</p>${houseChoiceHtml(configured.house === true)}`;
+       <div class="actions">${action("/demo/connect", "Connect PayPal", "primary", configured.paypal ? null : NO_PAYPAL)}${house.button}</div>${house.why}
+       <p class="small">No login? Steps 7 and 8 need none, or <a href="/demo/recorded">look through a recorded run</a>.</p>`;
 
   // Why each purchase button is off, if it is. The server refuses the same steps for the same reasons.
   const missing = !configured.paypal ? NO_PAYPAL : !configured.model ? NO_MODEL : null;
