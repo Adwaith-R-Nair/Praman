@@ -17,6 +17,43 @@ describe("the front page's links", () => {
   });
 });
 
+describe("the front page's link preview", () => {
+  const html = renderLandingPage();
+  const head = html.slice(0, html.indexOf("</head>"));
+  /** The content of one meta tag, by its property or name attribute. */
+  const meta = (key: string): string | null => new RegExp(`<meta (?:property|name)="${key}" content="([^"]*)">`).exec(head)?.[1] ?? null;
+
+  it("carries Open Graph tags that name PayPal and the person", () => {
+    expect(meta("og:type")).toBe("website");
+    expect(meta("og:site_name")).toBe("Praman");
+    expect(meta("og:title")).toContain("PayPal");
+    expect(meta("og:description")).toContain("Meera");
+    expect(meta("og:url")).toBe("https://praman-demo.onrender.com/");
+  });
+
+  it("carries a Twitter card with the same title and description", () => {
+    expect(meta("twitter:card")).toBe("summary");
+    expect(meta("twitter:title")).toBe(meta("og:title"));
+    expect(meta("twitter:description")).toBe(meta("og:description"));
+  });
+
+  it("keeps the description short enough for a preview, and the same as the page's own", () => {
+    const description = meta("og:description") ?? "";
+    expect(description.length).toBeGreaterThan(80);
+    expect(description.length).toBeLessThanOrEqual(200);
+    expect(meta("description")).toBe(description);
+  });
+
+  it("names no preview image, because the app serves none that fits a card", () => {
+    expect(meta("og:image")).toBeNull();
+    expect(meta("twitter:image")).toBeNull();
+  });
+
+  it("has no em dash in any tag", () => {
+    expect(head).not.toContain("—");
+  });
+});
+
 describe("the recorded run", () => {
   it("describes all eight steps to a screen reader, ending with the revocation", () => {
     const html = renderRecordedRunPage();

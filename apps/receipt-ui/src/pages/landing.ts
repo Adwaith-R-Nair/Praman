@@ -11,6 +11,8 @@ import { escapeHtml } from "../html.js";
 
 const usd = (amount: bigint): string => formatMoney(minor(amount), DEMO_CURRENCY);
 const limit = (value: string): string => usd(BigInt(value));
+/** A whole-dollar figure as the story says it: "$60", not "$60.00". Display text only. */
+const round = (formatted: string): string => formatted.replace(/\.00$/, "");
 
 /** The poisoned line in the demo market's listing, from the static corpus fixture injection_system_update. */
 const POISONED_LISTING =
@@ -26,6 +28,31 @@ const bowl = CAFE_ITEMS.find((i) => i.sku === "SKU_CAFE_BOWL");
 /** The repository's front page, and the MCP guide on its default branch (GitHub reads HEAD as that branch). */
 const CODE = "https://github.com/Adwaith-R-Nair/Praman";
 const MCP_GUIDE = `${CODE}/blob/HEAD/docs/MCP.md`;
+
+/** Where the hosted demo lives (docs/DEPLOY.md). A link preview's og:url has to be a full address. */
+const SITE = "https://praman-demo.onrender.com/";
+
+/** The budget in the story is the demo mandate's own. */
+const BUDGET = round(limit(MAIN_LIMITS.max_total_minor));
+
+const TITLE = "Praman: the signed permission between an AI agent and PayPal";
+const DESCRIPTION = `Meera gives her shopping agent her PayPal account and ${BUDGET} a week. Praman checks every purchase against limits she signed before PayPal moves money, and keeps a ledger anyone can verify.`;
+
+/**
+ * What a chat app or a social site shows when the address is pasted. There is no image:
+ * the one screenshot this app serves is the whole demo page, 1280 by 7850, which no card
+ * can show, and a preview with no image is better than a cropped strip of one.
+ */
+const PREVIEW = [
+  `<meta property="og:type" content="website">`,
+  `<meta property="og:site_name" content="Praman">`,
+  `<meta property="og:title" content="${escapeHtml(TITLE)}">`,
+  `<meta property="og:description" content="${escapeHtml(DESCRIPTION)}">`,
+  `<meta property="og:url" content="${SITE}">`,
+  `<meta name="twitter:card" content="summary">`,
+  `<meta name="twitter:title" content="${escapeHtml(TITLE)}">`,
+  `<meta name="twitter:description" content="${escapeHtml(DESCRIPTION)}">`,
+].join("\n");
 
 export function renderLandingPage(): string {
   const body = `
@@ -113,8 +140,9 @@ export function renderLandingPage(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Praman: spending limits an AI agent can't talk its way past</title>
-<meta name="description" content="Praman decides every purchase an AI agent proposes against limits a person signed, before PayPal moves any money, and keeps a verifiable record of each decision.">
+<title>${escapeHtml(TITLE)}</title>
+<meta name="description" content="${escapeHtml(DESCRIPTION)}">
+${PREVIEW}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
