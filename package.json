@@ -25,6 +25,7 @@
     "mcp": "tsx apps/mcp-gateway/src/server.ts",
     "mcp:approve": "tsx apps/mcp-gateway/src/approve.ts",
     "mcp:mandate": "tsx apps/mcp-gateway/src/issue-mandate.ts",
+    "audit:paypal": "tsx apps/paypal-auditor/src/cli.ts",
     "pending": "tsx scripts/pending.ts",
     "house-buyer": "tsx scripts/house-buyer.ts",
     "reconcile": "tsx scripts/reconcile.ts",

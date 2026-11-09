@@ -1,0 +1,19 @@
+{
+  "name": "@praman/paypal-auditor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@paypal/agent-toolkit": "1.11.0",
+    "@praman/agent-core": "workspace:*",
+    "@praman/db": "workspace:*",
+    "@praman/ledger": "workspace:*",
+    "@praman/paypal-exec": "workspace:*",
+    "@praman/shared": "workspace:*",
+    "dotenv": "^17.4.2"
+  }
+}

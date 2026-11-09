@@ -12,7 +12,7 @@ Meera is an example, not a customer. The [hosted demo](https://praman-demo.onren
 
 ## How Praman uses PayPal
 
-Sandbox only. [`packages/paypal-exec`](packages/paypal-exec) calls PayPal's REST APIs directly and refuses any host outside `sandbox.paypal.com`.
+Sandbox only. [`packages/paypal-exec`](packages/paypal-exec) calls PayPal's REST APIs directly and refuses any host outside `sandbox.paypal.com`. PayPal's Agent Toolkit is used in one place, a read-only auditor (last row).
 
 | PayPal API | What it does here | Code |
 |---|---|---|
@@ -22,14 +22,16 @@ Sandbox only. [`packages/paypal-exec`](packages/paypal-exec) calls PayPal's REST
 | Payments v2, refund a capture | A full refund, started by a person and never by the agent. | [`packages/control-plane/src/refund-order.ts`](packages/control-plane/src/refund-order.ts) |
 | Webhooks, verify signature | Each delivery is verified with PayPal before its capture event goes on the ledger. | [`packages/paypal-exec/src/webhook.ts`](packages/paypal-exec/src/webhook.ts), [`apps/receipt-ui/src/webhooks.ts`](apps/receipt-ui/src/webhooks.ts) |
 | Orders v2, get | The reconciler reads an order back when a capture's outcome is unknown. | [`packages/control-plane/src/reconcile.ts`](packages/control-plane/src/reconcile.ts) |
+| Agent Toolkit, four read tools | `pnpm audit:paypal <trace_id>` reads PayPal's record of an order, its refund and its disputes through `@paypal/agent-toolkit`, and code compares it with the ledger field by field. Run from a terminal, never by the hosted server. | [`apps/paypal-auditor`](apps/paypal-auditor) |
 
 ## How Praman uses AI
 
-A model is the shopper and nothing more. In the demo and the eval it is Google's `gemini-3.1-flash-lite`, given a goal and three tools: `list_catalog`, `get_sku` and `propose_intent` ([`apps/buyer-agent/src/tools.ts`](apps/buyer-agent/src/tools.ts)). It reads the shop's listings, which reach it marked as untrusted text ([`packages/shared/src/untrusted.ts`](packages/shared/src/untrusted.ts)), and proposes a cart of SKUs and quantities.
+In the payment path a model is the shopper and nothing more. In the demo and the eval it is Google's `gemini-3.1-flash-lite`, given a goal and three tools: `list_catalog`, `get_sku` and `propose_intent` ([`apps/buyer-agent/src/tools.ts`](apps/buyer-agent/src/tools.ts)). It reads the shop's listings, which reach it marked as untrusted text ([`packages/shared/src/untrusted.ts`](packages/shared/src/untrusted.ts)), and proposes a cart of SKUs and quantities.
 
 - **What the model does not do.** It never sets a price or a currency, because the intent has no field for either. It is never shown the mandate's limits. It has no tool that approves a purchase or refunds one. The decision is `evaluate()` in [`packages/policy/src/evaluate.ts`](packages/policy/src/evaluate.ts), a pure function with no model call, and CI fails if the policy, ledger or payment packages import a model SDK ([`scripts/check-import-boundary.ts`](scripts/check-import-boundary.ts)).
 - **What the demo shows.** The agent's goals are fixed text, so nothing a visitor sends reaches the model. The live model usually ignores the poisoned listing, so the demo also replays a cart a model was really fooled into in a recorded run, and labels it a simulation. Praman prices and decides that cart live. Once the demo's daily model calls are used up, it replays recorded answers from the same model and says so.
 - **Any MCP client can be the shopper** through the local gateway in [`apps/mcp-gateway`](apps/mcp-gateway), over 18 real Channel3 products with pinned prices. See [MCP gateway](#mcp-gateway-any-agent-shops-within-a-mandate).
+- **One optional use outside the payment path.** `pnpm audit:paypal <trace_id> --narrate` asks the same model for two or three sentences about a comparison that code has already made. The model gets no tools, its text is printed after the verdict under "Narration, not evidence", and it can change neither the verdict nor the exit code. See [PayPal auditor](#paypal-auditor-one-trace-checked-against-paypals-record).
 - **How the code was written.** With AI coding agents, under the controls in [Built with](#built-with).
 
 ## Three numbers
@@ -69,7 +71,7 @@ What isn't arriving is the layer that answers the question every risk team asks:
 
 A typical agentic checkout reads attacker-controllable text, a merchant's product description, and then calls a payment API. That is prompt injection with a bank account attached, and there is no durable record of *why* the model decided anything.
 
-The toolkit gives an agent hands. Praman is the permission in front of them: it decides whether a payment the agent asks for may happen, before PayPal is called. The toolkit is not what moves money here: `paypal-exec` does not use it and calls PayPal's REST APIs directly ([D-38](docs/DECISIONS.md)).
+The toolkit gives an agent hands. Praman is the permission in front of them: it decides whether a payment the agent asks for may happen, before PayPal is called. The toolkit is not what moves money here. The payment path, `paypal-exec`, calls PayPal's REST APIs directly ([D-38](docs/DECISIONS.md)), and the agent has no payment tool. One command does use the toolkit: a read-only auditor with four read tools switched on and nothing that creates, captures or refunds ([D-92](docs/DECISIONS.md), [PayPal auditor](#paypal-auditor-one-trace-checked-against-paypals-record)).
 
 ## The idea
 
@@ -199,6 +201,42 @@ claude mcp add praman -- pnpm --silent --dir /absolute/path/to/praman mcp
 
 The gateway is the agent's only route to money only if it has no other: an agent that also holds PayPal keys, or a shell in this repo, has more. Claude Desktop with only this server has none.
 
+## PayPal auditor: one trace checked against PayPal's record
+
+`pnpm audit:paypal <trace_id>` reads PayPal's own record of the order on one ledger trace and says, field by field, whether the two agree. It is the only code here that uses PayPal's [Agent Toolkit](https://github.com/paypal/agent-toolkit) (`@paypal/agent-toolkit` 1.11.0, its Vercel AI SDK adapter), and it lives in [`apps/paypal-auditor`](apps/paypal-auditor) ([D-92](docs/DECISIONS.md)).
+
+- **Read tools only.** Four of the toolkit's 47 tools are switched on: `get_order`, `get_refund`, `list_disputes` and `get_dispute`. A test builds the real toolkit and fails if that list changes, and the command stops if the toolkit hands back any other set. Nothing is written to PayPal, and the ledger is read in a transaction Postgres holds read-only.
+- **The verdict is code.** Order id, status, amount in integer minor units, currency, capture id and refund state are compared by a pure function, and no model runs before the exit code is fixed. It prints `MATCH` or `MISMATCH` for each field and overall. Exit code 0 is a match, 1 a mismatch, and 2 means nothing was compared: a Razorpay or simulated trace, a trace with no order, or PayPal could not be read.
+- **A model may describe the result, never decide it.** With `--narrate`, `gemini-3.1-flash-lite` writes two or three sentences, printed after the verdict under "Narration, not evidence". It has no tools, every value reaches it inside `<untrusted_merchant_content>`, and a test feeds in a narration that lies and checks the verdict and exit code are unchanged.
+- **Not on the hosted server.** It runs from a terminal with the sandbox keys in `.env`. `pnpm lint:boundary` fails if anything outside `apps/paypal-auditor` imports the toolkit or the auditor, or if the hosted server or the MCP gateway names it.
+
+A run against the PayPal sandbox at 18:37 UTC on 9 Nov 2026, on a refunded demo order from the local development ledger:
+
+```
+$ pnpm --silent audit:paypal trc_demo_fe70eb7e4119_large_8 --narrate
+PayPal audit of trace trc_demo_fe70eb7e4119_large_8
+Read through PayPal's Agent Toolkit with four read tools (get_dispute, get_order, get_refund, list_disputes). Nothing was written to the ledger or to PayPal.
+
+Order 5MW43748XP341760K
+  field                ledger                      PayPal                       result
+  order_id             5MW43748XP341760K           5MW43748XP341760K            MATCH
+  status               captured                    COMPLETED, capture REFUNDED  MATCH
+  amount_minor         3200                        3200                         MATCH
+  currency             USD                         USD                          MATCH
+  capture_id           1DA33593DL077134E           1DA33593DL077134E            MATCH
+  refund_state         refunded 90W33293UC2395338  COMPLETED 90W33293UC2395338  MATCH
+  refund_amount_minor  3200 USD                    3200 USD                     MATCH
+  disputes at PayPal on this capture (shown, not compared: the ledger keeps no dispute rows): none
+
+Overall: MATCH. 7 of 7 fields agree.
+
+Narration, not evidence
+  Written by a model (google/gemini-3.1-flash-lite) from the values above. It is not part of the verdict and cannot change the exit code.
+  | The payment ledger and PayPal records have been successfully reconciled and show a complete match across all fields. The transaction status, amount, and refund details are consistent between both systems.
+```
+
+Only a match has been run against the live sandbox. Every mismatch, the unpaid and released orders, and a dispute that exists are covered by tests with stand-ins for PayPal, shaped like the answers the toolkit returned that day.
+
 ## Merchant MCP server
 
 `apps/merchant-mcp` exposes one merchant's catalog (`list_catalog`, `get_sku`, `check_stock`, `get_refund_policy`) as an [MCP](https://modelcontextprotocol.io) server over stdio. Any MCP client can browse it: this is a protocol, not a private integration.
@@ -313,7 +351,7 @@ Three that changed the architecture:
 
 ## Decision records
 
-91 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
+92 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
 
 ## Documentation
 
@@ -335,6 +373,7 @@ The Razorpay Buildathon entry ended on 5 Sep 2026 with one rail and rupees only.
 - **A ledger console built with AG Grid and AG Charts Community:** search and filter every ledger row, with a server-side hash check on each. See [The ledger console](#the-ledger-console).
 - **An MCP gateway on a real Channel3 catalog:** any MCP client can shop within one signed mandate. It runs locally. See [MCP gateway](#mcp-gateway-any-agent-shops-within-a-mandate).
 - **Dispute bundles:** a public copy with limits withheld, and a full copy for the owner.
+- **A read-only auditor on PayPal's Agent Toolkit:** `pnpm audit:paypal` checks one ledger trace against PayPal's own record with four read tools, and code gives the verdict. It runs locally. See [PayPal auditor](#paypal-auditor-one-trace-checked-against-paypals-record).
 
 [History](#history) has the detail and the links to compare the code. Trying it takes about five minutes: [`docs/DEMO_INSTRUCTIONS.md`](docs/DEMO_INSTRUCTIONS.md).
 
