@@ -482,6 +482,79 @@ h2 {
   margin: 0;
 }
 
+/* Verify in my browser: the reader's own check, set apart from the server's
+   button in the hero. The result line takes the verified or refused ink, and
+   the note under it says what the check could not see. */
+.browser-verify {
+  border: 1px solid var(--hairline);
+  background: var(--paper-raised);
+  padding: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+
+.bv-lede,
+.bv-note {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+.bv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: var(--space-2) 0 0;
+}
+
+#bv-run {
+  font-size: var(--size-sm);
+  padding: 0.4em 0.9em;
+}
+
+#bv-run:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.bv-toggle {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  cursor: pointer;
+}
+
+.bv-result {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  font-weight: 600;
+  margin: var(--space-2) 0 0.3em;
+}
+
+.bv-result:empty,
+.bv-note:empty {
+  display: none;
+}
+
+.bv-result.bv-ok {
+  color: var(--verified);
+}
+
+.bv-result.bv-broken {
+  color: var(--refused);
+}
+
+/* One line under a row, saying what the browser found for it. */
+.entry-check {
+  font-family: var(--sans);
+  font-size: var(--size-sm);
+  color: var(--ink-muted);
+  margin: 0.25em 0 0;
+}
+
 /* The chain, drawn as a single continuous spine rather than a list with
    connectors between items. Each entry hangs off one unbroken rule; where
    the chain is intact the rule never breaks, so a break (D-25/commit 7)
@@ -813,6 +886,7 @@ a:focus-visible {
 
   .nav,
   #verify-btn,
+  .browser-verify,
   .refund-control {
     display: none;
   }

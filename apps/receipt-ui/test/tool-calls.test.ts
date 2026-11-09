@@ -155,7 +155,8 @@ describe("tool calls on the trace page", () => {
   it("keeps the public page free of limits, the step-up reason and the signed mandate (D-84)", async () => {
     await writeTrace("trc_tools");
     const { html } = await renderTracePage("trc_tools");
-    for (const withheld of ["STEP_UP_THRESHOLD", "threshold 2000", "max_total_minor", "max_per_txn_minor", "threshold_minor", "signed_mandate", "c2lnbmF0dXJlLXZhbHVl", "BEGIN PUBLIC KEY", "redaction_salt", "5a17c0ffee5a17c0"]) {
+    // The page names the fields it withholds from a row, as the public bundle does. It never carries what they hold.
+    for (const withheld of ["STEP_UP_THRESHOLD", "threshold 2000", "max_total_minor", "max_per_txn_minor", "threshold_minor", "c2lnbmF0dXJlLXZhbHVl", "BEGIN PUBLIC KEY", "MCowBQ", "5a17c0ffee5a17c0"]) {
       expect(html, withheld).not.toContain(withheld);
     }
   });
