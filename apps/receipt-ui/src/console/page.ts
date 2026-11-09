@@ -59,6 +59,15 @@ const COPY: Readonly<Record<ConsoleMode, { readonly back: string; readonly backL
   },
 };
 
+/**
+ * Under the "who did what" chart. On the demo's two consoles it also says what the word
+ * Agent covers there and why the harness is counted apart, so a scripted or recorded
+ * proposal isn't read as a live model's, nor the harness's approval as a person's.
+ */
+const WHO_NOTE = "Every row below, counted on the server by the actor the ledger names and by what the row records. Select a bar to filter the ledger to those rows.";
+const WHO_NOTE_DEMO = " Agent is the ledger's word for the proposing side: in this demo a live model, a recorded answer replayed, or the scripted fooled cart. The twenty-at-once test proposes and approves in code, so its rows are counted apart as Test harness, though the ledger stores them as agent and issuer.";
+const WHO_NOTE_OPERATOR = " Rows the demo's twenty-at-once test proposed or approved in code are counted apart as Test harness, though the ledger stores them as agent and issuer.";
+
 /** Where a visitor with no session can still see a populated console. Only offered when the server has a sample. */
 const SAMPLE_LINK = `<p class="notice-more"><a href="/sample">See a sample run</a>: a past session's rows, read-only, with nothing to start.</p>`;
 
@@ -132,6 +141,13 @@ ${notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}<
       <select id="spend-mandate"></select>
     </figcaption>
     <div class="chart" id="chart-spend" role="img" aria-label="Spend against budget over time"></div>
+  </figure>
+  <figure class="card card-wide">
+    <figcaption>
+      <h2>Who did what</h2>
+      <p class="card-note">${escapeHtml(WHO_NOTE + (mode === "operator" ? WHO_NOTE_OPERATOR : WHO_NOTE_DEMO))}</p>
+    </figcaption>
+    <div class="chart" id="chart-actors" role="img" aria-label="Ledger rows by who wrote them and what they record"></div>
   </figure>
   <figure class="card">
     <figcaption>

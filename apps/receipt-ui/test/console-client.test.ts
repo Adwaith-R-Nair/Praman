@@ -44,7 +44,7 @@ const fetches = { count: 0 };
 
 interface Row { seq: string; traceId: string; [key: string]: unknown }
 
-function openConsole(hash: string, rows: Row[]) {
+function openConsole(hash: string, rows: Row[], actors: Record<string, unknown>[] = []) {
   const nodes = new Map<string, FakeNode>();
   const byId = (id: string) => {
     const found = nodes.get(id) ?? fakeNode(id);
@@ -54,11 +54,13 @@ function openConsole(hash: string, rows: Row[]) {
   const selected: string[] = [];
   let gridOptions: Record<string, unknown> = {};
   const visible: number[] = [];
+  const filterModels: unknown[] = [];
+  const charts: Record<string, unknown>[] = [];
   let quick = "";
   const displayed = () => rows.filter((r) => quick === "" || r.traceId === quick);
   const gridApi = {
     setGridOption(key: string, value: string) { if (key === "quickFilterText") quick = value; },
-    setFilterModel() {},
+    setFilterModel(model: unknown) { filterModels.push(model); },
     getDisplayedRowCount: () => displayed().length,
     forEachNode(fn: () => void) { rows.forEach(() => fn()); },
     getDisplayedRowAtIndex(i: number) {
@@ -75,6 +77,7 @@ function openConsole(hash: string, rows: Row[]) {
     spend: [],
     decisions: [],
     rails: [],
+    actors,
   };
   let settle: (v?: unknown) => void = () => {};
   const done = new Promise((resolve) => { settle = resolve; });
@@ -86,7 +89,7 @@ function openConsole(hash: string, rows: Row[]) {
   const window = {
     location: { hash },
     agGrid: { themeQuartz: { withParams: () => ({}) }, createGrid: (_el: unknown, options: Record<string, unknown>) => { gridOptions = options; return gridApi; } },
-    agCharts: { AgCharts: { create: () => ({}) } },
+    agCharts: { AgCharts: { create: (options: Record<string, unknown>) => { charts.push(options); return {}; } } },
     PramanChainVerify: chainLib,
   };
   const fetch = () => {
@@ -97,7 +100,7 @@ function openConsole(hash: string, rows: Row[]) {
   const source = readFileSync(new URL("../src/console/console.client.js", import.meta.url), "utf8");
   runInNewContext(source, { document, window, fetch, BigInt, Promise });
   setTimeout(settle, 20);
-  return done.then(() => ({ grid: byId("grid"), quick: byId("quick"), count: byId("count"), chainText: byId("chain-text"), chainBrowser: byId("chain-browser"), chainBrowserRun: byId("chain-browser-run"), chainBrowserText: byId("chain-browser-text"), gridOptions, selected, visible }));
+  return done.then(() => ({ grid: byId("grid"), quick: byId("quick"), count: byId("count"), chainText: byId("chain-text"), chainBrowser: byId("chain-browser"), chainBrowserRun: byId("chain-browser-run"), chainBrowserText: byId("chain-browser-text"), chartActors: byId("chart-actors"), gridOptions, selected, visible, filterModels, charts }));
 }
 
 const ROWS: Row[] = [
@@ -154,6 +157,71 @@ describe("the console with nothing in it yet", () => {
     expect(page.gridOptions["localeText"]).toEqual({ noRowsToShow: "No rows yet. Run a step of the demo and its rows appear here." });
     expect(page.chainText.textContent).toContain("There are no rows below yet.");
     expect(page.chainText.textContent).not.toContain("Of the 0 rows");
+  });
+});
+
+describe("the who-did-what chart", () => {
+  const bar = (who: string, whoPlain: string, eventType: string, eventPlain: string, did: string, actors: string[], rows: number) => ({ who, whoPlain, eventType, eventPlain, did, actors, rows });
+  const ACTORS = [
+    bar("agent", "Agent", "intent", "Agent proposed a purchase", "proposed a purchase", ["agent"], 4),
+    bar("praman", "Praman", "decision", "Policy engine decided", "decided", ["praman"], 25),
+    bar("person", "Person", "mandate_revoked", "Mandate revoked", "revoked a mandate", ["issuer"], 1),
+    bar("harness", "Test harness", "intent", "Agent proposed a purchase", "proposed a purchase", ["agent"], 21),
+  ];
+  interface Series { type: string; direction: string; xKey: string; yKey: string; itemStyler: (p: { datum: unknown }) => { fill: string }; tooltip: { renderer: (p: { datum: unknown }) => { heading: string; title: string; data: { label: string; value: string }[] } } }
+  const chartOf = (page: Awaited<ReturnType<typeof openConsole>>) => page.charts.find((c) => (c["container"] as FakeNode).id === "chart-actors");
+
+  it("draws one bar per actor and event type with the server's counts, and adds nothing up", async () => {
+    const page = await openConsole("", ROWS, ACTORS);
+    const chart = chartOf(page);
+    const data = chart?.["data"] as { label: string; rows: number }[];
+    expect(data.map((d) => [d.label, d.rows])).toEqual([
+      ["Agent: proposed a purchase", 4],
+      ["Praman: decided", 25],
+      ["Person: revoked a mandate", 1],
+      ["Test harness: proposed a purchase", 21],
+    ]);
+    const [series, ...more] = chart?.["series"] as Series[];
+    expect(more).toEqual([]);
+    expect(series).toMatchObject({ type: "bar", direction: "horizontal", xKey: "label", yKey: "rows" });
+    expect(chart?.["legend"]).toEqual({ enabled: false });
+    // The agent, Praman and the person each have a colour; the harness shares the one for everyone else.
+    const fills = data.map((datum) => series?.itemStyler({ datum }).fill);
+    expect(new Set(fills.slice(0, 3)).size).toBe(3);
+    expect(fills.slice(0, 3)).not.toContain(fills[3]);
+    // The tooltip says what the ledger stores, so "Test harness" can be checked against the row.
+    expect(series?.tooltip.renderer({ datum: data[3] })).toEqual({
+      heading: "Test harness",
+      title: "Agent proposed a purchase",
+      data: [{ label: "Ledger rows", value: "21" }, { label: "Stored actor", value: "agent" }, { label: "Event type", value: "intent" }],
+    });
+  });
+
+  it("filters the grid to a bar's rows, by who and by event, and brings the grid into view", async () => {
+    const page = await openConsole("", ROWS, ACTORS);
+    const chart = chartOf(page);
+    const data = chart?.["data"] as unknown[];
+    (chart?.["listeners"] as { seriesNodeClick: (e: { datum: unknown }) => void }).seriesNodeClick({ datum: data[3] });
+    expect(page.filterModels).toEqual([
+      { whoPlain: { filterType: "text", type: "equals", filter: "Test harness" }, eventPlain: { filterType: "text", type: "equals", filter: "Agent proposed a purchase" } },
+    ]);
+    expect(page.grid.scrolled).toBe(1);
+    // Both columns the bar filters on are in the grid, with the stored actor beside them.
+    const fields = (page.gridOptions["columnDefs"] as { field: string }[]).map((c) => c.field);
+    expect(fields).toEqual(expect.arrayContaining(["whoPlain", "eventPlain", "actor"]));
+  });
+
+  it("says there are no rows, in the page's own words, rather than drawing an empty chart", async () => {
+    const visitor = await openConsole("", []);
+    expect(chartOf(visitor)).toBeUndefined();
+    expect((visitor.chartActors["firstChild"] as FakeNode).textContent).toBe("No rows yet. Run a step of the demo and its rows appear here.");
+    mode = "sample";
+    const sample = await openConsole("", []);
+    mode = "operator";
+    const operator = await openConsole("", []);
+    mode = "visitor";
+    expect((sample.chartActors["firstChild"] as FakeNode).textContent).toBe("The sample's mandates have no rows on this server's ledger.");
+    expect((operator.chartActors["firstChild"] as FakeNode).textContent).toBe("No ledger rows yet.");
   });
 });
 

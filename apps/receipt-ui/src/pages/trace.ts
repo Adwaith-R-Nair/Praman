@@ -6,7 +6,7 @@ import { DEMO_MERCHANTS } from "../demo/config.js";
 import { decisionClass, decisionLabel } from "../decision-display.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
 import { layout } from "../layout.js";
-import { EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
+import { EVENT_TYPE_PLAIN, HARNESS_APPROVAL_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
 import { sampleMandateIds } from "../sample-config.js";
 import { toolCallsHtml, toolCallsOf } from "./tool-calls.js";
 
@@ -136,7 +136,7 @@ function revocationHtml(revocation: { readonly mandateId: string | null; readonl
 
 /** An entry's plain name. A step-up the test harness resolved is never called a human review. */
 function entryLabel(eventType: string, approvedBy: "person" | "test_harness" | null): string {
-  if (eventType === "step_up_resolved" && approvedBy === "test_harness") return "Test harness approved the step-up. No person reviewed it";
+  if (eventType === "step_up_resolved" && approvedBy === "test_harness") return HARNESS_APPROVAL_PLAIN;
   return EVENT_TYPE_PLAIN[eventType as EventType] ?? eventType;
 }
 
