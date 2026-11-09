@@ -218,22 +218,28 @@
     }
   }
 
+  // Each run has a number, and only the newest may write to the page, so a result never
+  // shows for a box that has since been ticked or cleared.
+  var runs = 0;
+
   function run() {
+    var mine = (runs += 1);
     var change = tamperBox.checked ? lib.tamperOneDigit(sent) : null;
     var rows = change ? change.rows : sent;
     runBtn.disabled = true;
     lib
       .verifyRows(rows)
       .then(function (outcome) {
-        show(outcome, rows, change);
+        if (mine === runs) show(outcome, rows, change);
       })
       .catch(function () {
+        if (mine !== runs) return;
         resultEl.textContent = "The check could not run in this browser.";
         resultEl.className = "bv-result bv-broken";
         noteEl.textContent = "";
       })
       .then(function () {
-        runBtn.disabled = false;
+        if (mine === runs) runBtn.disabled = false;
       });
   }
 
@@ -242,6 +248,8 @@
   // The server's own check starts clean, so it never sits beside marks from a changed copy.
   if (serverBtn) {
     serverBtn.addEventListener("click", function () {
+      runs += 1;
+      runBtn.disabled = false;
       tamperBox.checked = false;
       resultEl.textContent = "";
       resultEl.className = "bv-result";

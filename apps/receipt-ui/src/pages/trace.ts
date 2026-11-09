@@ -321,7 +321,7 @@ ${
     <p class="bv-lede">The button at the top asks this server to walk the whole ledger. This one asks nobody. Your browser rehashes the rows below itself, with WebCrypto, from the values already in this page.</p>
     <div class="bv-actions">
       <button type="button" id="bv-run">Verify in my browser</button>
-      <label class="bv-toggle" for="bv-tamper"><input type="checkbox" id="bv-tamper"> Change one digit in my copy first</label>
+      <label class="bv-toggle" for="bv-tamper"><input type="checkbox" id="bv-tamper" autocomplete="off"> Change one digit in my copy first</label>
     </div>
     <p class="bv-result" id="bv-result" role="status" aria-live="polite"></p>
     <p class="bv-note" id="bv-note"></p>
