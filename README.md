@@ -46,7 +46,7 @@ The corpus and the policy were written by the same person from the same specific
 
 ## Try it
 
-**Live demo: <https://praman-demo.onrender.com>**, hosted on Render with Postgres on Neon. PayPal sandbox only, no real money. It takes about five minutes: [`docs/DEMO_INSTRUCTIONS.md`](docs/DEMO_INSTRUCTIONS.md). The server signs a fixed mandate for each visitor with a demo key, so you sign nothing yourself.
+**Live demo: <https://praman-demo.onrender.com>**, hosted on Render with Postgres on Neon. PayPal sandbox only, no real money. It takes about five minutes: [`docs/DEMO_INSTRUCTIONS.md`](docs/DEMO_INSTRUCTIONS.md). The server signs a fixed mandate for each visitor with a demo key, so you sign nothing yourself. The first step you run, a poisoned listing refused, needs no PayPal login. When the host has a sample pinned, [`/sample`](https://praman-demo.onrender.com/sample) shows one past session's ledger rows read-only, with nothing to start; otherwise that page says there is none.
 
 Built by Adwaith R Nair for the PayPal AI Hackathon. Praman is an existing project: it began on Razorpay test mode, where the same mandate format, policy engine and ledger still run in rupees. [What's new since 1 Oct 2026](#whats-new-since-1-oct-2026) lists what was built for this event, and [History](#history) has the rest.
 
@@ -155,7 +155,7 @@ pnpm receipt-ui                             # front page, PayPal demo and trace 
 
 ### Run the PayPal demo locally
 
-The demo at `http://localhost:4100/demo` needs four more values in `.env`: `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` from a PayPal sandbox app, and its own mandate key pair, `DEMO_MANDATE_PRIVATE_KEY` and `DEMO_MANDATE_PUBLIC_KEY`. Make the pair with `mkdir -p private && pnpm --silent keygen > private/demo-keys.env`, so the private key isn't printed (`private/` is gitignored), then copy the two values into `.env` under the `DEMO_` names and delete the file's other lines. The demo won't run with the same key as `MANDATE_PRIVATE_KEY`. `pnpm receipt-ui` seeds the demo's shops itself. Open `http://localhost:4100/`, the front page, and press **Try the live demo**. Step 2, the poisoned listing, needs no login. Step 3 needs a US Personal sandbox buyer account to log in to PayPal. Without PayPal keys or `GEMINI_API_KEY`, the steps that need them say so and stay off.
+The demo at `http://localhost:4100/demo` needs four more values in `.env`: `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` from a PayPal sandbox app, and its own mandate key pair, `DEMO_MANDATE_PRIVATE_KEY` and `DEMO_MANDATE_PUBLIC_KEY`. Make the pair with `mkdir -p private && pnpm --silent keygen > private/demo-keys.env`, so the private key isn't printed (`private/` is gitignored), then copy the two values into `.env` under the `DEMO_` names and delete the file's other lines. The demo won't run with the same key as `MANDATE_PRIVATE_KEY`. `pnpm receipt-ui` seeds the demo's shops itself. Open `http://localhost:4100/`, the front page, and press **Try the live demo**. Step 2, the poisoned listing, needs no login. Step 3 needs a US Personal sandbox buyer account to log in to PayPal. A server started with `DEMO_HOUSE_BUYER_TOKEN` also offers **Use the demo's sandbox buyer** there, which charges the purchases under the approval threshold to one sandbox account the operator saved, with no login; it is off unless that secret is set ([D-85](docs/DECISIONS.md)). Without PayPal keys or `GEMINI_API_KEY`, the steps that need them say so and stay off.
 
 `pnpm screenshots` regenerates [`docs/screenshots/`](docs/screenshots/) from a real run of the demo, at desktop and phone width. It prints PayPal's link for step 3 and waits while you approve as the sandbox buyer. `pnpm screenshots --front-only` shoots the front page and the demo's start page, with no PayPal and no model.
 
@@ -163,7 +163,7 @@ To call every route without a browser, import [`docs/postman/praman.postman_coll
 
 ## The trace viewer
 
-`/r/:trace_id` renders one decision as a record a human can audit months later: the verification state and decision above the fold, the goal the agent was given and its own rationale, the merchant text it actually read with untrusted regions visibly marked, and the hash chain drawn as a continuous spine where each entry's `entry_hash` and the next entry's `prev_hash` sit adjacent so continuity is read directly rather than asserted. The verify button walks the chain live and stops at the first break.
+`/r/:trace_id` renders one decision as a record a human can audit months later: the verification state and decision above the fold, the goal the agent was given and its own rationale, the model's tool calls in order (name, input and the tool's reply, all as escaped text), the merchant text it actually read with untrusted regions visibly marked, and the hash chain drawn as a continuous spine where each entry's `entry_hash` and the next entry's `prev_hash` sit adjacent so continuity is read directly rather than asserted. The verify button walks the chain live on the server and stops at the first break. **Verify in my browser** does it without trusting that answer: a script recomputes each entry hash with WebCrypto from the values on the page, checks each link between neighbouring rows, and rehashes the payload of every row the public copy holds in full. Rows with withheld fields are reported as not rehashed. A checkbox changes one digit in the browser's copy and shows where the chain breaks, with no request sent. It checks the rows on the page, not the rest of the ledger, and the script comes from the same server ([D-89](docs/DECISIONS.md)).
 
 In the injection cases this is where a reviewer can *see* the attack sitting inside a product description, next to the model's own reasoning about it.
 
@@ -174,6 +174,8 @@ In the injection cases this is where a reviewer can *see* the attack sitting ins
 - **The grid** has one row per ledger entry: seq, time, event, mandate, merchant, amount and currency, decision, status, reason code with its meaning in words, rail, order and capture ids, and a link to the trace. Quick search covers every column, and each column has its own filter and sort.
 - **The hash check.** The server recomputes each row's payload hash, entry hash and link to the row before it with the ledger's own hash functions, and walks the chain from its first row with `verifyChain()`, the same walk as `pnpm verify-ledger`. Selecting a row shows the stored and recomputed hashes side by side.
 - **The charts** show spend against budget over time for each mandate (the line ends at the number `deriveState()` gives the policy engine), decisions by reason code, and orders by rail at their latest outcome. Selecting a bar filters the grid.
+- **The reader's own check.** "Recheck these rows in my browser" recomputes each row's entry hash in the browser, with the same script the trace page uses.
+- **The sample.** `/sample` shows one past session the operator pins with `SAMPLE_MANDATE_IDS`, in this same console, to anyone. It is a public copy: no budgets and no reason on a row that asked a person ([D-88](docs/DECISIONS.md)). Unset, the page says there is no sample and nothing links to it.
 - **What reaches the browser.** Ids, codes, amounts, hashes and fixed text. No ledger payload, transcript or merchant text, no token and no key. Every value goes into the page as text; the only cell renderer builds a link element. The page keeps the strict content security policy and adds only a style nonce that is new on every response, because both libraries build their styles in the browser ([D-63](docs/DECISIONS.md)). A visitor's console reads only the traces that name their session's own two mandates ([D-64](docs/DECISIONS.md)).
 
 ## Observability vs evidence
@@ -320,6 +322,7 @@ Three that changed the architecture:
 - [Mandate and ledger specification](docs/MANDATE_SPEC.md)
 - [Evaluation harness](docs/EVAL_CORPUS.md) · [Report](eval/report.md)
 - [MCP gateway](docs/MCP.md): any MCP agent shopping within a signed mandate
+- [Protocols](docs/PROTOCOLS.md): the mandate mapped onto AP2 and ACP, with the gaps. Praman implements neither
 - [Decision records](docs/DECISIONS.md) · [Engineering invariants](docs/INVARIANTS.md)
 - [Build log](docs/BUILD_LOG.md) · [Roadmap](docs/ROADMAP.md)
 
