@@ -66,9 +66,15 @@ for (const dir of AGENT_DIRS) {
  * script, may import the toolkit or the auditor or list either as a dependency, and
  * the hosted server and the MCP gateway may not name the auditor at all, which would
  * be how they started it. render.yaml is checked for the same reason.
+ *
+ * An import is matched on any spelling: the package name, or a relative path into
+ * the app's folder or into node_modules. A package the hosted server loads could
+ * otherwise reach the auditor by path without naming either package. The browser
+ * suite in e2e/ starts the real server, so it is scanned too.
  */
 const AUDITOR_DIR = "apps/paypal-auditor";
 const AUDITOR_ONLY = ["@paypal/agent-toolkit", "@praman/paypal-auditor"];
+const AUDITOR_ONLY_IMPORT = /agent-toolkit|paypal-auditor/;
 const MAY_NOT_NAME_AUDITOR = ["apps/receipt-ui", "apps/mcp-gateway"];
 
 const workspaceDirs = ["packages", "apps"].flatMap((parent) =>
@@ -78,12 +84,12 @@ const workspaceDirs = ["packages", "apps"].flatMap((parent) =>
 );
 const outsideAuditor = workspaceDirs.filter((dir) => dir !== AUDITOR_DIR);
 
-for (const dir of [...outsideAuditor, "scripts"]) {
+for (const dir of [...outsideAuditor, "scripts", "e2e"]) {
   for (const file of walk(join(ROOT, dir))) {
     const src = readFileSync(file, "utf8");
     for (const match of src.matchAll(IMPORT_RE)) {
       const specifier = match[1];
-      if (specifier !== undefined && AUDITOR_ONLY.some((name) => specifier.startsWith(name))) {
+      if (specifier !== undefined && AUDITOR_ONLY_IMPORT.test(specifier)) {
         violations.push(`${file.replace(ROOT, "")}: imports "${specifier}", which only ${AUDITOR_DIR} may`);
       }
     }
