@@ -40,6 +40,10 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await press("Send the fooled cart to Praman");
     await expect(injection.locator('.result[data-state="refused"]')).toContainText("Refused");
     await expect(injection.locator('.result[data-state="refused"] code.code')).toHaveText("CATEGORY_OUT_OF_SCOPE");
+    const noGate = injection.locator(".no-gate");
+    await expect(noGate).toContainText("Arithmetic, not a payment");
+    await expect(noGate.locator(".no-gate-total")).toHaveText("$109.00");
+    await expect(noGate).toContainText("Nothing was charged.");
     await expect(injection.locator(".recording figcaption")).toContainText("Recorded run, not live.");
     await expect(injection.locator(".recording figcaption")).toContainText("in US dollars");
     expect(await paypalSaw()).toMatchObject({ charges: 0, checkouts: 0 });

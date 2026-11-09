@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { formatMoney, minorFromJSON, REASON_CODES, type ReasonCode } from "@praman/shared";
+import { addMinor, formatMoney, minor, minorFromJSON, mulMinor, REASON_CODES, ZERO_MINOR, type Minor, type ReasonCode } from "@praman/shared";
 import type { AgentVisibleDecision } from "@praman/policy";
-import { CAFE, MARKET, MARKET_ITEM_NAMES, MARKET_PRICES, type BeatId, type PurchaseBeat } from "../demo/config.js";
+import { CAFE, FOOLED_CART, MARKET, MARKET_ITEM_NAMES, MARKET_PRICES, type BeatId, type PurchaseBeat } from "../demo/config.js";
 import { canAskAgain, refundable } from "../demo/story.js";
 import type { TraceView } from "../data.js";
 import type { BeatRecord, DemoSession } from "../demo/session.js";
@@ -197,11 +197,49 @@ function gate(record: BeatRecord, moneyLabel: string): string {
   </div>`;
 }
 
-function resultHtml(record: BeatRecord | undefined, moneyLabel = "PayPal", purchase: PurchaseBeat | null = null): string {
+/**
+ * What a cart comes to at the catalog's prices: unit price times quantity, summed, in
+ * minor units. Arithmetic for the page and nothing else. It asks no model, calls no
+ * executor, reads and writes no ledger, and its result never reaches a decision.
+ * Null when an item has no price or its quantity isn't a whole number: no total is
+ * better than a wrong one.
+ */
+export function catalogTotalMinor(lineItems: readonly { readonly sku: string; readonly qty: number }[], prices: Readonly<Record<string, bigint>>): Minor | null {
+  let total = ZERO_MINOR;
+  for (const item of lineItems) {
+    const unit = prices[item.sku];
+    if (unit === undefined || !Number.isSafeInteger(item.qty) || item.qty < 1) return null;
+    total = addMinor(total, mulMinor(minor(unit), item.qty));
+  }
+  return total;
+}
+
+/**
+ * Beside the refusal of the fooled cart: what the same cart comes to at the catalog's
+ * prices, which is what it would have cost with nothing deciding. A sum, labelled as
+ * one. Nothing is sent anywhere to make it, and nothing was charged.
+ */
+function noGateHtml(record: BeatRecord): string {
+  if (record.state !== "refused") return "";
+  const total = catalogTotalMinor(FOOLED_CART.line_items, MARKET_PRICES);
+  if (total === null) return "";
+  const parts = FOOLED_CART.line_items.map((i) => {
+    const line = catalogTotalMinor([i], MARKET_PRICES);
+    return line === null ? "" : formatMoney(line, "USD");
+  });
+  return `<aside class="no-gate">
+    <p class="no-gate-label">Arithmetic, not a payment</p>
+    <p class="no-gate-sum">Same cart, no gate: <span class="no-gate-total">${escapeHtml(formatMoney(total, "USD"))}</span></p>
+    <p class="no-gate-how">${escapeHtml(`${parts.join(" + ")}, the catalog's prices added up on this page. With no gate between the agent and the money, that is what this cart would have charged. Nothing was charged.`)}</p>
+  </aside>`;
+}
+
+function resultHtml(record: BeatRecord | undefined, moneyLabel = "PayPal", purchase: PurchaseBeat | null = null, aside = ""): string {
   if (record === undefined) return "";
   if (record.state === "no_proposal") return `<p class="note">${escapeHtml(record.message)}</p>`;
   return `<div class="result" data-state="${escapeHtml(record.state)}">
     ${gate(record, moneyLabel)}
+    ${aside}
     <p class="message">${escapeHtml(record.message)}</p>
     ${agentViewHtml(record.agentView)}
     ${traceLinks(record.traceId, purchase)}
@@ -427,6 +465,7 @@ export function renderDemoPage(session: DemoSession, recording: Recording, confi
   const first = b("first");
   const second = b("second");
   const large = b("large");
+  const fixture = b("fixture");
   const notice = session.notice;
 
   const revoked = b("revoke")?.state === "done";
@@ -464,7 +503,7 @@ ${step(
    <h3>A fooled model, simulated</h3>
    <p class="label-sim">Simulating a fooled model. No model is asked. This is the cart the model proposed in the recorded run below, sent straight to Praman.</p>
    ${b("fixture") === undefined ? action("/demo/step/fixture", "Send the fooled cart to Praman", "quiet") : ""}
-   ${resultHtml(b("fixture"), "Money")}
+   ${resultHtml(b("fixture"), "Money", null, fixture === undefined ? "" : noGateHtml(fixture))}
    <h3>A model that was fooled, recorded</h3>
    ${recordingHtml(recording)}`,
   b("fixture") !== undefined,

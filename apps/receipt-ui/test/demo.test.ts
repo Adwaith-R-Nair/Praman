@@ -7,7 +7,7 @@ import { prisma } from "@praman/db";
 import { buildBundleStandalone } from "@praman/dispute";
 import { deriveState } from "@praman/ledger";
 import { generateKeypair } from "@praman/mandate";
-import { FOOLED_CART, HARNESS_LIMITS } from "../src/demo/config.js";
+import { FOOLED_CART, HARNESS_LIMITS, MARKET_PRICES } from "../src/demo/config.js";
 import { routeFor, type DemoDeps } from "../src/demo/connect.js";
 import { createDemoHandler, releaseAllSessions, sweepExpiredSessions, COOKIE } from "../src/demo/routes.js";
 import { seedDemoCatalog } from "../src/demo/seed.js";
@@ -16,7 +16,7 @@ import { MemoryDailyUsage } from "../src/demo/limits.js";
 import { DemoActivity, scheduleSweeps } from "../src/sweeps.js";
 import { routeByRail } from "@praman/exec-core";
 import { SavedMethods, SessionStore } from "../src/demo/session.js";
-import { loadRecording, recordingHtml } from "../src/pages/demo.js";
+import { catalogTotalMinor, loadRecording, recordingHtml } from "../src/pages/demo.js";
 import { renderTracePage } from "../src/pages/trace.js";
 import { readFileSync } from "node:fs";
 import { CONTENT_SECURITY_POLICY } from "../src/csp.js";
@@ -312,6 +312,47 @@ describe("the fooled cart", () => {
     expect(page).toContain("Promo Card, a gift card");
     expect(page).toContain("$100.00");
     expect(page).toContain("A gift card is outside the categories");
+  });
+});
+
+describe("the same cart with no gate", () => {
+  it("adds up the catalog's prices in minor units, and gives no total for an item with no price", () => {
+    expect(catalogTotalMinor(FOOLED_CART.line_items, MARKET_PRICES)).toBe(10900n);
+    expect(catalogTotalMinor([{ sku: "SKU_INJ2_DOSA", qty: 2 }, { sku: "SKU_INJ2_COFFEE", qty: 1 }], MARKET_PRICES)).toBe(1500n);
+    expect(catalogTotalMinor([{ sku: "SKU_NOT_IN_THE_CATALOG", qty: 1 }], MARKET_PRICES)).toBeNull();
+    expect(catalogTotalMinor([{ sku: "SKU_INJ2_DOSA", qty: 1.5 }], MARKET_PRICES)).toBeNull();
+  });
+
+  it("is shown beside the refusal as arithmetic, and says nothing was charged", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    expect(await v.page()).not.toContain("Same cart, no gate");
+    await v.post("/demo/step/fixture");
+    const page = await v.page();
+    const panel = /<aside class="no-gate">[\s\S]*?<\/aside>/.exec(page)?.[0] ?? "";
+    expect(panel).toContain("Arithmetic, not a payment");
+    expect(panel).toContain("Same cart, no gate");
+    expect(panel).toContain("$109.00");
+    expect(panel).toContain("$6.00 + $3.00 + $100.00");
+    expect(panel).toContain("Nothing was charged.");
+    // It comes after Praman's refusal of the same cart, inside that result.
+    expect(page.indexOf("CATEGORY_OUT_OF_SCOPE")).toBeLessThan(page.indexOf('<aside class="no-gate">'));
+  });
+
+  it("asks no model, calls no executor and writes nothing to the ledger", async () => {
+    const v = visitor();
+    await v.post("/demo/start");
+    await v.post("/demo/step/fixture");
+    const rows = await prisma.ledgerEntry.count();
+    const page = await v.page();
+    expect(page).toContain("Same cart, no gate");
+    expect(await prisma.ledgerEntry.count()).toBe(rows);
+    expect(model.calls).toBe(0);
+    expect(paypal.charges).toHaveLength(0);
+    expect(paypal.checkouts).toHaveLength(0);
+    // The fixture's own trace is a decision and nothing else: no payment call, no outcome.
+    const trace = await ledgerFor(sessionOf(v).beats.get("fixture")?.traceId ?? null);
+    expect(trace.map((r) => r.eventType).filter((t) => t === "api_call" || t === "outcome")).toEqual([]);
   });
 });
 
