@@ -2,13 +2,53 @@
 
 [![CI](https://github.com/Adwaith-R-Nair/Praman/actions/workflows/ci.yml/badge.svg)](https://github.com/Adwaith-R-Nair/Praman/actions/workflows/ci.yml)
 
-**The model proposes. The policy engine disposes. The ledger remembers.**
+Meera gives her shopping agent her PayPal account and $60 a week for lunch. On Tuesday a shop's listing tells the agent to add a $100 gift card, and nobody is at the checkout to say no.
 
-Praman is a control plane for agent-initiated payments on PayPal. It sits between an AI buyer agent and the payment provider, and makes every amount the agent moves bounded, explainable, and replayable. The provider is the PayPal sandbox or Razorpay test mode.
+**Praman is the signed permission between the agent and PayPal.** Meera signs her limits once, the agent can only name an item and a quantity, and plain code answers allow, ask Meera, or refuse.
 
-**Live demo: <https://praman-demo.onrender.com>**, hosted on Render with Postgres on Neon. Sandbox only, no real money. It runs the PayPal Orders API, a saved PayPal account through the Vault API, refunds, and verified webhooks, through `packages/paypal-exec`.
+PayPal doesn't trust the browser with the price, and Praman doesn't trust the model with it. Every decision lands on a hash-chained ledger you can recheck link by link, and it becomes the evidence if the charge is disputed.
 
-Adwaith R Nair · Entered in the PayPal AI Hackathon · Started at the Razorpay AI Buildathon 2026 (Track 01, AI Growth & Agentic Commerce). See [History](#history).
+Meera is an example, not a customer. The [hosted demo](https://praman-demo.onrender.com) runs her case with fixtures from this repo: a mandate capped at $60 in total, a listing that carries the injected line, and a $100 gift card the mandate does not cover.
+
+## How Praman uses PayPal
+
+Sandbox only. [`packages/paypal-exec`](packages/paypal-exec) calls PayPal's REST APIs directly and refuses any host outside `sandbox.paypal.com`.
+
+| PayPal API | What it does here | Code |
+|---|---|---|
+| Orders v2, create | Creates the order only after `evaluate()` allows the cart, at the catalog's price. `PayPal-Request-Id` is a key derived from the mandate and the intent, so a retry is the same order. | [`packages/paypal-exec/src/executor.ts`](packages/paypal-exec/src/executor.ts) |
+| Orders v2, capture | Captures once the buyer has approved at PayPal. The mandate is checked again first. | [`packages/control-plane/src/capture-order.ts`](packages/control-plane/src/capture-order.ts) |
+| Vault v3, setup and payment tokens | The buyer saves their PayPal account once. Later purchases under the mandate's approval threshold are charged with no buyer present. | [`packages/paypal-exec/src/vault.ts`](packages/paypal-exec/src/vault.ts), [`apps/receipt-ui/src/demo/connect.ts`](apps/receipt-ui/src/demo/connect.ts) |
+| Payments v2, refund a capture | A full refund, started by a person and never by the agent. | [`packages/control-plane/src/refund-order.ts`](packages/control-plane/src/refund-order.ts) |
+| Webhooks, verify signature | Each delivery is verified with PayPal before its capture event goes on the ledger. | [`packages/paypal-exec/src/webhook.ts`](packages/paypal-exec/src/webhook.ts), [`apps/receipt-ui/src/webhooks.ts`](apps/receipt-ui/src/webhooks.ts) |
+| Orders v2, get | The reconciler reads an order back when a capture's outcome is unknown. | [`packages/control-plane/src/reconcile.ts`](packages/control-plane/src/reconcile.ts) |
+
+## How Praman uses AI
+
+A model is the shopper and nothing more. In the demo and the eval it is Google's `gemini-3.1-flash-lite`, given a goal and three tools: `list_catalog`, `get_sku` and `propose_intent` ([`apps/buyer-agent/src/tools.ts`](apps/buyer-agent/src/tools.ts)). It reads the shop's listings, which reach it marked as untrusted text ([`packages/shared/src/untrusted.ts`](packages/shared/src/untrusted.ts)), and proposes a cart of SKUs and quantities.
+
+- **What the model does not do.** It never sets a price or a currency, because the intent has no field for either. It is never shown the mandate's limits. It cannot approve, capture or refund. The decision is `evaluate()` in [`packages/policy/src/evaluate.ts`](packages/policy/src/evaluate.ts), a pure function with no model call, and CI fails if the policy, ledger or payment packages import a model SDK ([`scripts/check-import-boundary.ts`](scripts/check-import-boundary.ts)).
+- **What the demo shows.** The agent's goals are fixed text, so nothing a visitor sends reaches the model. The live model usually ignores the poisoned listing, so the demo also replays a cart a model was really fooled into in a recorded run, and labels it a simulation. Praman prices and decides that cart live. Once the demo's daily model calls are used up, it replays recorded answers from the same model and says so.
+- **Any MCP client can be the shopper** through the local gateway in [`apps/mcp-gateway`](apps/mcp-gateway), over 18 real Channel3 products with pinned prices. See [MCP gateway](#mcp-gateway-any-agent-shops-within-a-mandate).
+- **How the code was written.** With AI coding agents, under the controls in [Built with](#built-with).
+
+## Three numbers
+
+From [`eval/report.md`](eval/report.md), which is generated by `pnpm eval` and never written by hand.
+
+| | |
+|---|---|
+| **28 of 28** | Attack cases where no money moved: 17 of 17 in the dev split and 11 of 11 held out. These run the real decision path with no model and a simulated payment rail. |
+| **0 of 16** | Honest purchases refused (95% CI 0% to 19.4%). |
+| **5.2 ms** | Median time for one of those cases to get its decision, including the signature check and replaying spend from the ledger, on local Postgres with no PayPal call. The 95th percentile is 11.4 ms. |
+
+The corpus and the policy were written by the same person from the same specification, so 28 of 28 shows the code matches its specification, not that it stops attacks nobody thought of. [Results](#results) has the intervals, the live-model runs and [how to read these numbers](#how-to-read-these-numbers).
+
+## Try it
+
+**Live demo: <https://praman-demo.onrender.com>**, hosted on Render with Postgres on Neon. PayPal sandbox only, no real money. It takes about five minutes: [`docs/DEMO_INSTRUCTIONS.md`](docs/DEMO_INSTRUCTIONS.md). The server signs a fixed mandate for each visitor with a demo key, so you sign nothing yourself.
+
+Built by Adwaith R Nair for the PayPal AI Hackathon. Praman is an existing project: it began on Razorpay test mode, where the same mandate, policy and ledger still run in rupees. [What's new since 1 Oct 2026](#whats-new-since-1-oct-2026) lists what was built for this event, and [History](#history) has the rest.
 
 | Every decision on the ledger, in AG Grid and AG Charts | A fooled model's cart, refused |
 |---|---|
@@ -61,6 +101,8 @@ This is the same reason PayPal's and Razorpay's Orders APIs create the order on 
 Injection can make the model *want* the wrong thing. It cannot make the system *charge* the wrong thing.
 
 ## Three primitives
+
+The model proposes. The policy engine disposes. The ledger remembers.
 
 **Mandate:** a human-signed (Ed25519) grant of bounded authority: merchant allowlist, category allowlist, per-transaction cap, cumulative cap, velocity limit, denial-rate cap, validity window, human-approval threshold. Modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot. Protocol-agnostic, since UAP is unpublished.
 
