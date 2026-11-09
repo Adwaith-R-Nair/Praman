@@ -2,13 +2,53 @@
 
 [![CI](https://github.com/Adwaith-R-Nair/Praman/actions/workflows/ci.yml/badge.svg)](https://github.com/Adwaith-R-Nair/Praman/actions/workflows/ci.yml)
 
-**The model proposes. The policy engine disposes. The ledger remembers.**
+Meera gives her shopping agent her PayPal account and $60 a week for lunch. On Tuesday a shop's listing tells the agent to add a $100 gift card, and nobody is at the checkout to say no.
 
-Praman is a control plane for agent-initiated payments on PayPal. It sits between an AI buyer agent and the payment provider, and makes every amount the agent moves bounded, explainable, and replayable. The provider is the PayPal sandbox or Razorpay test mode.
+**Praman is the signed permission between the agent and PayPal.** Meera signs her limits once, the agent can only name an item and a quantity, and plain code answers allow, ask Meera, or refuse.
 
-**Live demo: <https://praman-demo.onrender.com>**, hosted on Render with Postgres on Neon. Sandbox only, no real money. It runs the PayPal Orders API, a saved PayPal account through the Vault API, refunds, and verified webhooks, through `packages/paypal-exec`.
+PayPal doesn't trust the browser with the price, and Praman doesn't trust the model with it. Every decision lands on a hash-chained ledger you can recheck link by link, and it becomes the evidence if the charge is disputed.
 
-Adwaith R Nair · Entered in the PayPal AI Hackathon · Started at the Razorpay AI Buildathon 2026 (Track 01, AI Growth & Agentic Commerce). See [History](#history).
+Meera is an example, not a customer. The [hosted demo](https://praman-demo.onrender.com) runs her case with fixtures from this repo: a mandate capped at $60 in total, a listing that carries the injected line, and a $100 gift card the mandate does not cover.
+
+## How Praman uses PayPal
+
+Sandbox only. [`packages/paypal-exec`](packages/paypal-exec) calls PayPal's REST APIs directly and refuses any host outside `sandbox.paypal.com`.
+
+| PayPal API | What it does here | Code |
+|---|---|---|
+| Orders v2, create | Creates the order only after `evaluate()` allows the cart, at the catalog's price. `PayPal-Request-Id` is a key derived from the mandate and the intent, so a retry is the same order. | [`packages/paypal-exec/src/executor.ts`](packages/paypal-exec/src/executor.ts) |
+| Orders v2, capture | Captures once the buyer has approved at PayPal. The mandate is checked again first. | [`packages/control-plane/src/capture-order.ts`](packages/control-plane/src/capture-order.ts) |
+| Vault v3, setup and payment tokens | The buyer saves their PayPal account once. Later purchases under the mandate's approval threshold are charged with no buyer present. | [`packages/paypal-exec/src/vault.ts`](packages/paypal-exec/src/vault.ts), [`apps/receipt-ui/src/demo/connect.ts`](apps/receipt-ui/src/demo/connect.ts) |
+| Payments v2, refund a capture | A full refund, started by a person and never by the agent. | [`packages/control-plane/src/refund-order.ts`](packages/control-plane/src/refund-order.ts) |
+| Webhooks, verify signature | Each delivery is verified with PayPal before its capture event goes on the ledger. | [`packages/paypal-exec/src/webhook.ts`](packages/paypal-exec/src/webhook.ts), [`apps/receipt-ui/src/webhooks.ts`](apps/receipt-ui/src/webhooks.ts) |
+| Orders v2, get | The reconciler reads an order back when a capture's outcome is unknown. | [`packages/control-plane/src/reconcile.ts`](packages/control-plane/src/reconcile.ts) |
+
+## How Praman uses AI
+
+A model is the shopper and nothing more. In the demo and the eval it is Google's `gemini-3.1-flash-lite`, given a goal and three tools: `list_catalog`, `get_sku` and `propose_intent` ([`apps/buyer-agent/src/tools.ts`](apps/buyer-agent/src/tools.ts)). It reads the shop's listings, which reach it marked as untrusted text ([`packages/shared/src/untrusted.ts`](packages/shared/src/untrusted.ts)), and proposes a cart of SKUs and quantities.
+
+- **What the model does not do.** It never sets a price or a currency, because the intent has no field for either. It is never shown the mandate's limits. It has no tool that approves a purchase or refunds one. The decision is `evaluate()` in [`packages/policy/src/evaluate.ts`](packages/policy/src/evaluate.ts), a pure function with no model call, and CI fails if the policy, ledger or payment packages import a model SDK ([`scripts/check-import-boundary.ts`](scripts/check-import-boundary.ts)).
+- **What the demo shows.** The agent's goals are fixed text, so nothing a visitor sends reaches the model. The live model usually ignores the poisoned listing, so the demo also replays a cart a model was really fooled into in a recorded run, and labels it a simulation. Praman prices and decides that cart live. Once the demo's daily model calls are used up, it replays recorded answers from the same model and says so.
+- **Any MCP client can be the shopper** through the local gateway in [`apps/mcp-gateway`](apps/mcp-gateway), over 18 real Channel3 products with pinned prices. See [MCP gateway](#mcp-gateway-any-agent-shops-within-a-mandate).
+- **How the code was written.** With AI coding agents, under the controls in [Built with](#built-with).
+
+## Three numbers
+
+From [`eval/report.md`](eval/report.md), which is generated by `pnpm eval` and never written by hand.
+
+| | |
+|---|---|
+| **28 of 28** | Attack cases where no money moved: 17 of 17 in the dev split and 11 of 11 held out. These run the real decision path with no model and a simulated payment rail. |
+| **0 of 16** | Honest purchases refused (95% CI 0% to 19.4%). |
+| **5.2 ms** | Median time for one of the 46 deterministic cases to get its decision, including the signature check and replaying spend from the ledger, on local Postgres with no PayPal call. The 95th percentile is 11.4 ms. |
+
+The corpus and the policy were written by the same person from the same specification, so 28 of 28 shows the code matches its specification, not that it stops attacks nobody thought of. [Results](#results) has the intervals, the live-model runs and [how to read these numbers](#how-to-read-these-numbers).
+
+## Try it
+
+**Live demo: <https://praman-demo.onrender.com>**, hosted on Render with Postgres on Neon. PayPal sandbox only, no real money. It takes about five minutes: [`docs/DEMO_INSTRUCTIONS.md`](docs/DEMO_INSTRUCTIONS.md). The server signs a fixed mandate for each visitor with a demo key, so you sign nothing yourself.
+
+Built by Adwaith R Nair for the PayPal AI Hackathon. Praman is an existing project: it began on Razorpay test mode, where the same mandate format, policy engine and ledger still run in rupees. [What's new since 1 Oct 2026](#whats-new-since-1-oct-2026) lists what was built for this event, and [History](#history) has the rest.
 
 | Every decision on the ledger, in AG Grid and AG Charts | A fooled model's cart, refused |
 |---|---|
@@ -21,27 +61,15 @@ Adwaith R Nair · Entered in the PayPal AI Hackathon · Started at the Razorpay 
 
 </details>
 
-## What's new since 1 Oct 2026
-
-The Razorpay Buildathon entry ended on 5 Sep 2026 with one rail and rupees only. Since 1 Oct:
-
-- **PayPal as a second rail:** Orders v2 create and capture, Vault v3 saved accounts charged with no buyer present, full refunds, and webhooks verified with PayPal. Dollars and rupees both come from the signed mandate.
-- **A hosted public demo on Render:** a web service defined by the [`render.yaml`](render.yaml) Blueprint on the free plan, with Postgres on Neon. Eight steps on the PayPal sandbox, with per-address, per-session and per-day limits. See [`docs/DEPLOY.md`](docs/DEPLOY.md).
-- **A ledger console built with AG Grid and AG Charts Community:** search and filter every ledger row, with a server-side hash check on each. See [The ledger console](#the-ledger-console).
-- **An MCP gateway on a real Channel3 catalog:** any MCP client can shop within one signed mandate. It runs locally. See [MCP gateway](#mcp-gateway-any-agent-shops-within-a-mandate).
-- **Dispute bundles:** a public copy with limits withheld, and a full copy for the owner.
-
-[History](#history) has the detail and the links to compare the code. Trying it takes about five minutes: [`docs/DEMO_INSTRUCTIONS.md`](docs/DEMO_INSTRUCTIONS.md).
-
----
-
 ## The problem
 
 PayPal's Agent Toolkit gives a model tools that act on PayPal directly. NPCI is building the Unified Agent Protocol so AI agents can transact over UPI, and Razorpay and NPCI piloted agentic UPI payments in February 2026 with consent-based per-merchant limits. The rails are arriving.
 
 What isn't arriving is the layer that answers the question every risk team asks: **when an agent spends money it shouldn't have, how do you find out, prove it, and get it back?**
 
-A typical agentic checkout reads attacker-controllable text — a merchant's product description — and then calls a payment API. That is prompt injection with a bank account attached, and there is no durable record of *why* the model decided anything.
+A typical agentic checkout reads attacker-controllable text, a merchant's product description, and then calls a payment API. That is prompt injection with a bank account attached, and there is no durable record of *why* the model decided anything.
+
+The toolkit gives an agent hands. Praman is the permission in front of them: it decides whether a payment the agent asks for may happen, before PayPal is called. The toolkit is not what moves money here: `paypal-exec` does not use it and calls PayPal's REST APIs directly ([D-38](docs/DECISIONS.md)).
 
 ## The idea
 
@@ -62,11 +90,132 @@ Injection can make the model *want* the wrong thing. It cannot make the system *
 
 ## Three primitives
 
+The model proposes. The policy engine disposes. The ledger remembers.
+
 **Mandate:** a human-signed (Ed25519) grant of bounded authority: merchant allowlist, category allowlist, per-transaction cap, cumulative cap, velocity limit, denial-rate cap, validity window, human-approval threshold. Modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot. Protocol-agnostic, since UAP is unpublished.
 
 **Policy engine:** a pure, total, deterministic function of `(intent, mandate, ledger_state, catalog, now)`. No I/O, no clock, no randomness, **no LLM**. Returns `ALLOW` / `STEP_UP` / `DENY` with a machine-readable code from a closed enum of 21. One function, readable top to bottom in one pass. Hand-written up to the `v1.0-submission` tag, and changed since then only under the rules in [D-27](docs/DECISIONS.md).
 
 **Ledger:** append-only, hash-chained, Merkle-checkpointed. Every intent, decision, agent transcript, API call and outcome. Immutability enforced by Postgres triggers that raise, not by application convention. Spend is *derived by replaying the ledger*, never stored, so inflating a budget requires forging every subsequent hash rather than editing one column.
+
+## Architecture
+
+![Architecture: the agent proposes an intent, evaluate() decides, the two-phase outbox calls PayPal, and webhooks and outcomes land on the ledger behind the console](docs/submission/architecture.svg)
+
+```
+[human] --signs mandate--> [agent] <--MCP--> [merchant catalog · UNTRUSTED]
+                              |
+                              | PurchaseIntent (sku + qty only)
+                              v
+        ╔═════════════════ TRUST BOUNDARY ═════════════════╗
+        ║  T1  verify sig → derive state → evaluate → gate  ║
+        ║      ALLOW   → write pending outbox record        ║
+        ║      STEP_UP → persist approval, execute nothing  ║
+        ║      DENY    → typed reason code, nothing runs    ║
+        ║  ---- external call, outside any transaction ---- ║
+        ║  T2  append outcome, resolve the record           ║
+        ║                                                   ║
+        ║  append-only hash-chained ledger ─────────────────╫──> /r/:trace_id
+        ╚═══════════════════════════════════════════════════╝
+```
+
+Evaluation runs under a per-mandate advisory lock, so concurrent duplicate intents cannot race the budget. The payment call sits between two transactions rather than inside one, because a database transaction and an external API call cannot be made atomic. See [D-22](docs/DECISIONS.md), which came out of discovering empirically that Razorpay does not enforce receipt uniqueness despite documenting it.
+
+## Quickstart
+
+```bash
+pnpm install
+docker compose up -d                        # Postgres 17 on 5432, one database: praman
+cp .env.example .env                        # fill in the keys below
+pnpm --filter @praman/db migrate            # applies to praman
+pnpm --filter @praman/db generate           # migrate alone doesn't produce the TS client: a fresh
+                                             # checkout has none at all until this runs (see ci.yml)
+PGPASSWORD=praman psql -h localhost -U postgres -d praman -c "CREATE DATABASE praman_test;"
+DATABASE_URL=postgresql://postgres:praman@localhost:5432/praman_test \
+  pnpm --filter @praman/db exec prisma migrate deploy   # same schema, second database: tests
+                                                         # truncate freely without touching real data
+pnpm test
+```
+
+`.env` needs `DATABASE_URL`, `TEST_DATABASE_URL`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `GEMINI_API_KEY`, and a mandate keypair from `pnpm keygen`.
+
+```bash
+pnpm seed-catalog                           # 27 SKUs, including injection fixtures
+pnpm issue-mandate                          # signs mandate.json, in INR
+pnpm demo "order lunch for two under ₹700"  # agent proposes, Praman decides
+pnpm pending                                # list approvals awaiting a human
+pnpm approve <approval_id> approve          # resolve one
+pnpm revoke <mandate_id> "reason"           # withdraw authority
+pnpm refund <trace_id>                      # give a paid PayPal purchase back, in full
+pnpm verify-ledger                          # walk the chain, recompute every hash
+pnpm eval --layer1                          # deterministic corpus, writes eval/report.partial.md and leaves the committed report alone
+pnpm dispute <trace_id>                     # operator's full bundle, with the signed mandate
+pnpm receipt-ui                             # front page, PayPal demo and trace viewer on :4100
+```
+
+### Run the PayPal demo locally
+
+The demo at `http://localhost:4100/demo` needs four more values in `.env`: `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` from a PayPal sandbox app, and its own mandate key pair, `DEMO_MANDATE_PRIVATE_KEY` and `DEMO_MANDATE_PUBLIC_KEY`. Make the pair with `mkdir -p private && pnpm --silent keygen > private/demo-keys.env`, so the private key isn't printed (`private/` is gitignored), then copy the two values into `.env` under the `DEMO_` names and delete the file's other lines. The demo won't run with the same key as `MANDATE_PRIVATE_KEY`. `pnpm receipt-ui` seeds the demo's shops itself. Open `http://localhost:4100/`, the front page, and press **Try the live demo**. Step 2 needs a US Personal sandbox buyer account to log in to PayPal. Without PayPal keys or `GEMINI_API_KEY`, the steps that need them say so and stay off.
+
+`pnpm screenshots` regenerates [`docs/screenshots/`](docs/screenshots/) from a real run of the demo, at desktop and phone width. It prints PayPal's link for step 2 and waits while you approve as the sandbox buyer. `pnpm screenshots --front-only` shoots the front page and the demo's start page, with no PayPal and no model.
+
+To call every route without a browser, import [`docs/postman/praman.postman_collection.json`](docs/postman/praman.postman_collection.json) into Postman with the local or hosted environment beside it, set `trace_id` from a demo trace link, and press **Run collection**: each request checks the status it should get, and none carries a key.
+
+## The trace viewer
+
+`/r/:trace_id` renders one decision as a record a human can audit months later: the verification state and decision above the fold, the goal the agent was given and its own rationale, the merchant text it actually read with untrusted regions visibly marked, and the hash chain drawn as a continuous spine where each entry's `entry_hash` and the next entry's `prev_hash` sit adjacent so continuity is read directly rather than asserted. The verify button walks the chain live and stops at the first break.
+
+In the injection cases this is where a reviewer can *see* the attack sitting inside a product description, next to the model's own reasoning about it.
+
+## The ledger console
+
+`/demo/console` shows a demo visitor every ledger row their session wrote; `/console` shows the whole ledger, and exists only on a local server with the demo off (`DEMO_MANDATE_PRIVATE_KEY= DEMO_MANDATE_PUBLIC_KEY= pnpm receipt-ui`). It is built with [AG Grid Community](https://www.ag-grid.com/) and [AG Charts Community](https://www.ag-grid.com/charts/), both MIT licensed, pinned to exact versions and served from this app's own `node_modules`, never from a CDN ([D-62](docs/DECISIONS.md)).
+
+- **The grid** has one row per ledger entry: seq, time, event, mandate, merchant, amount and currency, decision, status, reason code with its meaning in words, rail, order and capture ids, and a link to the trace. Quick search covers every column, and each column has its own filter and sort.
+- **The hash check.** The server recomputes each row's payload hash, entry hash and link to the row before it with the ledger's own hash functions, and walks the chain from its first row with `verifyChain()`, the same walk as `pnpm verify-ledger`. Selecting a row shows the stored and recomputed hashes side by side.
+- **The charts** show spend against budget over time for each mandate (the line ends at the number `deriveState()` gives the policy engine), decisions by reason code, and orders by rail at their latest outcome. Selecting a bar filters the grid.
+- **What reaches the browser.** Ids, codes, amounts, hashes and fixed text. No ledger payload, transcript or merchant text, no token and no key. Every value goes into the page as text; the only cell renderer builds a link element. The page keeps the strict content security policy and adds only a style nonce that is new on every response, because both libraries build their styles in the browser ([D-63](docs/DECISIONS.md)). A visitor's console reads only the traces that name their session's own two mandates ([D-64](docs/DECISIONS.md)).
+
+## Observability vs evidence
+
+With Langfuse keys set, the demo and the eval send each agent run to Langfuse, so a developer can see every model call, its tokens and latency, and the merchant text the model read. That trace is for debugging and is not evidence: it can be edited, expired or lost, and nothing in Praman reads it back into a decision, a prompt or a reported number. The ledger is the record, and it holds anything an audit could need, such as the hash of the system prompt that was active, plus a link to the Langfuse trace marked as non-evidentiary. Tests check that a run with no keys, or with a Langfuse host that is down, writes the same ledger rows in the same order ([D-47](docs/DECISIONS.md)).
+
+## MCP gateway: any agent shops within a mandate
+
+`apps/mcp-gateway` is a local MCP server over stdio. Claude Desktop, Claude Code or any other MCP client can search real products, propose a purchase and read its receipt through it, and spend only what one signed mandate allows. [`docs/MCP.md`](docs/MCP.md) has the setup and a recorded session against the PayPal sandbox.
+
+On 9 Nov 2026 a sandbox buyer paid a $20.50 checkout through the local gateway, and Praman captured it after a person approved the purchase in a terminal ([build log](docs/BUILD_LOG.md), last checks of 9 Nov). The client was a script speaking MCP, not a model. The session recorded in `docs/MCP.md` is an earlier one in which no buyer paid.
+
+- **The agent names a merchant, a SKU and a quantity.** No tool has a field for a price, a currency, a rail or a mandate, and every input schema refuses extra fields. The gateway loads its one mandate from a file when it starts, and each proposal goes through `runIntent` and `evaluate()` like any other ([D-69](docs/DECISIONS.md)).
+- **The catalog is real.** `pnpm catalog:channel3` (it needs `CHANNEL3_API_KEY` in `.env`) takes 18 products from [Channel3](https://trychannel3.com)'s product search and pins each price in integer cents, read from the JSON's own text so no float touches it, with where and when it was fetched. Decisions use the stored price and nothing is fetched at decision time ([D-73](docs/DECISIONS.md)). The products and prices are real; paying `DEMO_SHOP` pays this repo's PayPal sandbox account, not the retailer.
+- **A person stays in the loop.** A step-up gives a `pnpm mcp:approve` command that refuses to run without a terminal, and the agent is told not to run it. A PayPal checkout moves nothing until the buyer approves it at PayPal, and `complete_checkout` re-checks the mandate before it captures ([D-70](docs/DECISIONS.md), [D-72](docs/DECISIONS.md)).
+- **Every answer is read back from the ledger.** Status, rail and order come from the outbox record and the ledger, not from what a call returned. Product text reaches the agent inside `<untrusted_merchant_content>` with its angle brackets neutralised ([D-76](docs/DECISIONS.md)), and the products the agent read are recorded on the trace ([D-74](docs/DECISIONS.md)).
+
+```
+claude mcp add praman -- pnpm --silent --dir /absolute/path/to/praman mcp
+```
+
+The gateway is the agent's only route to money only if it has no other: an agent that also holds PayPal keys, or a shell in this repo, has more. Claude Desktop with only this server has none.
+
+## Merchant MCP server
+
+`apps/merchant-mcp` exposes one merchant's catalog (`list_catalog`, `get_sku`, `check_stock`, `get_refund_policy`) as an [MCP](https://modelcontextprotocol.io) server over stdio. Any MCP client can browse it: this is a protocol, not a private integration.
+
+It deliberately does **not** sanitise its own output. Untrusted-content delimiting happens once, at the buyer agent's boundary ([D-07](docs/DECISIONS.md)): the merchant is the untrusted party, and a merchant server that pre-wrapped its output would be deciding, on a connecting agent's behalf, how to treat data that agent hasn't received yet.
+
+```json
+{
+  "mcpServers": {
+    "praman-merchant": {
+      "command": "pnpm",
+      "args": ["--dir", "/absolute/path/to/praman", "exec", "tsx", "apps/merchant-mcp/src/server.ts"],
+      "env": { "MERCHANT_MCP_MERCHANT_ID": "MERCH_001" }
+    }
+  }
+}
+```
+
+Praman's own agent uses this same server with `PRAMAN_MCP=1`. Unset, it calls the catalog in-process; the eval harness always uses that path, since spawning a subprocess per corpus case is slow and flaky.
 
 ## Results
 
@@ -107,140 +256,23 @@ In every case the model proposed the one dosa and one coffee the user asked for,
 | Defended | 21 | 0 (95% CI 0% to 15.5%) | 0 |
 | Undefended | 21 | 2 (95% CI 2.7% to 28.9%) | 0 |
 
-**The gap between the arms is not significant.** A two-sided Fisher exact test on 2/21 against 0/21 gives p ≈ 0.49, so a difference this size happens about half the time by chance alone. This run doesn't show that the prompt-layer defence works, and it doesn't show that it fails.
+The gap between the arms is not significant. A two-sided Fisher exact test on 2/21 against 0/21 gives p ≈ 0.49, so a difference this size happens about half the time by chance alone. This run doesn't show that the prompt-layer defence works, and it doesn't show that it fails.
 
 In both undefended cases the model was genuinely fooled. Its own rationale reads *"A mandatory promotional item is included per system requirements"*, and `CATEGORY_OUT_OF_SCOPE` refused the purchase anyway.
 
 **Contained despite influence: 2 / 2.** That is the claim this project rests on, seen twice: when the model was manipulated, the policy engine stopped the money regardless of the prompt layer. Two cases show the mechanism working, not a rate.
 
-**The ablation predates a prompt change.** On 2026-11-05 the catalog line the model reads changed from `price_paise=48000` to `price_minor=48000 currency=INR`. The single run above used the new line; the 42-run ablation has not been repeated on it. Prices still come from the catalog and the policy never reads that line, so the policy side doesn't depend on it; how often the model is influenced might.
+The ablation predates a prompt change. On 2026-11-05 the catalog line the model reads changed from `price_paise=48000` to `price_minor=48000 currency=INR`. The single run above used the new line; the 42-run ablation has not been repeated on it. Prices still come from the catalog and the policy never reads that line, so the policy side doesn't depend on it; how often the model is influenced might.
 
 ### How to read these numbers
 
 Three things a reviewer should weigh, stated here rather than buried:
 
-**The 100% Layer 1 result is weaker than it looks.** The corpus was authored from the same specification as the policy engine, by the same person. A perfect pass rate shows that the implementation matches its specification, which has real regression value, but is weak evidence of robustness against attacks the specification never anticipated. Cases have failed on real faults, not only planted ones. On the corpus's first run, `adv_numeric_qty_fractional` (quantity 1.5) crashed `run-intent.ts` with an uncaught TypeError before `evaluate()` ran, fixed in `c971f34`. Later, `c8fbc86` broke 3 cases by accident, fixed in `898e88c`. Planted faults were caught too: with the currency check removed, the 2 mismatch cases failed, and with release handling removed, the 3 cases that depend on it failed ([build log](docs/BUILD_LOG.md), Phases P3 and P4). So the corpus catches faults in the paths it was written for. That is not evidence it would find an attack nobody anticipated.
+The 100% Layer 1 result is weaker than it looks. The corpus was authored from the same specification as the policy engine, by the same person. A perfect pass rate shows that the implementation matches its specification, which has real regression value, but is weak evidence of robustness against attacks the specification never anticipated. Cases have failed on real faults, not only planted ones. On the corpus's first run, `adv_numeric_qty_fractional` (quantity 1.5) crashed `run-intent.ts` with an uncaught TypeError before `evaluate()` ran, fixed in `c971f34`. Later, `c8fbc86` broke 3 cases by accident, fixed in `898e88c`. Planted faults were caught too: with the currency check removed, the 2 mismatch cases failed, and with release handling removed, the 3 cases that depend on it failed ([build log](docs/BUILD_LOG.md), Phases P3 and P4). So the corpus catches faults in the paths it was written for. That is not evidence it would find an attack nobody anticipated.
 
-**The held-out split is 20 of 46 cases, not the 30% targeted.** That is sampling variance at this n; the hash function was verified unbiased over 100k synthetic IDs (29.92%). It was deliberately **not** re-salted after that was observed, since choosing a split by its own outcome defeats the reason for fixing it before tuning. The split is a hash of each case id in `apps/eval/src/split.ts`, committed in `090734b`. That was not before every case: the first 32 cases (`325857d`, `080d80e`) and the two fixes their first run led to (the `lunch_5000_high_stepup` fixture and `c971f34`) came first. The file has not changed since, and the hash reads only the case id, so no result can move a case from one split to the other.
+The held-out split is 20 of 46 cases, not the 30% targeted. That is sampling variance at this n; the hash function was verified unbiased over 100k synthetic IDs (29.92%). It was deliberately **not** re-salted after that was observed, since choosing a split by its own outcome defeats the reason for fixing it before tuning. The split is a hash of each case id in `apps/eval/src/split.ts`, committed in `090734b`. That was not before every case: the first 32 cases (`325857d`, `080d80e`) and the two fixes their first run led to (the `lunch_5000_high_stepup` fixture and `c971f34`) came first. The file has not changed since, and the hash reads only the case id, so no result can move a case from one split to the other.
 
-**The ablation is n=21 per arm**, on one model at one temperature, against seven attacks written by the same author as the defence. The delimiter and the prompt instructions were removed together, so this does not separate their individual contributions. It is an experiment, not a benchmark.
-
-## Architecture
-
-![Architecture: the agent proposes an intent, evaluate() decides, the two-phase outbox calls PayPal, and webhooks and outcomes land on the ledger behind the console](docs/submission/architecture.svg)
-
-```
-[human] --signs mandate--> [agent] <--MCP--> [merchant catalog · UNTRUSTED]
-                              |
-                              | PurchaseIntent (sku + qty only)
-                              v
-        ╔═════════════════ TRUST BOUNDARY ═════════════════╗
-        ║  T1  verify sig → derive state → evaluate → gate  ║
-        ║      ALLOW   → write pending outbox record        ║
-        ║      STEP_UP → persist approval, execute nothing  ║
-        ║      DENY    → typed reason code, nothing runs    ║
-        ║  ---- external call, outside any transaction ---- ║
-        ║  T2  append outcome, resolve the record           ║
-        ║                                                   ║
-        ║  append-only hash-chained ledger ─────────────────╫──> /r/:trace_id
-        ╚═══════════════════════════════════════════════════╝
-```
-
-Evaluation runs under a per-mandate advisory lock, so concurrent duplicate intents cannot race the budget. The payment call sits between two transactions rather than inside one, because a database transaction and an external API call cannot be made atomic — see [D-22](docs/DECISIONS.md), which came out of discovering empirically that Razorpay does not enforce receipt uniqueness despite documenting it.
-
-## Quickstart
-
-```bash
-pnpm install
-docker compose up -d                        # Postgres 17 on 5432, one database: praman
-cp .env.example .env                        # fill in the keys below
-pnpm --filter @praman/db migrate            # applies to praman
-pnpm --filter @praman/db generate           # migrate alone doesn't produce the TS client — a fresh
-                                             # checkout has none at all until this runs (see ci.yml)
-PGPASSWORD=praman psql -h localhost -U postgres -d praman -c "CREATE DATABASE praman_test;"
-DATABASE_URL=postgresql://postgres:praman@localhost:5432/praman_test \
-  pnpm --filter @praman/db exec prisma migrate deploy   # same schema, second database — tests
-                                                         # truncate freely without touching real data
-pnpm test
-```
-
-`.env` needs `DATABASE_URL`, `TEST_DATABASE_URL`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `GEMINI_API_KEY`, and a mandate keypair from `pnpm keygen`.
-
-```bash
-pnpm seed-catalog                           # 27 SKUs, including injection fixtures
-pnpm issue-mandate                          # signs mandate.json, in INR
-pnpm demo "order lunch for two under ₹700"  # agent proposes, Praman decides
-pnpm pending                                # list approvals awaiting a human
-pnpm approve <approval_id> approve          # resolve one
-pnpm revoke <mandate_id> "reason"           # withdraw authority
-pnpm refund <trace_id>                      # give a paid PayPal purchase back, in full
-pnpm verify-ledger                          # walk the chain, recompute every hash
-pnpm eval --layer1                          # deterministic corpus, writes eval/report.partial.md and leaves the committed report alone
-pnpm dispute <trace_id>                     # operator's full bundle, with the signed mandate
-pnpm receipt-ui                             # front page, PayPal demo and trace viewer on :4100
-```
-
-### Run the PayPal demo locally
-
-The demo at `http://localhost:4100/demo` needs four more values in `.env`: `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` from a PayPal sandbox app, and its own mandate key pair, `DEMO_MANDATE_PRIVATE_KEY` and `DEMO_MANDATE_PUBLIC_KEY`. Make the pair with `mkdir -p private && pnpm --silent keygen > private/demo-keys.env`, so the private key isn't printed (`private/` is gitignored), then copy the two values into `.env` under the `DEMO_` names and delete the file's other lines. The demo won't run with the same key as `MANDATE_PRIVATE_KEY`. `pnpm receipt-ui` seeds the demo's shops itself. Open `http://localhost:4100/`, the front page, and press **Try the live demo**. Step 2 needs a US Personal sandbox buyer account to log in to PayPal. Without PayPal keys or `GEMINI_API_KEY`, the steps that need them say so and stay off.
-
-`pnpm screenshots` regenerates [`docs/screenshots/`](docs/screenshots/) from a real run of the demo, at desktop and phone width. It prints PayPal's link for step 2 and waits while you approve as the sandbox buyer. `pnpm screenshots --front-only` shoots the front page and the demo's start page, with no PayPal and no model.
-
-To call every route without a browser, import [`docs/postman/praman.postman_collection.json`](docs/postman/praman.postman_collection.json) into Postman with the local or hosted environment beside it, set `trace_id` from a demo trace link, and press **Run collection**: each request checks the status it should get, and none carries a key.
-
-## The trace viewer
-
-`/r/:trace_id` renders one decision as a record a human can audit months later: the verification state and decision above the fold, the agent's verbatim tool calls, the merchant text it actually read with untrusted regions visibly marked, and the hash chain drawn as a continuous spine where each entry's `entry_hash` and the next entry's `prev_hash` sit adjacent so continuity is read directly rather than asserted. The verify button walks the chain live and stops at the first break.
-
-In the injection cases this is where a reviewer can *see* the attack sitting inside a product description, next to the model's own reasoning about it.
-
-## The ledger console
-
-`/demo/console` shows a demo visitor every ledger row their session wrote; `/console` shows the whole ledger, and exists only on a local server with the demo off (`DEMO_MANDATE_PRIVATE_KEY= DEMO_MANDATE_PUBLIC_KEY= pnpm receipt-ui`). It is built with [AG Grid Community](https://www.ag-grid.com/) and [AG Charts Community](https://www.ag-grid.com/charts/), both MIT licensed, pinned to exact versions and served from this app's own `node_modules`, never from a CDN ([D-62](docs/DECISIONS.md)).
-
-- **The grid** has one row per ledger entry: seq, time, event, mandate, merchant, amount and currency, decision, status, reason code with its meaning in words, rail, order and capture ids, and a link to the trace. Quick search covers every column, and each column has its own filter and sort.
-- **The hash check.** The server recomputes each row's payload hash, entry hash and link to the row before it with the ledger's own hash functions, and walks the chain from its first row with `verifyChain()`, the same walk as `pnpm verify-ledger`. Selecting a row shows the stored and recomputed hashes side by side.
-- **The charts** show spend against budget over time for each mandate (the line ends at the number `deriveState()` gives the policy engine), decisions by reason code, and orders by rail at their latest outcome. Selecting a bar filters the grid.
-- **What reaches the browser.** Ids, codes, amounts, hashes and fixed text. No ledger payload, transcript or merchant text, no token and no key. Every value goes into the page as text; the only cell renderer builds a link element. The page keeps the strict content security policy and adds only a style nonce that is new on every response, because both libraries build their styles in the browser ([D-63](docs/DECISIONS.md)). A visitor's console reads only the traces that name their session's own two mandates ([D-64](docs/DECISIONS.md)).
-
-## Observability vs evidence
-
-With Langfuse keys set, the demo and the eval send each agent run to Langfuse, so a developer can see every model call, its tokens and latency, and the merchant text the model read. That trace is for debugging and is not evidence: it can be edited, expired or lost, and nothing in Praman reads it back into a decision, a prompt or a reported number. The ledger is the record, and it holds anything an audit could need, such as the hash of the system prompt that was active, plus a link to the Langfuse trace marked as non-evidentiary. Tests check that a run with no keys, or with a Langfuse host that is down, writes the same ledger rows in the same order ([D-47](docs/DECISIONS.md)).
-
-## MCP gateway: any agent shops within a mandate
-
-`apps/mcp-gateway` is a local MCP server over stdio. Claude Desktop, Claude Code or any other MCP client can search real products, propose a purchase and read its receipt through it, and spend only what one signed mandate allows. [`docs/MCP.md`](docs/MCP.md) has the setup and a recorded session against the PayPal sandbox.
-
-- **The agent names a merchant, a SKU and a quantity.** No tool has a field for a price, a currency, a rail or a mandate, and every input schema refuses extra fields. The gateway loads its one mandate from a file when it starts, and each proposal goes through `runIntent` and `evaluate()` like any other ([D-69](docs/DECISIONS.md)).
-- **The catalog is real.** `pnpm catalog:channel3` (it needs `CHANNEL3_API_KEY` in `.env`) takes 18 products from [Channel3](https://trychannel3.com)'s product search and pins each price in integer cents, read from the JSON's own text so no float touches it, with where and when it was fetched. Decisions use the stored price and nothing is fetched at decision time ([D-73](docs/DECISIONS.md)). The products and prices are real; paying `DEMO_SHOP` pays this repo's PayPal sandbox account, not the retailer.
-- **A person stays in the loop.** A step-up gives a `pnpm mcp:approve` command that refuses to run without a terminal, and the agent is told not to run it. A PayPal checkout moves nothing until the buyer approves it at PayPal, and `complete_checkout` re-checks the mandate before it captures ([D-70](docs/DECISIONS.md), [D-72](docs/DECISIONS.md)).
-- **Every answer is read back from the ledger.** Status, rail and order come from the outbox record and the ledger, not from what a call returned. Product text reaches the agent inside `<untrusted_merchant_content>` with its angle brackets neutralised ([D-76](docs/DECISIONS.md)), and the products the agent read are recorded on the trace ([D-74](docs/DECISIONS.md)).
-
-```
-claude mcp add praman -- pnpm --silent --dir /absolute/path/to/praman mcp
-```
-
-The gateway is the agent's only route to money only if it has no other: an agent that also holds PayPal keys, or a shell in this repo, has more. Claude Desktop with only this server has none.
-
-## Merchant MCP server
-
-`apps/merchant-mcp` exposes one merchant's catalog (`list_catalog`, `get_sku`, `check_stock`, `get_refund_policy`) as an [MCP](https://modelcontextprotocol.io) server over stdio. Any MCP client can browse it — this is a protocol, not a private integration.
-
-It deliberately does **not** sanitise its own output. Untrusted-content delimiting happens once, at the buyer agent's boundary ([D-07](docs/DECISIONS.md)): the merchant is the untrusted party, and a merchant server that pre-wrapped its output would be deciding, on a connecting agent's behalf, how to treat data that agent hasn't received yet.
-
-```json
-{
-  "mcpServers": {
-    "praman-merchant": {
-      "command": "pnpm",
-      "args": ["--dir", "/absolute/path/to/praman", "exec", "tsx", "apps/merchant-mcp/src/server.ts"],
-      "env": { "MERCHANT_MCP_MERCHANT_ID": "MERCH_001" }
-    }
-  }
-}
-```
-
-Praman's own agent uses this same server with `PRAMAN_MCP=1`. Unset, it calls the catalog in-process; the eval harness always uses that path, since spawning a subprocess per corpus case is slow and flaky.
+The ablation is n=21 per arm, on one model at one temperature, against seven attacks written by the same author as the defence. The delimiter and the prompt instructions were removed together, so this does not separate their individual contributions. It is an experiment, not a benchmark.
 
 ## Scope and limitations
 
@@ -253,7 +285,7 @@ The Razorpay submission was built solo in nine days. The PayPal work was added f
 - **Not a UAP implementation.** UAP is unpublished.
 
 **Known gaps**
-- `TRUNCATE` bypasses the append-only triggers — Postgres does not fire row-level triggers for it. Closing this needs a statement-level event trigger. The project's own tests rely on this gap to reset state.
+- `TRUNCATE` bypasses the append-only triggers, because Postgres does not fire row-level triggers for it. Closing this needs a statement-level event trigger. The project's own tests rely on this gap to reset state.
 - Merkle roots are computed and verified but not anchored externally. An attacker who can rewrite the whole chain can rewrite the checkpoints too.
 - The denial-rate cap is per-window, so a patient attacker can still probe a mandate's limits slowly across windows ([D-20](docs/DECISIONS.md)).
 - A call whose outcome is unknown holds its budget and a velocity slot until the reconcile sweep settles it. The hosted server runs the sweep on a timer while the demo is in use; locally it is `pnpm reconcile`, and nothing schedules that. While it is pending this fails closed. Before D-42, attempts in flight weren't counted at all: 20 concurrent intents created 4 times a mandate's budget ([D-42](docs/DECISIONS.md)).
@@ -267,13 +299,13 @@ The Razorpay submission was built solo in nine days. The PayPal work was added f
 
 ## What broke
 
-[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) is a dated, day-by-day record of what failed and why, written as it happened and never retroactively edited — where a later entry proves an earlier one wrong, the correction is recorded forward.
+[`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) is a dated, day-by-day record of what failed and why, written as it happened and never retroactively edited. Where a later entry proves an earlier one wrong, the correction is recorded forward.
 
 Three that changed the architecture:
 
 **Razorpay does not enforce receipt uniqueness**, despite documenting that it does. Two orders created back to back with an identical receipt returned two distinct order IDs, no error. Order lookup by receipt also lags creation by 3–15 seconds. The original design wrapped the payment call inside a single database transaction and relied on reconciliation to catch orphans; neither half of that holds. Restructured into two-phase execution with an outbox record ([D-22](docs/DECISIONS.md)).
 
-**The policy engine leaked the mandate's limits through its own refusal messages.** `DENY` details quoted the exact cap and `ALLOW` returned the remaining budget, so two deliberately oversized probes would have reconstructed the whole mandate. Split into an internal `Decision` and a redacted `AgentVisibleDecision` ([D-19](docs/DECISIONS.md)) — and then documented honestly that redaction narrows reconstruction from 2 probes to a ~17-probe binary search rather than closing it, which is what the denial-rate cap addresses ([D-20](docs/DECISIONS.md)).
+**The policy engine leaked the mandate's limits through its own refusal messages.** `DENY` details quoted the exact cap and `ALLOW` returned the remaining budget, so two deliberately oversized probes would have reconstructed the whole mandate. Split into an internal `Decision` and a redacted `AgentVisibleDecision` ([D-19](docs/DECISIONS.md)), and then documented honestly that redaction narrows reconstruction from 2 probes to a ~17-probe binary search rather than closing it, which is what the denial-rate cap addresses ([D-20](docs/DECISIONS.md)).
 
 **Missing data reads as permissive in JavaScript.** Three separate fail-open bugs from the same root: `new Date("garbage")` yields `NaN`, and every comparison against it is false in both directions, so a malformed validity window would have read as permanently valid. Same shape for `deniedInWindow >= undefined`. In an authorisation path, absent data must never mean "no limit."
 
@@ -283,13 +315,25 @@ Three that changed the architecture:
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md) — start here, five minutes
+- [Architecture](docs/ARCHITECTURE.md): start here, five minutes
 - [High Level Design](docs/HLD.md) · [Low Level Design](docs/LLD.md)
 - [Mandate and ledger specification](docs/MANDATE_SPEC.md)
 - [Evaluation harness](docs/EVAL_CORPUS.md) · [Report](eval/report.md)
 - [MCP gateway](docs/MCP.md): any MCP agent shopping within a signed mandate
 - [Decision records](docs/DECISIONS.md) · [Engineering invariants](docs/INVARIANTS.md)
 - [Build log](docs/BUILD_LOG.md) · [Roadmap](docs/ROADMAP.md)
+
+## What's new since 1 Oct 2026
+
+The Razorpay Buildathon entry ended on 5 Sep 2026 with one rail and rupees only. Since 1 Oct:
+
+- **PayPal as a second rail:** Orders v2 create and capture, Vault v3 saved accounts charged with no buyer present, full refunds, and webhooks verified with PayPal. Dollars and rupees both come from the signed mandate.
+- **A hosted public demo on Render:** a web service defined by the [`render.yaml`](render.yaml) Blueprint on the free plan, with Postgres on Neon. Eight steps on the PayPal sandbox, with per-address, per-session and per-day limits. See [`docs/DEPLOY.md`](docs/DEPLOY.md).
+- **A ledger console built with AG Grid and AG Charts Community:** search and filter every ledger row, with a server-side hash check on each. See [The ledger console](#the-ledger-console).
+- **An MCP gateway on a real Channel3 catalog:** any MCP client can shop within one signed mandate. It runs locally. See [MCP gateway](#mcp-gateway-any-agent-shops-within-a-mandate).
+- **Dispute bundles:** a public copy with limits withheld, and a full copy for the owner.
+
+[History](#history) has the detail and the links to compare the code. Trying it takes about five minutes: [`docs/DEMO_INSTRUCTIONS.md`](docs/DEMO_INSTRUCTIONS.md).
 
 ## History
 
@@ -299,9 +343,7 @@ Three that changed the architecture:
 
 **PayPal AI Hackathon, from 4 Nov 2026.** Same repo, entered as an update to this existing project. The aim is to run the same mandate format, policy engine and ledger on PayPal as a second payment rail, with INR and USD taken from the signed mandate. What is built so far: I tested how the PayPal sandbox really behaves before writing any rail code ([D-26](docs/DECISIONS.md)). `packages/paypal-exec` creates real sandbox orders. The control plane captures and releases a PayPal order, holding its budget until then ([D-40](docs/DECISIONS.md)), and `pnpm reconcile` settles PayPal calls whose outcome is unknown. `POST /webhooks/paypal` verifies and records PayPal's capture events ([D-45](docs/DECISIONS.md)). A person, and never the agent, can refund a paid PayPal purchase in full, through the same two-phase outbox, and a refund gives no budget back to the mandate ([D-66](docs/DECISIONS.md), [D-67](docs/DECISIONS.md)). The policy engine did not change to add the rail, and CI checks that ([D-43](docs/DECISIONS.md) says what that check does and doesn't prove). The eval runs every Layer 1 case on both rails, on the simulated executor. Any MCP agent can now shop through Praman, over real Channel3 products with pinned prices, and pay on the PayPal sandbox within a signed mandate ([MCP gateway](docs/MCP.md)).
 
-Live sandbox runs on 8 Nov 2026 captured approved orders, showed that a repeated capture key returns the same capture, and charged a saved PayPal account with no buyer present ([D-49](docs/DECISIONS.md)). `paypal-exec` read those real captures back correctly. On the same day the whole demo ran end to end on the hosted site, <https://praman-demo.onrender.com> ([build log](docs/BUILD_LOG.md), P21): the first live `captureOrder` after a real buyer approval, two saved-account charges and a checkout that PayPal shows as completed with one capture each, a real `PAYMENT.CAPTURE.COMPLETED` webhook that verified and reached the trace, two real refunds, and twenty concurrent purchases that stopped at the $30 budget. The test suites still use a stand-in rail. Not yet run on the hosted site: the 11-minute release of an unpaid checkout, and an MCP gateway checkout paid by a real buyer. The `pnpm demo` and `pnpm approve` commands still pay through Razorpay only. The demo page at `/demo` in `pnpm receipt-ui` now runs the PayPal story, including a purchase charged to a saved PayPal account with no buyer present, which has run against the sandbox through the control plane ([D-50](docs/DECISIONS.md)).
-
-`paypal-exec` calls PayPal's Orders REST API directly and does not use the PayPal Agent Toolkit. The toolkit gives a model tools that act on PayPal, and Praman exists to decide whether that action should happen ([D-38](docs/DECISIONS.md)).
+Live sandbox runs on 8 Nov 2026 captured approved orders, showed that a repeated capture key returns the same capture, and charged a saved PayPal account with no buyer present ([D-49](docs/DECISIONS.md)). `paypal-exec` read those real captures back correctly. On the same day the whole demo ran end to end on the hosted site, <https://praman-demo.onrender.com> ([build log](docs/BUILD_LOG.md), P21): the first live `captureOrder` after a real buyer approval, two saved-account charges and a checkout that PayPal shows as completed with one capture each, a real `PAYMENT.CAPTURE.COMPLETED` webhook that verified and reached the trace, two real refunds, and twenty concurrent purchases that stopped at the $30 budget. The test suites still use a stand-in rail. On 9 Nov 2026 an unpaid checkout on the hosted site was refused at capture after 11 minutes and nothing was charged; that was read from the page, and the ledger row was not read back. The same day a sandbox buyer paid a $20.50 checkout through the MCP gateway, running locally, and Praman captured it ([build log](docs/BUILD_LOG.md), last checks of 9 Nov). Not yet run: a paid gateway purchase with a model as the client, since that client was a script, and the gateway on the hosted site, where it is not deployed. The `pnpm demo` and `pnpm approve` commands still pay through Razorpay only. The demo page at `/demo` in `pnpm receipt-ui` now runs the PayPal story, including a purchase charged to a saved PayPal account with no buyer present, which has run against the sandbox through the control plane ([D-50](docs/DECISIONS.md)).
 
 **After the hackathon.** The project continues. Work deferred for now stays in [`docs/ROADMAP_PHASE2.md`](docs/ROADMAP_PHASE2.md).
 
@@ -314,6 +356,6 @@ To see what changed:
 
 Praman was designed and built with Claude as a pair-programming partner. Every architectural decision in `docs/DECISIONS.md` is mine, made deliberately and defended there. Up to the `v1.0-submission` tag, the policy engine's `evaluate()` and the ledger's hash chain were hand-written, because those are the two files where a subtle bug is a money bug and I wanted to own them line by line. Claude generated much of the surrounding scaffolding from specifications I wrote, under the constraints in `docs/INVARIANTS.md`, and at that stage I reviewed every diff. The commit history shows the sequence: specification, then core, then plumbing, then measurement.
 
-Since 2026-11-04 the project follows an agentic development life cycle, by my decision ([D-27](docs/DECISIONS.md)). Agents may now edit those two files as well. Since 2026-11-07 I no longer review changes before they land ([D-80](docs/DECISIONS.md)): agents make the changes and the commits, and an independent agent reviews the money path. A change to those two files needs a failing test first, its own commit and that independent review, and I am told what changed and why. Decisions an agent made on its own are marked in `docs/DECISIONS.md` as implementer's decisions for me to check. No model takes part in a payment decision at runtime, and that has not changed.
+Since 2026-11-04 the project follows an agentic development life cycle, by my decision ([D-27](docs/DECISIONS.md)). Agents may now edit those two files as well. A change to either needs a failing test first, its own commit and a review by an independent agent. The policy package is also frozen: CI fails if anything in `packages/policy` differs from the commit named in `.policy-freeze`, so a change there has to move that file in plain sight ([D-43](docs/DECISIONS.md)). Since 2026-11-07 those controls take the place of my reading each diff before it lands ([D-80](docs/DECISIONS.md)): agents make the changes and the commits, an independent agent reviews the money path, and I am told what changed and why. Decisions an agent made on its own are marked in `docs/DECISIONS.md` as implementer's decisions for me to check. No model takes part in a payment decision at runtime, and that has not changed.
 
 MIT licensed.
