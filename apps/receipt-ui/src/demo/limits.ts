@@ -64,7 +64,8 @@ export function clientIp(req: IncomingMessage, proxyHops: number): string {
   return req.socket.remoteAddress ?? "unknown";
 }
 
-export type UsageKind = "session" | "model_call";
+/** house_session: a session that used the demo's shared sandbox buyer instead of a PayPal login (D-85). */
+export type UsageKind = "session" | "model_call" | "house_session";
 
 /** The demo's daily allowance, shared by every visitor. Resets at 00:00 UTC. */
 export interface DailyUsage {
@@ -75,9 +76,11 @@ export interface DailyUsage {
 export interface DailyCaps {
   readonly session: number;
   readonly model_call: number;
+  /** Left out on a server with no house buyer, which is a cap of none. */
+  readonly house_session?: number;
 }
 
-const utcDay = (now: Date): string => now.toISOString().slice(0, 10);
+export const utcDay = (now: Date): string => now.toISOString().slice(0, 10);
 
 /**
  * Daily caps kept in Postgres, so a restart doesn't reset them. One statement adds one
@@ -91,7 +94,7 @@ export class DbDailyUsage implements DailyUsage {
   ) {}
 
   async take(kind: UsageKind, now: Date): Promise<boolean> {
-    const cap = this.caps[kind];
+    const cap = this.caps[kind] ?? 0;
     if (cap <= 0) return false;
     const day = utcDay(now);
     const rows = await this.db.$queryRaw<{ used: number }[]>`
@@ -112,7 +115,7 @@ export class MemoryDailyUsage implements DailyUsage {
   async take(kind: UsageKind, now: Date): Promise<boolean> {
     const key = `${utcDay(now)}|${kind}`;
     const used = this.#used.get(key) ?? 0;
-    if (used >= this.caps[kind]) return false;
+    if (used >= (this.caps[kind] ?? 0)) return false;
     this.#used.set(key, used + 1);
     return true;
   }
@@ -129,6 +132,13 @@ export function capFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: numbe
 /** Defaults for the hosted demo. DEMO_DAILY_MODEL_CALLS and DEMO_DAILY_SESSIONS override them. */
 export const DEFAULT_DAILY_MODEL_CALLS = 400;
 export const DEFAULT_DAILY_SESSIONS = 200;
+/**
+ * Sessions a day that may use the demo's shared sandbox buyer (D-85). A quarter of the
+ * day's sessions: the story charges that account $17.00 a session, and no mandate lets a
+ * session take more than $60.00, so a full day is $850 of sandbox money as the story
+ * goes and $3,000 at the very most. DEMO_DAILY_HOUSE_SESSIONS overrides it.
+ */
+export const DEFAULT_DAILY_HOUSE_SESSIONS = 50;
 
 /** Per-IP and per-session limits. Generous for a person clicking through the story; tight for a script. */
 export const LIMITS = {

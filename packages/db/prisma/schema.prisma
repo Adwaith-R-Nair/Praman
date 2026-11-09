@@ -102,8 +102,9 @@ model Approval {
   @@map("approval")
 }
 
-/// How much of the hosted demo's daily allowance has gone, per UTC day: new sessions
-/// and model calls. A counter, not a record: it is not the ledger and holds no money.
+/// How much of the hosted demo's daily allowance has gone, per UTC day: new sessions,
+/// model calls, and sessions on the demo's shared sandbox buyer (D-85). A counter, not
+/// a record: it is not the ledger and holds no money.
 /// In the database rather than memory so a restart doesn't hand out a second day's worth.
 model DemoUsage {
   day  String

@@ -7,7 +7,7 @@ import { generateKeypair } from "@praman/mandate";
 import { routeByRail } from "@praman/exec-core";
 import { checkEnv, checkStartup, keyFingerprint, DEVELOPER_KEY_FINGERPRINTS } from "../src/startup.js";
 import { DemoActivity, runSweeps, scheduleSweeps } from "../src/sweeps.js";
-import { capFromEnv, clientIp, DbDailyUsage, MemoryDailyUsage, RateLimiter } from "../src/demo/limits.js";
+import { capFromEnv, clientIp, DbDailyUsage, DEFAULT_DAILY_HOUSE_SESSIONS, DEFAULT_DAILY_SESSIONS, MemoryDailyUsage, RateLimiter } from "../src/demo/limits.js";
 
 // Plan Task 13: what the hosted server refuses, and what it does when it is pushed.
 
@@ -205,6 +205,26 @@ describe("the limits themselves", () => {
       ["2026-11-09", "session", 5],
       ["2026-11-10", "session", 1],
     ]);
+  });
+
+  it("counts house-buyer sessions as a kind of their own, and allows none where no cap is given", async () => {
+    const now = new Date("2026-11-10T10:00:00Z");
+    const usage = new DbDailyUsage({ session: 1, model_call: 0, house_session: 3 });
+    const results = await Promise.all(Array.from({ length: 8 }, () => usage.take("house_session", now)));
+    expect(results.filter(Boolean)).toHaveLength(3);
+    // A restart doesn't refill it, and it is counted apart from the day's sessions.
+    expect(await new DbDailyUsage({ session: 1, model_call: 0, house_session: 3 }).take("house_session", now)).toBe(false);
+    expect(await usage.take("session", now)).toBe(true);
+    // A server with no house buyer gives no cap for it.
+    expect(await new DbDailyUsage({ session: 5, model_call: 5 }).take("house_session", new Date("2026-11-11T10:00:00Z"))).toBe(false);
+    expect(await new MemoryDailyUsage({ session: 5, model_call: 5 }).take("house_session", now)).toBe(false);
+    const rows = await prisma.demoUsage.findMany({ orderBy: { kind: "asc" } });
+    expect(rows.map((r) => [r.day, r.kind, r.used])).toEqual([
+      ["2026-11-10", "house_session", 3],
+      ["2026-11-10", "session", 1],
+    ]);
+    expect(DEFAULT_DAILY_HOUSE_SESSIONS).toBeGreaterThan(0);
+    expect(DEFAULT_DAILY_HOUSE_SESSIONS).toBeLessThan(DEFAULT_DAILY_SESSIONS);
   });
 
   it("the memory cap counts the same way", async () => {
