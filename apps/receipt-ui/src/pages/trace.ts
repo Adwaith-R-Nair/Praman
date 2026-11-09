@@ -6,6 +6,7 @@ import { decisionClass, decisionLabel } from "../decision-display.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
 import { layout } from "../layout.js";
 import { EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
+import { sampleMandateIds } from "../sample-config.js";
 import { toolCallsHtml, toolCallsOf } from "./tool-calls.js";
 
 /** Free text (goal, rationale, merchant content) may contain a literal ₹. */
@@ -161,7 +162,11 @@ export async function renderTracePage(traceId: string, ownerControl: ((trace: Tr
   // A demo visitor's revocation has no merchant, and its trace id says whose it is.
   const fromDemo = (trace.merchantId !== null && DEMO_MERCHANTS.includes(trace.merchantId)) || traceId.startsWith("trc_demo_");
   // A demo visitor's console shows only their own session; the whole-ledger console is local only.
-  const consoleHref = `${fromDemo ? "/demo/console" : "/console"}#trace=${encodeURIComponent(traceId)}`;
+  // A trace of the server's public sample opens in the sample's console, which anyone can read.
+  // The owner's own page keeps the owner's console.
+  const sampleIds = sampleMandateIds();
+  const inSample = ownerControl === null && sampleIds.length > 0 && trace.entries.some((e) => typeof e.payload === "object" && e.payload !== null && "mandate_id" in e.payload && typeof e.payload.mandate_id === "string" && sampleIds.includes(e.payload.mandate_id));
+  const consoleHref = `${inSample ? "/sample" : fromDemo ? "/demo/console" : "/console"}#trace=${encodeURIComponent(traceId)}`;
 
   // Suppressed for a plain OK: the hero already says "Allowed", and OK adds
   // no information beyond that — showing it anyway would be the page
@@ -298,5 +303,5 @@ ${(() => {
 `;
 
 
-  return { status: 200, html: layout(`Trace ${traceId}`, body, fromDemo ? "demo" : "index") };
+  return { status: 200, html: layout(`Trace ${traceId}`, body, inSample ? "sample" : fromDemo ? "demo" : "index") };
 }

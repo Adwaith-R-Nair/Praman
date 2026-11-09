@@ -12,6 +12,7 @@ interface FakeNode {
 }
 
 let dataSrc = "/demo/console.json";
+let mode = "visitor";
 
 function fakeNode(id: string): FakeNode {
   const children: unknown[] = [];
@@ -26,7 +27,7 @@ function fakeNode(id: string): FakeNode {
     appendChild(c: unknown) { children.push(c); return c; },
     removeChild(c: unknown) { children.splice(children.indexOf(c), 1); return c; },
     setAttribute() {},
-    getAttribute(name: string) { return name === "data-src" ? dataSrc : name === "data-mode" ? "visitor" : null; },
+    getAttribute(name: string) { return name === "data-src" ? dataSrc : name === "data-mode" ? mode : null; },
     addEventListener() {},
     scrollIntoView() { node.scrolled += 1; },
   };
@@ -146,5 +147,19 @@ describe("the console with nothing in it yet", () => {
     expect(page.gridOptions["localeText"]).toEqual({ noRowsToShow: "No rows yet. Run a step of the demo and its rows appear here." });
     expect(page.chainText.textContent).toContain("There are no rows below yet.");
     expect(page.chainText.textContent).not.toContain("Of the 0 rows");
+  });
+});
+
+describe("the console as the public sample", () => {
+  it("says the sample has no rows rather than telling a reader to run the demo", async () => {
+    mode = "sample";
+    const page = await openConsole("", []);
+    mode = "visitor";
+    expect(page.gridOptions["localeText"]).toEqual({ noRowsToShow: "The sample's mandates have no rows on this server's ledger." });
+  });
+
+  it("says the budget is withheld, not that the server lacks the mandate", () => {
+    const source = readFileSync(new URL("../src/console/console.client.js", import.meta.url), "utf8");
+    expect(source).toContain('mode === "sample" ? "The signed budget is withheld from this public page, so no budget line is drawn."');
   });
 });

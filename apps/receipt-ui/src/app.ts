@@ -9,7 +9,9 @@ import { escapeHtml } from "./html.js";
 import { layout } from "./layout.js";
 import { renderIndexPage } from "./pages/index.js";
 import { renderLandingPage } from "./pages/landing.js";
+import { createSampleLoader, renderNoSamplePage, renderSamplePage } from "./pages/sample.js";
 import { renderTracePage } from "./pages/trace.js";
+import { sampleMandateIds } from "./sample-config.js";
 import { verifyTrace } from "./verify.js";
 import { handlePayPalWebhook, readRawBody, type PayPalWebhookDeps } from "./webhooks.js";
 
@@ -106,6 +108,7 @@ export function createApp(deps: AppDeps): Handler {
     return false;
   };
   const TOO_MANY_READS = "Too many requests from your address in the last minute. Wait a minute and try again.";
+  const sample = createSampleLoader(now);
 
   return async (req, res) => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
@@ -195,6 +198,34 @@ export function createApp(deps: AppDeps): Handler {
         return;
       }
 
+      // The public sample: one past session, named in server configuration and nowhere else.
+      // Read-only, and it serves only what a public trace page and bundle already do (D-84).
+      const samplePath = url.pathname.replace(/\/+$/, "");
+      if (samplePath === "/sample" || samplePath === "/sample/data") {
+        const mandateIds = sampleMandateIds();
+        if (mandateIds.length === 0) {
+          if (samplePath === "/sample") {
+            res.writeHead(404, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+            res.end(renderNoSamplePage());
+          } else {
+            res.writeHead(404, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+            res.end(JSON.stringify({ error: "no sample" }));
+          }
+          return;
+        }
+        if (!within(reads, req, res, TOO_MANY_READS)) return;
+        const view = await sample(mandateIds);
+        if (samplePath === "/sample/data") {
+          res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+          res.end(JSON.stringify(view.data));
+          return;
+        }
+        const page = renderSamplePage(view.traces, newStyleNonce());
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Content-Security-Policy": page.policy });
+        res.end(page.html);
+        return;
+      }
+
       const rawTraceId = traceMatch?.[1] ?? verifyMatch?.[1] ?? disputeMatch?.[1];
       if (rawTraceId !== undefined && traceIdOf(rawTraceId) === null) {
         if (wantsHtml(req)) page(res, 404, "No such trace", "There is no trace at this address.");
@@ -238,7 +269,7 @@ export function createApp(deps: AppDeps): Handler {
       if (isIndex) {
         // The index never lists demo visitors' traces. With none to list it says so and
         // links to the demo. Rendered before the status goes out, so a failure is still a 500.
-        const html = await renderIndexPage();
+        const html = await renderIndexPage(sampleMandateIds().length > 0);
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(html);
         return;

@@ -11,7 +11,11 @@ import { BREAK_REASON_PLAIN, EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reas
  * only ids, codes, amounts and hashes.
  */
 
-/** Which rows a console may see. A demo visitor sees their own session's mandates. Only a local operator sees everything. */
+/**
+ * Which rows a console may see. A demo visitor sees their own session's mandates. Only a
+ * local operator sees everything. The public sample page reads one fixed session's
+ * mandates through loadPublicConsoleData, never through loadConsoleData directly.
+ */
 export type ConsoleScope = { readonly kind: "mandates"; readonly mandateIds: readonly string[] } | { readonly kind: "all"; readonly limit: number };
 
 /** A mandate's signed budget, when this server holds the signed document. */
@@ -416,4 +420,32 @@ export async function loadConsoleData(scope: ConsoleScope, budgets: ReadonlyMap<
 
     return { generatedAt: now.toISOString(), rows, truncated, chain, spend, decisions: countDecisions(rows), rails: countRails(rows) };
   });
+}
+
+/** Shown in place of a step-up's reason on a public page. Fixed text, not a reason code. */
+export const STEP_UP_REASON_WITHHELD = "Praman asked a person first. Why is withheld from public pages.";
+
+/**
+ * The copy of a console's data that anyone may read. It carries what a public trace page
+ * and a public dispute bundle carry and no more (D-84): no signed budget, and no reason
+ * on a row that asked a person, since a step-up's reason says a limit was crossed. A row
+ * never holds a payload, so the signed mandate, a refusal's `detail` and a row's
+ * redaction salt were never here to remove. The decisions chart is counted again from
+ * the rows as published, so it can't show a code a row no longer does.
+ */
+export function publicConsoleData(data: ConsoleData): ConsoleData {
+  const rows = data.rows.map((row) =>
+    row.decision === "STEP_UP" || (row.reasonCode !== null && row.reasonCode.startsWith("STEP_UP_")) ? { ...row, reasonCode: null, reasonPlain: STEP_UP_REASON_WITHHELD } : row,
+  );
+  return {
+    ...data,
+    rows,
+    spend: data.spend.map((s) => ({ ...s, budgetMinor: null, budgetLabel: null })),
+    decisions: countDecisions(rows),
+  };
+}
+
+/** One fixed set of mandates, for a public page. No budgets go in, and the result is the public copy. */
+export async function loadPublicConsoleData(mandateIds: readonly string[], now: Date): Promise<ConsoleData> {
+  return publicConsoleData(await loadConsoleData({ kind: "mandates", mandateIds }, new Map(), now));
 }

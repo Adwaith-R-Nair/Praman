@@ -110,6 +110,10 @@ h2 {
   margin: 0 0 var(--s3);
 }
 
+.notice-more {
+  margin: calc(-1 * var(--s2)) 0 var(--s3);
+}
+
 /* ── The chain verdict: the first thing an operator needs to trust anything below ─ */
 
 .chain {
@@ -466,5 +470,91 @@ input[type="search"] {
   #grid a {
     display: inline-block;
     padding: 0.6rem 0.5rem;
+  }
+}
+
+/* ── The sample's traces: one line each, with its page and its public bundle ─ */
+
+.sample-traces {
+  margin-top: var(--s3);
+}
+
+.sample-trace-list {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.sample-trace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.15rem var(--s2);
+  align-items: baseline;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.sample-trace-main {
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.sample-trace-main:hover .sample-trace-summary {
+  text-decoration: underline;
+}
+
+.sample-trace-label,
+.sample-trace-amount,
+.sample-trace-id,
+.sample-trace-bundle {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+.sample-trace-label {
+  font-weight: 600;
+  margin-left: 0.4rem;
+  white-space: nowrap;
+}
+
+.sample-trace-label.decision-allow {
+  color: var(--allow);
+}
+
+.sample-trace-label.decision-step-up {
+  color: var(--step-up);
+}
+
+.sample-trace-label.decision-deny {
+  color: var(--deny);
+}
+
+.sample-trace-amount {
+  margin-left: 0.4rem;
+  white-space: nowrap;
+}
+
+.sample-trace-id {
+  grid-column: 1;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.sample-trace-bundle {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .sample-trace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sample-trace-bundle {
+    grid-column: 1;
+    grid-row: auto;
   }
 }

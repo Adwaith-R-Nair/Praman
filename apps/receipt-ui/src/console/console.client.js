@@ -14,6 +14,8 @@
   // one apply only if it carries this response's nonce, which they are given here.
   var nonce = (script && script.nonce) || "";
   var source = root.getAttribute("data-src") || "";
+  // "visitor", "operator" or "sample". The sample is public, so its data has no budgets.
+  var mode = root.getAttribute("data-mode") || "";
 
   var INK = { ink: "#172420", muted: "#4b5b55", hairline: "#c7d0c9", seal: "#24496b", allow: "#2e6b4c", stepUp: "#8a5f22", deny: "#9e3b2e", paper: "#f6f8f6", neutral: "#7a8a84", returned: "#6b8796" };
   var RAIL_NAMES = { paypal: "PayPal", razorpay: "Razorpay", simulated: "Simulated" };
@@ -238,7 +240,7 @@
       animateRows: false,
       // The grid's own empty message is "No Rows To Show". Say what to do instead.
       localeText: {
-        noRowsToShow: root.getAttribute("data-mode") === "visitor" ? "No rows yet. Run a step of the demo and its rows appear here." : "No ledger rows yet.",
+        noRowsToShow: mode === "visitor" ? "No rows yet. Run a step of the demo and its rows appear here." : mode === "sample" ? "The sample's mandates have no rows on this server's ledger." : "No ledger rows yet.",
       },
       onSelectionChanged: function (e) {
         var picked = e.api.getSelectedRows();
@@ -296,7 +298,7 @@
     var budget = series.budgetMinor === null ? null : Number(series.budgetMinor);
     note.textContent = series.budgetLabel
       ? "Spent or held under " + series.mandateId + ", row by row, against its signed budget of " + series.budgetLabel + ". Now " + series.spentNowLabel + ", the number Praman's policy reads." + (series.revoked ? " This mandate is revoked." : "")
-      : "Spent or held under " + series.mandateId + ", row by row. Now " + series.spentNowLabel + ". This server doesn't hold the signed mandate, so no budget line is drawn." + (series.revoked ? " This mandate is revoked." : "");
+      : "Spent or held under " + series.mandateId + ", row by row. Now " + series.spentNowLabel + ". " + (mode === "sample" ? "The signed budget is withheld from this public page, so no budget line is drawn." : "This server doesn't hold the signed mandate, so no budget line is drawn.") + (series.revoked ? " This mandate is revoked." : "");
     var maxHeld = data.reduce(function (m, d) { return d.held > m ? d.held : m; }, 0);
     var options = chartBase("chart-spend");
     options.data = data;
@@ -468,6 +470,7 @@
   fetch(source, { credentials: "same-origin", headers: { Accept: "application/json" } })
     .then(function (res) {
       if (res.status === 401) throw new Error("Your demo session has ended or hasn't started. Start one at /demo, then come back.");
+      if (res.status === 404 && mode === "sample") throw new Error("This server has no sample run set.");
       if (res.status === 429) throw new Error("Too many console loads in the last minute. Wait a minute and reload.");
       if (!res.ok) throw new Error("The server couldn't load the ledger just now. Reload in a moment.");
       return res.json();
