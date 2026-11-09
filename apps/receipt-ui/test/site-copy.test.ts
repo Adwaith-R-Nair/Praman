@@ -22,6 +22,21 @@ describe("the front page's links", () => {
   });
 });
 
+describe("the front page's link to the sample run", () => {
+  it("is there only when the server has a sample, and sits in the first screen under the demo button", () => {
+    expect(renderLandingPage()).not.toContain("/sample");
+    expect(renderLandingPage(false)).toBe(renderLandingPage());
+    const withSample = renderLandingPage(true);
+    const hero = /<section class="hero">[\s\S]*?<\/section>/.exec(withSample)?.[0] ?? "";
+    expect(hero).toContain('<a href="/sample">See a sample run</a>');
+    expect(hero.indexOf('href="/sample"')).toBeGreaterThan(hero.indexOf('href="/demo"'));
+    expect(hero).toContain("read-only");
+    // The link is the only difference.
+    const line = /<p class="cta-sample">[\s\S]*?<\/p>\n/.exec(withSample)?.[0] ?? "none";
+    expect(withSample.replace(line, "")).toBe(renderLandingPage());
+  });
+});
+
 describe("the front page's first screen", () => {
   const html = renderLandingPage();
   const hero = html.slice(html.indexOf('<section class="hero">'), html.indexOf("</section>"));

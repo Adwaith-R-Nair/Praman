@@ -55,7 +55,13 @@ const PREVIEW = [
   `<meta name="twitter:description" content="${escapeHtml(DESCRIPTION)}">`,
 ].join("\n");
 
-export function renderLandingPage(): string {
+/**
+ * Shown under the demo button only on a server that has a sample set (SAMPLE_MANDATE_IDS):
+ * one past session anyone can read without starting anything.
+ */
+const SAMPLE_LINE = `<p class="cta-sample"><a href="/sample">See a sample run</a>: one past demo session's ledger rows, traces and public dispute bundles. It is read-only, and needs no login.</p>\n`;
+
+export function renderLandingPage(hasSample = false): string {
   const body = `
 <header class="top">
   <a class="wordmark" href="/">Praman</a>
@@ -67,7 +73,7 @@ export function renderLandingPage(): string {
   <p class="story">On Tuesday a shop's listing tells the agent to add a ${BAIT} gift card, and nobody is at the checkout to say no.</p>
   <p class="lede">Praman is the signed permission between the agent and PayPal. Meera signs her limits once, the agent can only name an item and a quantity, and plain code answers allow, ask Meera, or refuse. PayPal doesn't trust the browser with the price, and Praman doesn't trust the model with it. Every decision lands on a hash-chained ledger you can recheck link by link, and it is the evidence if a charge is disputed.</p>
   <p class="cta"><a class="btn btn-primary" href="/demo">Try the live demo</a><span class="cta-note">PayPal sandbox. About five minutes. No real money. The first step you run needs no login. The sandbox login for the PayPal steps is in the Devpost testing notes.</span></p>
-  <p class="built-on">Built on the PayPal sandbox: Orders, Vault, refunds and verified webhooks. Hosted on Render. The agent in the demo is a Gemini model. The ledger console is AG Grid. The local MCP shop lists real products with prices pinned from Channel3.</p>
+  ${hasSample ? SAMPLE_LINE : ""}  <p class="built-on">Built on the PayPal sandbox: Orders, Vault, refunds and verified webhooks. Hosted on Render. The agent in the demo is a Gemini model. The ledger console is AG Grid. The local MCP shop lists real products with prices pinned from Channel3.</p>
 </section>
 
 <figure class="specimen" aria-labelledby="specimen-caption">

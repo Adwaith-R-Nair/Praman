@@ -11,7 +11,7 @@ import { renderIndexPage } from "./pages/index.js";
 import { renderLandingPage } from "./pages/landing.js";
 import { createSampleLoader, renderNoSamplePage, renderSamplePage } from "./pages/sample.js";
 import { renderTracePage } from "./pages/trace.js";
-import { sampleMandateIds } from "./sample-config.js";
+import { sampleConfigured, sampleMandateIds } from "./sample-config.js";
 import { verifyTrace } from "./verify.js";
 import { handlePayPalWebhook, readRawBody, type PayPalWebhookDeps } from "./webhooks.js";
 
@@ -61,8 +61,11 @@ const text = (res: ServerResponse, status: number, body: string, extra: Record<s
 /** A browser that asked for a page gets one, with a way back to the demo. A script or Postman gets plain text. */
 const wantsHtml = (req: IncomingMessage): boolean => (req.headers.accept ?? "").includes("text/html");
 
-/** The front page never changes while the server runs, so it is rendered once. */
-const LANDING = renderLandingPage();
+/**
+ * The front page is fixed text, so it is rendered once, in its two forms: with the link
+ * to the sample run, for a server that has one set, and without.
+ */
+const LANDING = { plain: renderLandingPage(false), withSample: renderLandingPage(true) };
 
 function page(res: ServerResponse, status: number, title: string, message: string, extra: Record<string, string> = {}): void {
   res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", ...extra });
@@ -194,7 +197,7 @@ export function createApp(deps: AppDeps): Handler {
       // The front page is fixed text and reads nothing, so it answers even with the database asleep.
       if (url.pathname === "/") {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300" });
-        res.end(LANDING);
+        res.end(sampleConfigured() ? LANDING.withSample : LANDING.plain);
         return;
       }
 

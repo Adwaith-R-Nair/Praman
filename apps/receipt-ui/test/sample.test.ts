@@ -325,7 +325,7 @@ describe("the public sample", () => {
     expect(await prisma.ledgerEntry.count()).toBe(before);
   });
 
-  it("is linked from /traces and from an empty /demo/console once it is set", async () => {
+  it("is linked from the front page, /traces and an empty /demo/console once it is set", async () => {
     const v = await runSession();
     pin(v);
     // Only demo traces exist, so /traces is in its empty state.
@@ -333,6 +333,12 @@ describe("the public sample", () => {
     expect((await anyone().get("/demo/console")).text).toContain('href="/sample"');
     // A visitor who has a session has their own rows, so their console doesn't point away.
     expect((await v.get("/demo/console")).text).not.toContain('href="/sample"');
+    // The front page offers it too, and stops offering it when the sample is taken away.
+    expect((await anyone().get("/")).text).toContain('<a href="/sample">See a sample run</a>');
+    const pinned = process.env[SAMPLE_ENV];
+    delete process.env[SAMPLE_ENV];
+    expect((await anyone().get("/")).text).not.toContain("/sample");
+    process.env[SAMPLE_ENV] = pinned;
 
     // And with a trace from outside the demo, /traces lists it and still links the sample.
     await prisma.$transaction((tx) => append(tx, { traceId: "trc_outside", ts: new Date(clock), actor: "agent", eventType: "intent", payload: { intent_id: "trc_outside", merchant_id: "MERCHANT_FOOD_01", mandate_id: "mnd_outside" } }));

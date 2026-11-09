@@ -138,6 +138,13 @@ code,
   color: var(--ink-muted);
 }
 
+/* The read-only sample run, offered under the demo button when the server has one. */
+.cta-sample {
+  margin: var(--s2) 0 0;
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+}
+
 /* What the demo runs on, named once and plainly. */
 .built-on {
   margin: var(--s3) 0 0;
