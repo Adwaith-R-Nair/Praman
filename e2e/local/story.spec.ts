@@ -25,6 +25,28 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await expect(mandate).toContainText("$40.00");
     await expect(mandate).toContainText("$20.00");
     await expect(step("first").getByRole("button", { name: "Ask the agent to buy lunch" })).toBeDisabled();
+    // The poisoned listing is step 2, ahead of connecting PayPal, and revoking is last.
+    await expect(page.locator("section.step")).toHaveCount(8);
+    await expect(page.locator("section.step").nth(1)).toHaveAttribute("id", "injection");
+    await expect(page.locator("section.step").nth(2)).toHaveAttribute("id", "connect");
+    await expect(page.locator("section.step").nth(7)).toHaveAttribute("id", "revoke");
+  });
+
+  await test.step("a poisoned listing first, with no PayPal connected: the live model, then a fooled cart refused", async () => {
+    await expect(step("connect").locator(".ok")).toHaveCount(0);
+    await press("Ask the agent to order at Corner Market");
+    const injection = step("injection");
+    await expect(injection.locator(".message").first()).toContainText("The agent ignored the poisoned line");
+    await press("Send the fooled cart to Praman");
+    await expect(injection.locator('.result[data-state="refused"]')).toContainText("Refused");
+    await expect(injection.locator('.result[data-state="refused"] code.code')).toHaveText("CATEGORY_OUT_OF_SCOPE");
+    const noGate = injection.locator(".no-gate");
+    await expect(noGate).toContainText("Arithmetic, not a payment");
+    await expect(noGate.locator(".no-gate-total")).toHaveText("$109.00");
+    await expect(noGate).toContainText("Nothing was charged.");
+    await expect(injection.locator(".recording figcaption")).toContainText("Recorded run, not live.");
+    await expect(injection.locator(".recording figcaption")).toContainText("in US dollars");
+    expect(await paypalSaw()).toMatchObject({ charges: 0, checkouts: 0 });
   });
 
   await test.step("connect PayPal without the page ever seeing the saved method", async () => {
@@ -40,10 +62,16 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await expect(first.locator(".result")).toHaveAttribute("data-state", "awaiting_approval");
     await expect(first.locator(".stamp")).toHaveText("Asked you first");
     await expect(first.locator(".amount")).toHaveText("$12.50");
+    // One card: the item, the catalog price, the reason with its code, and both answers.
+    const card = first.locator(".approval");
+    await expect(card).toContainText("Veggie Burrito Bowl");
+    await expect(card.locator("code.code")).toHaveText("STEP_UP_FIRST_MERCHANT");
+    await expect(card.getByRole("button", { name: "Reject", exact: true })).toBeEnabled();
     expect(await paypalSaw()).toMatchObject({ charges: 0 });
-    await press("Approve this purchase");
+    await press("Approve");
     await expect(first.locator(".result")).toHaveAttribute("data-state", "done");
     await expect(first).toContainText("$12.50 charged to the saved PayPal account");
+    await expect(first.locator(".presence")).toHaveText("Buyer not present, approved earlier in the signed mandate");
     expect(await paypalSaw()).toMatchObject({ charges: 1 });
   });
 
@@ -53,6 +81,7 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await expect(second.locator(".result")).toHaveAttribute("data-state", "done");
     await expect(second.locator(".stamp")).toHaveText("Allowed");
     await expect(second.locator(".spotlight")).toContainText("Only Praman's ALLOW");
+    await expect(second.locator(".presence")).toHaveText("Buyer not present, approved earlier in the signed mandate");
     expect(await paypalSaw()).toMatchObject({ charges: 2 });
   });
 
@@ -60,9 +89,10 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await press("Ask the agent to buy a team lunch");
     const large = step("large");
     await expect(large.locator(".result")).toHaveAttribute("data-state", "awaiting_approval");
-    await press("Approve this purchase");
+    await press("Approve");
     await expect(large.locator(".result")).toHaveAttribute("data-state", "awaiting_checkout");
     expect(await large.getByLabel("PayPal checkout link").inputValue()).toContain(`${PAYPAL}checkoutnow`);
+    await expect(large.locator(".presence")).toHaveText("Buyer present");
     expect(await paypalSaw()).toMatchObject({ charges: 2, checkouts: 1 });
 
     await press("Capture the payment");
@@ -73,15 +103,6 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await press("Capture the payment");
     await expect(large.locator(".result")).toHaveAttribute("data-state", "done");
     await expect(large).toContainText("$32.00 captured after the buyer approved at PayPal.");
-  });
-
-  await test.step("a poisoned listing: the live model, then a fooled cart refused", async () => {
-    await press("Ask the agent to order at Corner Market");
-    const injection = step("injection");
-    await expect(injection.locator(".message").first()).toContainText("The agent ignored the poisoned line");
-    await press("Send the fooled cart to Praman");
-    await expect(injection.locator('.result[data-state="refused"]')).toContainText("Refused");
-    await expect(injection.locator(".recording figcaption")).toContainText("Recorded run, not live.");
   });
 
   await test.step("twenty at once: the budget holds", async () => {
@@ -157,6 +178,7 @@ test.describe("without a session", () => {
   test("the start page, the recorded run and the empty console", async ({ page, watch }) => {
     expect(watch.expected).toEqual([]);
     await page.goto("/demo");
+    await expect(page.locator(".persona")).toContainText("Meera gives her shopping agent");
     await expect(page.getByRole("button", { name: "Start a session" })).toBeEnabled();
     await page.goto("/demo/recorded");
     await expect(page.locator("figcaption")).toContainText("Recorded run, not live.");
@@ -176,4 +198,51 @@ test.describe("without a session", () => {
     await context.close();
     expect(watch.problems).toEqual([]);
   });
+});
+
+test("the session page fits a phone at each stage of the story", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ ...PHONE, baseURL: baseURL ?? "" });
+  const watch = newWatch();
+  await watchContext(context, new URL(baseURL ?? "").origin, watch);
+  const page = await context.newPage();
+  const press = (name: string) => page.getByRole("button", { name, exact: true }).click();
+  /** Nothing in the box reaches past the screen's right edge, and the page doesn't scroll sideways. */
+  const fits = async (selector: string) => {
+    // The press before this reloads the page, so wait for what it should show, styled.
+    await expect(page.locator(selector).first()).toBeVisible();
+    await page.waitForLoadState("load");
+    await expectNoSidewaysScroll(page);
+    const box = await page.locator(selector).first().boundingBox();
+    expect(box, `${selector} is on the page`).not.toBeNull();
+    expect((box?.x ?? 0) + (box?.width ?? 0), `${selector} ends inside the screen`).toBeLessThanOrEqual(PHONE.viewport.width);
+  };
+
+  await page.goto("/demo");
+  await fits(".persona");
+  await press("Start a session");
+
+  // The refusal, the arithmetic panel beside it and the recorded listing.
+  await press("Ask the agent to order at Corner Market");
+  await expect(page.locator("#injection .message").first()).toBeVisible();
+  await press("Send the fooled cart to Praman");
+  await fits("#injection .no-gate");
+  await fits("#injection .recording");
+
+  // The approval card, with both answers inside the screen's width.
+  await press("Connect PayPal");
+  await page.locator("#approve").click();
+  await press("Ask the agent to buy lunch");
+  await fits("#first .approval");
+  await fits('#first .approval form[action="/demo/reject/first"]');
+
+  // The buyer-present labels, on a charge and on a checkout.
+  await press("Approve");
+  await fits("#first .presence");
+  await press("Ask the agent to buy a team lunch");
+  await press("Approve");
+  await fits("#large .presence");
+  await fits("#large .checkout");
+
+  await context.close();
+  expect(watch.problems).toEqual([]);
 });

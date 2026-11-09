@@ -89,7 +89,7 @@ export async function startConnect(session: DemoSession, deps: DemoDeps): Promis
  */
 export async function finishConnect(session: DemoSession, approvalTokenId: string | null, deps: DemoDeps): Promise<void> {
   if (deps.paypal === null || session.setupTokenId === null) {
-    session.notice = "There's no PayPal connection waiting for this session. Start it from step 2.";
+    session.notice = "There's no PayPal connection waiting for this session. Start it from step 3.";
     return;
   }
   if (approvalTokenId !== null && approvalTokenId !== session.setupTokenId) {
