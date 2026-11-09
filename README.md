@@ -163,7 +163,7 @@ To call every route without a browser, import [`docs/postman/praman.postman_coll
 
 ## The trace viewer
 
-`/r/:trace_id` renders one decision as a record a human can audit months later: the verification state and decision above the fold, the agent's verbatim tool calls, the merchant text it actually read with untrusted regions visibly marked, and the hash chain drawn as a continuous spine where each entry's `entry_hash` and the next entry's `prev_hash` sit adjacent so continuity is read directly rather than asserted. The verify button walks the chain live and stops at the first break.
+`/r/:trace_id` renders one decision as a record a human can audit months later: the verification state and decision above the fold, the goal the agent was given and its own rationale, the merchant text it actually read with untrusted regions visibly marked, and the hash chain drawn as a continuous spine where each entry's `entry_hash` and the next entry's `prev_hash` sit adjacent so continuity is read directly rather than asserted. The verify button walks the chain live and stops at the first break.
 
 In the injection cases this is where a reviewer can *see* the attack sitting inside a product description, next to the model's own reasoning about it.
 
