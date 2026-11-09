@@ -96,6 +96,8 @@ Why it works this way is in [D-73](DECISIONS.md).
 
 `DEMO_SHOP` is a sandbox merchant. The products and prices are real, but paying `DEMO_SHOP` pays this repo's PayPal sandbox account, not the retailer, and no retailer order is placed.
 
+**After paying, the PayPal page stays where it is.** The gateway gives PayPal no page to send the buyer back to, so in the sandbox the buyer can be left on the payment-method screen with no confirmation. The payment has still gone through. Go back to the agent and have it call `complete_checkout`. Calling it too early is safe: until the buyer has approved, Praman doesn't capture.
+
 ## What this does and doesn't protect
 
 - **The agent's only route to money is this gateway, if you make it so.** An agent that also holds PayPal credentials, or has a shell in this repo and can edit `.env` or the database, has other routes. Claude Desktop with only this server has none.
