@@ -3,7 +3,7 @@
 Praman's signed mandate was modelled on the consent-plus-limit pattern of UPI Circle and the Razorpay and NPCI agentic UPI pilot, not on a payments protocol. This page maps it, field by field, onto two public protocols a PayPal reader already knows:
 
 - **AP2**, the Agent Payments Protocol that Google started and PayPal has written about, at version 0.2.
-- **ACP**, the Agentic Commerce Protocol from OpenAI, which PayPal has adopted, and in particular its delegated payment allowance.
+- **ACP**, the Agentic Commerce Protocol from OpenAI and Stripe, which PayPal has adopted, and in particular its delegated payment allowance.
 
 **Praman implements neither protocol and is not compliant with either.** Nothing in this repo has been run against an AP2 sample or an ACP endpoint. The mandate is AP2-shaped: the same idea, in a different format, with gaps that section 4 lists. The mapping is here so a reader can place Praman quickly and see what it would take to close the distance.
 
@@ -27,7 +27,7 @@ PayPal's 2025 writing uses AP2's first vocabulary. The current spec uses another
 |---|---|---|
 | Intent Mandate, human not present | open Checkout Mandate and open Payment Mandate | The user signs constraints ahead of time and the agent acts later |
 | Cart Mandate, human present | closed Checkout Mandate | One finished cart that the user approves |
-| Payment Mandate | closed Payment Mandate | The payment for that cart, shown to the processor, network and issuer |
+| Payment Mandate | closed Payment Mandate | The payment for that cart. In v0.2 it is verified by the Credential Provider, the Network and the Merchant Payment Processor |
 
 A Praman mandate is the first row: limits signed ahead of time, used by an agent later.
 
@@ -48,9 +48,9 @@ The field names are from [`MANDATE_SPEC.md`](MANDATE_SPEC.md), section 1. "Direc
 | `limits.max_total_minor` | Cap on all purchases under the mandate. Spend is replayed from the ledger, never stored | `payment.budget`, field `max` | None. An allowance is `one_time` | Direct for AP2 |
 | `limits.max_txns_per_window`, `limits.window_seconds` | At most this many purchases in a rolling window | Nearest is `payment.agent_recurrence` (`frequency`, `max_occurrences`), which is a schedule and not a rate limit | None | Loose |
 | `limits.max_denials_per_window` | Locks the mandate after too many refusals, so limits can't be found by probing | None | None | None. A Praman addition |
-| `step_up.threshold_minor` | At or above this amount a person must approve. The first purchase at any merchant also needs a person | No constraint type. AP2 has the two modes (human present, human not present) and lets a verifier answer `unresolved_constraint`, which "may trigger a fallback" to a mandate the user approves directly | Nearest is `risk_signals[].action`, with `authorized`, `manual_review` or `blocked`. That is the payment provider's risk verdict, not a limit the user set | Loose |
+| `step_up.threshold_minor` | At or above this amount a person must approve. The first purchase at any merchant also needs a person | No constraint type. AP2 has the two modes (human present, human not present) and lets a verifier answer `unresolved_constraint`, which "MAY be used as a signal to fallback to either a directly approved closed Mandate, or other non-agentic flows" | Nearest is `risk_signals[].action`, with `authorized`, `manual_review` or `blocked`. That is the payment provider's risk verdict, not a limit the user set | Loose |
 | `validity.not_before`, `validity.not_after` | The mandate works only inside this window | `payment.execution_date` (`not_before`, `not_after`), and the credential's `exp` | `expires_at` | Direct |
-| `nonce` | Eight random bytes, so two mandates with the same terms are different documents | Closed mandates carry a `nonce`, and SD-JWT disclosures are salted | None | Loose |
+| `nonce` | Eight random bytes, so two mandates with the same terms are different documents | The closed mandate examples carry a `nonce` beside `aud`, in the part the agent signs, and SD-JWT disclosures are salted | None | Loose |
 | Revocation | Not a field in the signed document that the code reads, though the example in `MANDATE_SPEC.md` shows `revoked: false`. Revoking is a ledger append (`mandate_revoked`), checked on every decision | Not in the pages read | Expiry only | None. A Praman addition |
 | `signature` (`alg`, `key_id`, `value`) | Ed25519 over the canonical JSON of the document. It sits beside the document, not inside it | An SD-JWT signed by the user's key. The examples use ES256 | None. The allowance is created by the agent platform calling the payment provider, with no user signature | **Gap** in format. See 4.1 |
 
@@ -109,7 +109,7 @@ Praman's saved-account charge has no buyer at PayPal at the moment of payment. T
 
 **On AP2 with Google.** From the Google Cloud blog, 28 Oct 2025 ([link](https://cloud.google.com/blog/topics/financial-services/introducing-an-agentic-commerce-solution-for-merchants-from-paypal-and-google-cloud)): with PayPal's agent built to AP2, merchants "will be able to have the assurance that a user was present to authorize the payment", and trust is "anchored to deterministic, non-repudiable proof of intent from the user, which directly addresses the risk of agent error."
 
-**On a gateway's duty.** From "What We Learned Building PayPal's MCP Gateway", PayPal developer blog, 8 Oct 2026 ([link](https://developer.paypal.com/community/blog/PayPal_MCP_Gateway)), about PayPal's internal gateway for its own tools: "Discovery never replaces the final authorization check." The authors list "clearer policy outcomes" among their next priorities.
+**On a gateway's duty.** From "What We Learned Building PayPal's MCP Gateway", PayPal developer blog, 8 Oct 2026 ([link](https://developer.paypal.com/community/blog/PayPal_MCP_Gateway)), about the enterprise gateway PayPal runs for its employees, agents and approved partners: "Discovery never replaces the final authorization check." The authors list "clearer policy outcomes" among their next priorities.
 
 **Not found.** No PayPal statement on who bears the loss when an agent goes beyond what its user allowed, and no PayPal API that accepts a mandate.
 
@@ -127,8 +127,8 @@ PayPal's [Agent Toolkit](https://developer.paypal.com/ai-tools/toolkit/) and its
 
 - **Today Praman does not use the toolkit.** `packages/paypal-exec` calls PayPal's REST APIs directly: Orders v2, Vault v3, capture refunds and webhook signature verification. Praman's own MCP gateway (`apps/mcp-gateway`, [`MCP.md`](MCP.md)) gives an agent six tools, none with a field for a price, a currency, a rail or a mandate.
 - **An agent must not hold both routes to money.** An agent connected to Praman's gateway and also to PayPal's MCP server with `create_order` enabled can pay without asking Praman. The gateway is the only route to money only if the agent has no other.
-- **A safe pairing is read-only.** The toolkit's configuration turns actions on one by one, for example `orders: { get: true }` and `disputes: { list: true, get: true }`. With only read actions, a model could read PayPal's own record of an order and compare it with the ledger, and still could not move money. This repo does not ship that pairing. The page for `@paypal/mcp` documents only `--tools=all`, so no restricted command line is given here, because none was run.
-- **Beside PayPal's internal MCP Gateway.** PayPal describes one governed path for its own tools, with identity kept per caller, an authorization check on each call, and audit events. Praman's gateway is that shape for one narrow job, spending under one signed mandate, with closed reason codes as the policy outcome and the ledger as the audit record. It is a single-user local server, not an enterprise gateway.
+- **A safe pairing is read-only.** The toolkit's configuration turns actions on one by one. Its page shows `orders: { create: true, get: true }` and `disputes: { list: true, get: true }`, so a read-only setup would keep `orders: { get: true }` and drop `create`. With only read actions, a model could read PayPal's own record of an order and compare it with the ledger, and still could not move money. This repo does not ship that pairing. The page for `@paypal/mcp` documents only `--tools=all`, so no restricted command line is given here, because none was run.
+- **Beside PayPal's internal MCP Gateway.** PayPal describes one governed path to its MCP servers and tools, with identity kept per caller, an authorization check on each call, and audit events. Praman's gateway is that shape for one narrow job, spending under one signed mandate, with closed reason codes as the policy outcome and the ledger as the audit record. It is a single-user local server, not an enterprise gateway.
 - **Beside Agent Ready, Store Sync and ACP in ChatGPT.** Those are where a merchant takes an agent's payment, and they need onboarding. Praman sits before them, on the buyer's side: it decides whether the agent may place the order at all.
 
 ## 7. Sources
