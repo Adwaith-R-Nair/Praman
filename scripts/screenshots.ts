@@ -17,6 +17,9 @@ import { config } from "dotenv";
  * DATABASE_URL, runs every demo step against the PayPal sandbox and the real model, then
  * drives headless Chrome (CHROME, default google-chrome) to capture each page.
  *
+ * The steps run in the page's order: the poisoned listing first, which needs no PayPal,
+ * then the connection, the purchases, twenty at once and the revocation.
+ *
  * Connecting PayPal needs a person at PayPal's sandbox login. The script prints PayPal's
  * link; log in there as the sandbox buyer, approve, then press Enter here. To skip that
  * next time, set PRAMAN_SAVED_PAYMENT_TOKEN_FILE to a path outside the repo: after a
@@ -89,6 +92,13 @@ let firstTrace: string | null = null;
 let fixtureTrace: string | null = null;
 
 if (!FRONT_ONLY) {
+  // Step 2 of the page, before PayPal is connected, as a visitor meets it.
+  for (const beat of ["injection", "fixture"] as const) {
+    await runBeat(session, beat, deps);
+    const r = session.beats.get(beat);
+    console.log(`step ${beat}: ${r?.state ?? "missing"} ${r?.reasonCode ?? ""}`.trimEnd());
+  }
+
   const saved = tokenFile !== null && existsSync(tokenFile) ? readToken(tokenFile) : null;
   if (saved !== null) {
     deps.savedMethods.put(session.id, saved, session.expiresAt);
@@ -110,8 +120,6 @@ if (!FRONT_ONLY) {
     ["first", true],
     ["second", false],
     ["large", true],
-    ["injection", false],
-    ["fixture", false],
     ["concurrency", false],
     ["revoke", false],
     ["after_revoke", false],
