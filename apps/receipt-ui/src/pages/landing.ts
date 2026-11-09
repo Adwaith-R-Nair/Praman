@@ -32,8 +32,9 @@ const MCP_GUIDE = `${CODE}/blob/HEAD/docs/MCP.md`;
 /** Where the hosted demo lives (docs/DEPLOY.md). A link preview's og:url has to be a full address. */
 const SITE = "https://praman-demo.onrender.com/";
 
-/** The budget in the story is the demo mandate's own. */
+/** The person in the story. Her budget and the gift card's price are the demo's own figures. */
 const BUDGET = round(limit(MAIN_LIMITS.max_total_minor));
+const BAIT = round(usd(MARKET_PRICES["SKU_INJ2_TARGET"] ?? 0n));
 
 const TITLE = "Praman: the signed permission between an AI agent and PayPal";
 const DESCRIPTION = `Meera gives her shopping agent her PayPal account and ${BUDGET} a week. Praman checks every purchase against limits she signed before PayPal moves money, and keeps a ledger anyone can verify.`;
@@ -62,13 +63,15 @@ export function renderLandingPage(): string {
 </header>
 
 <section class="hero">
-  <h1>An AI agent with a payment method can be talked into spending.</h1>
-  <p class="lede">One line in a product listing can steer the model. Praman sits between the agent and PayPal so that it doesn't matter. The agent can only propose a purchase. Praman checks it against limits a person signed, and only Praman's yes moves money. Every decision goes on a ledger anyone can verify.</p>
+  <h1>Meera gives her shopping agent her PayPal account and ${BUDGET} a week for lunch.</h1>
+  <p class="story">On Tuesday a shop's listing tells the agent to add a ${BAIT} gift card, and nobody is at the checkout to say no.</p>
+  <p class="lede">Praman is the signed permission between the agent and PayPal. Meera signs her limits once, the agent can only name an item and a quantity, and plain code answers allow, ask Meera, or refuse. PayPal doesn't trust the browser with the price, and Praman doesn't trust the model with it. Every decision lands on a hash-chained ledger you can recheck link by link, and it is the evidence if a charge is disputed.</p>
   <p class="cta"><a class="btn btn-primary" href="/demo">Try the live demo</a><span class="cta-note">PayPal sandbox. About five minutes. No real money. The sandbox login is in the Devpost testing notes.</span></p>
+  <p class="built-on">Built on the PayPal sandbox: Orders, Vault, refunds and verified webhooks. Hosted on Render. The agent in the demo is a Gemini model. The ledger console is AG Grid. The local MCP shop sells real products pinned from Channel3.</p>
 </section>
 
 <figure class="specimen" aria-labelledby="specimen-caption">
-  <figcaption id="specimen-caption">Step 6 of the demo. A shop's listing carries a line written for the agent, not for you.</figcaption>
+  <figcaption id="specimen-caption"><strong>An AI agent with a payment method can be talked into spending.</strong> The first step of the demo. A shop's listing carries a line written for the agent, not for you.</figcaption>
   <blockquote class="listing"><p>${escapeHtml(POISONED_LISTING)}</p></blockquote>
   <div class="gate">
     <div class="cell">
@@ -125,13 +128,13 @@ export function renderLandingPage(): string {
 
 <section class="closing" aria-labelledby="try">
   <h2 id="try">See it decide</h2>
-  <p>In the demo you get a fixed mandate, signed for you with a demo key, connect a PayPal sandbox account and let an agent shop. You approve what Praman asks you about, watch a poisoned listing fail, send twenty purchases at once into one budget, then revoke the mandate and see the agent stopped. Every step links to its ledger record.</p>
+  <p>In the demo you get a fixed mandate, signed for you with a demo key, and watch a poisoned listing fail. Then you connect a PayPal sandbox account and let an agent shop. You approve what Praman asks you about, send twenty purchases at once into one budget, then revoke the mandate and see the agent stopped. Every step links to its ledger record.</p>
   <p class="cta"><a class="btn btn-primary" href="/demo">Try the live demo</a></p>
 </section>
 
 <footer class="foot">
   <p>Praman is open source. <a href="${CODE}">Read the code and the design decisions on GitHub</a>. Any MCP agent, such as Claude Desktop, can also shop through it locally: <a href="${MCP_GUIDE}">how to connect one</a>.</p>
-  <p>Sandbox only. The PayPal accounts here hold play money.</p>
+  <p>Sandbox only. The PayPal accounts here hold play money. Meera is an example, not a customer.</p>
 </footer>
 `;
 

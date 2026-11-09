@@ -17,6 +17,33 @@ describe("the front page's links", () => {
   });
 });
 
+describe("the front page's first screen", () => {
+  const html = renderLandingPage();
+  const hero = html.slice(html.indexOf('<section class="hero">'), html.indexOf("</section>"));
+
+  it("leads with the person and what happens to her, before anything about Praman", () => {
+    expect(hero).toContain("Meera gives her shopping agent her PayPal account and $60 a week for lunch.");
+    expect(hero).toContain("a shop's listing tells the agent to add a $100 gift card");
+    expect(hero.indexOf("Meera gives")).toBeLessThan(hero.indexOf("Praman is the signed permission"));
+    expect(hero).toContain("PayPal doesn't trust the browser with the price, and Praman doesn't trust the model with it.");
+  });
+
+  it("says Meera is an example, not a customer", () => {
+    expect(html).toContain("Meera is an example, not a customer");
+  });
+
+  it("names what it is built on, and says the Channel3 catalog is in the local MCP shop", () => {
+    const line = /<p class="built-on">([^<]*)<\/p>/.exec(html)?.[1] ?? "";
+    for (const name of ["PayPal sandbox", "Render", "AG Grid", "Channel3", "Gemini"]) expect(line, name).toContain(name);
+    expect(line).toMatch(/local MCP shop[^.]*Channel3/);
+  });
+
+  it("calls the poisoned listing the first step of the demo", () => {
+    expect(html).toContain("The first step of the demo");
+    expect(html).not.toMatch(/step 6/i);
+  });
+});
+
 describe("the front page's link preview", () => {
   const html = renderLandingPage();
   const head = html.slice(0, html.indexOf("</head>"));
