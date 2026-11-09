@@ -3,8 +3,8 @@ import { prisma } from "@praman/db";
 import { append } from "@praman/ledger";
 import type { PurchaseIntent } from "@praman/policy";
 import { generateKeypair, signMandate, type MandateDocument } from "@praman/mandate";
-import { LatchedExecutor, routeAllTo } from "@praman/exec-core";
-import { runIntent, type RunResult } from "../src/run-intent.js";
+import { LatchedExecutor, SimulatedExecutor, routeAllTo } from "@praman/exec-core";
+import { MANDATE_LOCK_NS, runIntent, type RunResult } from "../src/run-intent.js";
 
 const MERCHANT = "TEST_CONCURRENT_MERCH";
 const SKU = "TEST_CONCURRENT_SKU";
@@ -118,6 +118,47 @@ describe("concurrent intents under one mandate", () => {
     const refused = results.flatMap((r) => (r.kind === "DECIDED" && r.order_id === null ? [r.internal_reason_code] : []));
     expect(refused).toEqual(Array.from({ length: 15 }, () => "MANDATE_BUDGET_EXHAUSTED"));
   }, 30_000);
+
+  // On a hosted database every query is a network round trip, so twenty intents queued
+  // behind one mandate lock can wait for seconds. Waiting is fine. An intent that gives
+  // up waiting throws, leaves no ledger row, and the caller sees a server error. Seen on
+  // the hosted demo on 9 Nov 2026: 19 of 20 decided, one threw. The lock is held here
+  // for 6 seconds to stand in for that slowness.
+  it("20 concurrent intents all get an answer when the mandate lock is slow to come free", async () => {
+    const mandateId = "mnd_concurrent_slow";
+    await seedMerchantHistory(mandateId);
+    const { signed, publicKeyPem } = buildSignedMandate(mandateId);
+    const holder = prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANDATE_LOCK_NS}, hashtext(${mandateId}))`;
+        await tx.$executeRaw`SELECT pg_sleep(6)`;
+      },
+      { timeout: 30_000 },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const runs = await Promise.allSettled(
+      Array.from({ length: 20 }, (_, i) => {
+        const intent: PurchaseIntent = {
+          intent_id: `int_slow_${String(i)}`,
+          mandate_id: mandateId,
+          merchant_id: MERCHANT,
+          line_items: [{ sku: SKU, qty: 1 }],
+          requested_at: "2026-11-08T09:59:00.000Z",
+          agent_rationale: "test",
+        };
+        return runIntent(intent, signed, publicKeyPem, routeAllTo(new SimulatedExecutor()), NOW, "test-model");
+      }),
+    );
+    await holder;
+
+    expect(runs.filter((r) => r.status === "rejected")).toEqual([]);
+    const results = runs.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+    expect(results.every((r) => r.kind === "DECIDED")).toBe(true);
+    const created = results.filter((r) => r.kind === "DECIDED" && r.order_id !== null && r.order_status !== "failed");
+    expect(created.length).toBe(5);
+    expect(BigInt(created.length) * PRICE).toBeLessThanOrEqual(MAX_TOTAL);
+  }, 60_000);
 
   it("20 concurrent intents never exceed the mandate's velocity", async () => {
     const mandateId = "mnd_concurrent_2";
