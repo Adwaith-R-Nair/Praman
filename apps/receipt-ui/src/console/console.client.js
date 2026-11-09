@@ -20,6 +20,10 @@
   var INK = { ink: "#172420", muted: "#4b5b55", hairline: "#c7d0c9", seal: "#24496b", allow: "#2e6b4c", stepUp: "#8a5f22", deny: "#9e3b2e", paper: "#f6f8f6", neutral: "#7a8a84", returned: "#6b8796" };
   var RAIL_NAMES = { paypal: "PayPal", razorpay: "Razorpay", simulated: "Simulated" };
   var STATUS_COLOURS = { captured: INK.allow, created: INK.seal, released: INK.neutral, refunded: INK.returned, failed: INK.deny, mismatch: INK.stepUp };
+  // The three the product is about each get a colour; everyone else shares one. A bar's
+  // label names who it is, so the colour only groups the bars and never has to be read alone.
+  var WHO_COLOURS = { agent: INK.ink, praman: INK.seal, person: INK.stepUp };
+  var NO_ROWS = mode === "visitor" ? "No rows yet. Run a step of the demo and its rows appear here." : mode === "sample" ? "The sample's mandates have no rows on this server's ledger." : "No ledger rows yet.";
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -118,6 +122,7 @@
   var columnDefs = [
     { headerName: "Seq", field: "seq", width: 84, pinned: "left", filter: "agNumberColumnFilter", valueGetter: function (p) { return p.data ? Number(p.data.seq) : null; }, sort: "desc" },
     { headerName: "Time (UTC)", field: "ts", width: 172, filter: "agTextColumnFilter", valueFormatter: function (p) { return p.value ? p.value.replace("T", " ").slice(0, 19) : ""; } },
+    { headerName: "Who", field: "whoPlain", width: 132, tooltipField: "actor" },
     { headerName: "Event", field: "eventPlain", width: 220, tooltipField: "eventType", filter: "agTextColumnFilter" },
     {
       headerName: "Decision",
@@ -149,6 +154,7 @@
     { headerName: "Order id", field: "orderId", width: 170, cellClass: "cell-code" },
     { headerName: "Capture id", field: "captureId", width: 170, cellClass: "cell-code" },
     { headerName: "Refund id", field: "refundId", width: 170, cellClass: "cell-code" },
+    { headerName: "Stored actor", field: "actor", width: 132, cellClass: "cell-code", headerTooltip: "The actor exactly as the ledger row stores it. The row's entry hash covers it." },
     {
       headerName: "Hash check",
       field: "hashVerdict",
@@ -239,9 +245,7 @@
       tooltipShowDelay: 300,
       animateRows: false,
       // The grid's own empty message is "No Rows To Show". Say what to do instead.
-      localeText: {
-        noRowsToShow: mode === "visitor" ? "No rows yet. Run a step of the demo and its rows appear here." : mode === "sample" ? "The sample's mandates have no rows on this server's ledger." : "No ledger rows yet.",
-      },
+      localeText: { noRowsToShow: NO_ROWS },
       onSelectionChanged: function (e) {
         var picked = e.api.getSelectedRows();
         showDetail(picked[0] || null);
@@ -251,12 +255,21 @@
     gridApi = window.agGrid.createGrid(document.getElementById("grid"), options);
   }
 
-  function filterTo(column, value) {
+  // Filters the grid to the rows whose columns hold exactly these values, and brings it into view.
+  function filterRows(equals) {
     if (!gridApi) return;
     var model = {};
-    model[column] = { filterType: "text", type: "equals", filter: value };
+    Object.keys(equals).forEach(function (column) {
+      model[column] = { filterType: "text", type: "equals", filter: equals[column] };
+    });
     gridApi.setFilterModel(model);
     document.getElementById("grid").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function filterTo(column, value) {
+    var equals = {};
+    equals[column] = value;
+    filterRows(equals);
   }
 
   // ── Charts ───────────────────────────────────────────────────────
@@ -336,6 +349,48 @@
     clear(document.getElementById("chart-spend"));
     spendChart = window.agCharts.AgCharts.create(options);
     select.value = series.mandateId;
+  }
+
+  // Who did what: one bar per actor and event type, as the server counted them. Nothing
+  // is added up here. Selecting a bar filters the grid's Who and Event columns to its rows.
+  function drawActors(actors) {
+    if (actors.length === 0) {
+      emptyNote("chart-actors", NO_ROWS);
+      return;
+    }
+    var options = chartBase("chart-actors");
+    options.data = actors.map(function (a) {
+      return { label: a.whoPlain + ": " + a.did, who: a.who, whoPlain: a.whoPlain, eventPlain: a.eventPlain, eventType: a.eventType, stored: a.actors.join(", "), rows: a.rows };
+    });
+    options.series = [
+      {
+        type: "bar",
+        direction: "horizontal",
+        xKey: "label",
+        yKey: "rows",
+        yName: "Ledger rows",
+        fill: INK.returned,
+        itemStyler: function (p) { return { fill: WHO_COLOURS[p.datum.who] || INK.returned }; },
+        label: { enabled: true, placement: "outside-end", color: INK.ink },
+        tooltip: {
+          renderer: function (p) {
+            return { heading: p.datum.whoPlain, title: p.datum.eventPlain, data: [{ label: "Ledger rows", value: String(p.datum.rows) }, { label: "Stored actor", value: p.datum.stored }, { label: "Event type", value: p.datum.eventType }] };
+          },
+        },
+      },
+    ];
+    // On a phone the labels wrap. A label is cut off, not wrapped, when its lines don't fit
+    // the bar's height, so a narrow chart gives each bar room for three lines.
+    var narrow = document.getElementById("chart-actors").clientWidth < 520;
+    options.axes = {
+      x: { type: "category", position: "left", thickness: narrow ? 160 : 300, label: { color: INK.ink, wrapping: "hyphenate" } },
+      // Rows are whole numbers, so a tick between two of them gets no label.
+      y: { type: "number", position: "bottom", min: 0, label: { color: INK.muted, formatter: function (p) { return p.value === Math.round(p.value) ? String(p.value) : ""; } } },
+    };
+    options.legend = { enabled: false };
+    options.height = Math.max(220, (narrow ? 64 : 30) * actors.length + 70);
+    options.listeners = { seriesNodeClick: function (e) { filterRows({ whoPlain: e.datum.whoPlain, eventPlain: e.datum.eventPlain }); } };
+    window.agCharts.AgCharts.create(options);
   }
 
   function drawReasons(decisions) {
@@ -465,6 +520,7 @@
     setupBrowserCheck(data.rows);
     makeGrid(data.rows);
     setupSpend(data.spend);
+    drawActors(data.actors);
     drawReasons(data.decisions);
     drawRails(data.rails);
 

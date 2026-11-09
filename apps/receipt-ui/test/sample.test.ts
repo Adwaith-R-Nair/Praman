@@ -497,6 +497,17 @@ describe("the console page in sample mode", () => {
     }
   });
 
+  it("has the who-did-what chart on all three consoles, and says what Agent and Test harness mean", () => {
+    for (const mode of ["sample", "visitor", "operator"] as const) {
+      const { html } = renderConsolePage(mode, "bm9uY2Vub25jZW5vbmNlbm9uY2U=");
+      expect(html, mode).toContain('<div class="chart" id="chart-actors" role="img"');
+      expect(html, mode).toContain("counted on the server by the actor the ledger names");
+      expect(html, mode).toContain("counted apart as Test harness, though the ledger stores them as agent and issuer.");
+      // A demo console's agent isn't always a live model, and the page says so.
+      expect(html.includes("a live model, a recorded answer replayed, or the scripted fooled cart"), mode).toBe(mode !== "operator");
+    }
+  });
+
   it("shows no trace list on the visitor's or the operator's console", () => {
     const traces = [{ traceId: "trc_a", summary: "s", label: "Allowed", labelClass: "decision-allow", amount: null }];
     expect(renderConsolePage("visitor", "bm9uY2Vub25jZW5vbmNlbm9uY2U=", null, traces).html).not.toContain("Traces in this sample");

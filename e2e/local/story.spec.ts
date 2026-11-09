@@ -175,6 +175,39 @@ test("the whole story, its trace, a refund, the console and the revocation", asy
     await page.locator('#grid [role="row"][row-id] [role="gridcell"]').first().click();
     await expect(page.locator("#detail")).not.toContainText("Select a row");
   });
+
+  await test.step("the who-did-what chart filters the ledger to a bar's rows, and fits a phone", async () => {
+    await page.reload();
+    const chart = page.locator("#chart-actors");
+    await expect(chart.locator("canvas")).toBeVisible();
+    await expect(page.locator("#count")).toHaveText(/^\d+ rows$/);
+
+    // What the server counted for this session: the first bar is the agent's proposals.
+    const data = (await (await page.request.get("/demo/console/data")).json()) as { rows: unknown[]; actors: { whoPlain: string; did: string; eventPlain: string; rows: number }[] };
+    const [first] = data.actors;
+    expect(first).toMatchObject({ whoPlain: "Agent", did: "proposed a purchase" });
+    expect(data.actors.map((a) => a.whoPlain)).toEqual(expect.arrayContaining(["Praman", "Person", "Test harness"]));
+
+    // Selecting that bar, with the keyboard as a reader without a mouse would.
+    await chart.locator('[tabindex="0"]').first().focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#count")).toHaveText(`${String(first?.rows)} of ${String(data.rows.length)} rows`);
+    const who = page.locator('#grid [role="row"][row-id] [col-id="whoPlain"]');
+    await expect(who).toHaveCount(first?.rows ?? 0);
+    for (const text of await who.allTextContents()) expect(text).toBe("Agent");
+    for (const text of await page.locator('#grid [role="row"][row-id] [col-id="eventPlain"]').allTextContents()) expect(text).toBe(first?.eventPlain);
+    await press("Clear filters");
+    await expect(page.locator("#count")).toHaveText(/^\d+ rows$/);
+
+    const desktop = page.viewportSize();
+    await page.setViewportSize(PHONE.viewport);
+    await page.reload();
+    await expect(chart.locator("canvas")).toBeVisible();
+    await expectNoSidewaysScroll(page);
+    const box = await chart.boundingBox();
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(PHONE.viewport.width);
+    if (desktop !== null) await page.setViewportSize(desktop);
+  });
 });
 
 test.describe("without a session", () => {
