@@ -6,13 +6,15 @@
 
 ## What this is
 
-A control plane that sits between an AI buyer agent and a Razorpay merchant, making every rupee the agent moves **bounded, explainable, and replayable**.
+A control plane that sits between an AI buyer agent and a merchant on the PayPal sandbox or Razorpay test mode, making every amount the agent moves **bounded, explainable, and replayable**. The currency, INR or USD, comes from the signed mandate.
 
 > The model proposes. The policy engine disposes. The ledger remembers.
 
 ## Why it exists
 
 NPCI is building the Unified Agent Protocol so AI agents can transact over UPI. Razorpay and NPCI piloted agentic UPI payments on Claude in February 2026, using consent-based per-merchant spending limits. The rails are arriving.
+
+Praman started on those rails and now runs on PayPal as well; the problem is the same on both.
 
 What isn't arriving is the layer that answers the question every risk team asks: **when an agent spends money it shouldn't have, how do you find out, prove it, and get it back?**
 
@@ -37,7 +39,7 @@ Injection can make the model *want* the wrong thing. It cannot make the system *
 
 **1. Mandate:** a human-signed (Ed25519) grant of bounded authority: merchant allowlist, category allowlist, per-transaction cap, cumulative cap, velocity limit, validity window, human-approval threshold. Modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot. Protocol-agnostic by design, since UAP is unpublished.
 
-**2. Policy engine:** a pure, total, deterministic function of one input object (`intent`, `mandate`, `ledger_state`, `catalog`, `now`, `idempotency_key`). No I/O, no clock, no randomness, **no LLM**. Returns `ALLOW` / `STEP_UP` / `DENY` with a machine-readable reason code from a closed enum of 19. One function, readable top to bottom in one pass. Hand-written up to the `v1.0-submission` tag, and changed since then only under the rules in D-27.
+**2. Policy engine:** a pure, total, deterministic function of one input object (`intent`, `mandate`, `ledger_state`, `catalog`, `now`, `idempotency_key`). No I/O, no clock, no randomness, **no LLM**. Returns `ALLOW` / `STEP_UP` / `DENY` with a machine-readable reason code from a closed enum of 21. One function, readable top to bottom in one pass. Hand-written up to the `v1.0-submission` tag, and changed since then only under the rules in D-27.
 
 **3. Ledger:** append-only, hash-chained, Merkle-checkpointed. Every intent, decision, API call and outcome. Immutability enforced by Postgres triggers rejecting UPDATE and DELETE, not by application convention. Spend is *derived by replaying the ledger*, never stored on the mandate, so inflating a budget requires forging the whole chain.
 
@@ -51,7 +53,7 @@ Injection can make the model *want* the wrong thing. It cannot make the system *
         ╔═════════════════ TRUST BOUNDARY ═════════════════╗
         ║  verify sig → derive state → evaluate() → gate   ║
         ║       │                                          ║
-        ║   ALLOW → idempotency guard → Razorpay test mode  ║
+        ║   ALLOW → idempotency guard → PayPal or Razorpay ║
         ║   STEP_UP → human approval                       ║
         ║   DENY → typed reason code, nothing executes     ║
         ║       │                                          ║
@@ -59,13 +61,13 @@ Injection can make the model *want* the wrong thing. It cannot make the system *
         ╚══════════════════════════════════════════════════╝
 ```
 
-Evaluation and execution run in **two phases**, not one transaction: a database transaction and an external Razorpay call cannot be made atomic (there is no protocol between them). What's guaranteed instead is that no call to Razorpay is ever made without a durable, committed record naming what was about to happen — so a crash or ambiguous failure between the call and recording its outcome leaves a resolvable trail, not a silent gap. A per-mandate advisory lock, held in both phases, still stops concurrent duplicate intents from racing the budget. See D-22.
+Evaluation and execution run in **two phases**, not one transaction: a database transaction and an external payment call cannot be made atomic (there is no protocol between them). What's guaranteed instead is that no call to a payment provider is ever made without a durable, committed record naming what was about to happen — so a crash or ambiguous failure between the call and recording its outcome leaves a resolvable trail, not a silent gap. A per-mandate advisory lock, held in both phases, still stops concurrent duplicate intents from racing the budget. See D-22.
 
 ## Stack
 
-TypeScript (strict) · Postgres + Prisma · Ed25519 via `node:crypto` · a provider-neutral model interface (Gemini and Anthropic implementations) with tool use · MCP for the merchant catalog · Razorpay Node SDK, test mode only · Vitest + a custom eval runner in CI.
+TypeScript (strict) · Postgres + Prisma · Ed25519 via `node:crypto` · a provider-neutral model interface (Gemini and Anthropic implementations) with tool use · MCP for the merchant catalog · PayPal Orders v2, Vault v3, Refunds and webhooks, sandbox only · Razorpay Node SDK, test mode only · AG Grid and AG Charts Community for the ledger console · Render (Blueprint, free plan) with Postgres on Neon for the hosted demo · Vitest + a custom eval runner in CI.
 
-No HTTP framework — the control plane is a `runIntent()` orchestrator invoked by CLI, not a server (Express was the original plan; see the roadmap for the actual HTTP API phase).
+No HTTP framework. The control plane is a `runIntent()` orchestrator, called by the CLI, by the demo's routes and by the MCP gateway.
 
 Deliberately boring where boring is correct. The novelty budget is spent on the decision layer, not the framework. **No vector database** — the catalog is small and structured, there is nothing to retrieve semantically, and adding one would have been decoration.
 
@@ -76,16 +78,16 @@ Deliberately boring where boring is correct. The novelty budget is spent on the 
 | Containment rate | adversarial cases where no money moved (dev *and* held-out, reported separately) |
 | Incidental containment | contained, but for an unrelated reason — a lucky pass, reported not hidden |
 | False-refusal rate | benign purchases wrongly blocked — the cost side of the ledger |
-| Money-at-risk prevented | rupee value of contained attacks |
+| Money-at-risk prevented | value of contained attacks, per currency |
 | Unresolved exceptions | explicit list of failing case IDs, each with a reason |
 
-100 corpus cases: 60 adversarial across 8 families (prompt injection, mandate evasion, double-charge, numeric confusion, hallucinated SKU, scope drift, failure handling, catalog tamper) and 40 benign. A 30% held-out split was computed and committed *before* any tuning — the git history proves the ordering.
+54 cases: 46 deterministic Layer 1 cases and 8 Layer 2 cases with a live model. Layer 1 covers prompt injection, mandate evasion, double-charge, numeric confusion, hallucinated SKU, scope drift, denial probes, order holds and 16 benign purchases. 42 Layer 1 cases also run mirrored on the other rail. The held-out split is a hash of each case id; the README says exactly what came before it, and why it is 20 of 46 rather than 30%.
 
 Run in GitHub Actions on every push. The README badge is generated from `report.json`, so the numbers can't drift from reality.
 
 ## Scope and honesty
 
-- Test mode only. No live keys, no real money.
+- PayPal sandbox and Razorpay test mode only. No live keys, no real money.
 - Not a UAP implementation — UAP is unpublished.
 - Single-merchant demo scope; multi-merchant is config, untested at scale.
 - Merkle roots are computed but not externally anchored.
@@ -94,10 +96,10 @@ Run in GitHub Actions on every push. The README badge is generated from `report.
   row-level triggers for a `TRUNCATE`. The ledger's integration tests rely on
   this to reset state between runs. Closing it needs a statement-level event
   trigger (`ON TRUNCATE`), not implemented.
-- Execution is two-phase (D-22): between the ledger recording an attempt and
-  recording its outcome, `deriveState` doesn't count that spend — a
-  concurrent intent under the same mandate can evaluate against a slightly
-  understated budget for the width of one API call. Deferred, not hidden.
+- Execution is two-phase (D-22). A call whose outcome is unknown holds its
+  budget and a velocity slot until the reconcile sweep settles it, so a
+  pending call fails closed. Before D-42 attempts in flight weren't counted,
+  and 20 concurrent intents created 4 times a mandate's budget.
 - Mandate revocation implemented; delegation chains are not.
 - **Defense only.** The adversarial corpus is a fixed set of static fixtures exercised against this project's own sandbox. Praman ships no attack generator and nothing that generalises to third-party systems.
 - Known failures are listed in `eval/report.md` rather than tuned away.
