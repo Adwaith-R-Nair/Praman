@@ -451,4 +451,12 @@ describe("the console page in sample mode", () => {
     expect(renderConsolePage("visitor", "bm9uY2Vub25jZW5vbmNlbm9uY2U=", null, traces).html).not.toContain("Traces in this sample");
     expect(renderConsolePage("operator", "bm9uY2Vub25jZW5vbmNlbm9uY2U=", null, traces).html).not.toContain("Traces in this sample");
   });
+
+  it("says the server's check is shared for up to a minute, since one load of the sample is", () => {
+    // The loader keeps one walk for SAMPLE_CACHE_MS, so the page can't say it checks on every load.
+    expect(SAMPLE_CACHE_MS).toBe(60_000);
+    const { html } = renderConsolePage("sample", "bm9uY2Vub25jZW5vbmNlbm9uY2U=");
+    expect(html).not.toContain("when this page loads");
+    expect(html).toContain("readers share one such check for up to a minute");
+  });
 });

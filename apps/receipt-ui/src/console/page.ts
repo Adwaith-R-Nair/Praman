@@ -54,7 +54,7 @@ const COPY: Readonly<Record<ConsoleMode, { readonly back: string; readonly backL
     backLabel: "← Praman",
     kicker: "Sample run",
     title: "One past session, on the ledger",
-    lede: "A session that already ran on this server, picked in the server's configuration and shown read-only. These are the ledger rows it wrote, not a recording: each row's hashes are recomputed on the server when this page loads, and the whole chain is walked from its first row. You see what a public trace page and a public dispute bundle show. The mandate's limits, its signature and the reason behind each request for approval are withheld.",
+    lede: "A session that already ran on this server, picked in the server's configuration and shown read-only. These are the ledger rows it wrote, not a recording: the server recomputes each row's hashes and walks the whole chain from its first row, and readers share one such check for up to a minute. You see what a public trace page and a public dispute bundle show. The mandate's limits, its signature and the reason behind each request for approval are withheld.",
     data: "/sample/data",
   },
 };
