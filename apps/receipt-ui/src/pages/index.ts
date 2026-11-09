@@ -12,6 +12,9 @@ const RECENT_LIMIT = 25;
 /** Demo visitors' traces aren't listed here, so the index points to where they are. */
 const DEMO_LINK = `<p class="index-demo-link"><a href="/demo">Walk through the demo story</a>, where each step links to its own trace.</p>`;
 
+/** Only on a server that has a sample set: one past demo session anyone can read, with nothing to start. */
+const SAMPLE_LINK = `<p class="index-demo-link"><a href="/sample">See a sample run</a>: one past demo session's ledger rows, traces and public dispute bundles, read-only.</p>`;
+
 /** The masthead's chain-status line, in plain language, off the same VerifyResult every row is already classified against. */
 function chainSummary(chainResult: Awaited<ReturnType<typeof verifyChain>>): { label: string; detail: string; ok: boolean } {
   if (chainResult.ok) {
@@ -20,14 +23,14 @@ function chainSummary(chainResult: Awaited<ReturnType<typeof verifyChain>>): { l
   return { label: "chain broken", detail: `stopped at seq ${chainResult.brokenAt.toString()}`, ok: false };
 }
 
-export async function renderIndexPage(): Promise<string> {
+export async function renderIndexPage(hasSample = false): Promise<string> {
   const traceIds = await listRecentTraceIds(RECENT_LIMIT);
 
   if (traceIds.length === 0) {
     // On the hosted server every trace is a demo visitor's, so this is what /traces shows there.
     return layout(
       "Recent traces",
-      `<h1 class="decision"><a href="/demo">Start the demo</a></h1><p>There are no purchases outside the demo to list yet. In the demo an agent buys from sandbox merchants through PayPal, and each step links to its own trace.</p>`,
+      `<h1 class="decision"><a href="/demo">Start the demo</a></h1><p>There are no purchases outside the demo to list yet. In the demo an agent buys from sandbox merchants through PayPal, and each step links to its own trace.</p>${hasSample ? SAMPLE_LINK : ""}`,
       "home",
     );
   }
@@ -88,6 +91,7 @@ export async function renderIndexPage(): Promise<string> {
 </header>
 
 ${DEMO_LINK}
+${hasSample ? SAMPLE_LINK : ""}
 
 <ul class="trace-list">${rowsHtml}</ul>
 

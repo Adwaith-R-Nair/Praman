@@ -1,11 +1,14 @@
-import { formatMoney, minorFromJSON, type ReasonCode } from "@praman/shared";
-import type { EventType } from "@praman/ledger";
+import { publicPayload } from "@praman/dispute";
+import { canonical, formatMoney, minorFromJSON, type ReasonCode } from "@praman/shared";
+import type { EventType, LedgerEntryRecord } from "@praman/ledger";
 import { loadTrace, type RefundLine, type SettlementLine, type TraceView } from "../data.js";
 import { DEMO_MERCHANTS } from "../demo/config.js";
 import { decisionClass, decisionLabel } from "../decision-display.js";
 import { escapeHtml, fixRupeeGlyph } from "../html.js";
 import { layout } from "../layout.js";
 import { EVENT_TYPE_PLAIN, REASON_CODE_PLAIN } from "../reason-codes.js";
+import { sampleMandateIds } from "../sample-config.js";
+import { toolCallsHtml, toolCallsOf } from "./tool-calls.js";
 
 /** Free text (goal, rationale, merchant content) may contain a literal ₹. */
 function escFreeText(value: string): string {
@@ -137,6 +140,43 @@ function entryLabel(eventType: string, approvedBy: "person" | "test_harness" | n
   return EVENT_TYPE_PLAIN[eventType as EventType] ?? eventType;
 }
 
+/** A payload's canonical JSON goes into the page only up to this size. A larger one can be rehashed from the dispute bundle. */
+export const MAX_PAYLOAD_CHARS_ON_PAGE = 100_000;
+
+/**
+ * What the browser needs to recompute this row's hashes itself (chain-verify.client.js),
+ * as data attributes. The fields of the entry hash are sent as the exact text the ledger
+ * hashed: seq in decimal and the time from toISOString(), as computeEntryHash() uses.
+ *
+ * The payload goes in only when the public copy holds all of it, as canonical JSON, so
+ * its hash can be recomputed. A row with withheld fields (D-84) sends their names and no
+ * payload: its payload hash can't be rehashed by the public, and the page says so. This
+ * is what the public dispute bundle carries for the row, decided by the same function.
+ */
+function entryDataAttributes(e: LedgerEntryRecord): string {
+  const pub = publicPayload(e.payload);
+  let payloadText: string | null = null;
+  if (pub.withheld.length === 0) {
+    try {
+      const text = canonical(pub.payload);
+      if (text.length <= MAX_PAYLOAD_CHARS_ON_PAGE) payloadText = text;
+    } catch {
+      payloadText = null;
+    }
+  }
+  return [
+    `data-seq="${e.seq.toString()}"`,
+    `data-ts="${escapeHtml(e.ts.toISOString())}"`,
+    `data-actor="${escapeHtml(e.actor)}"`,
+    `data-event-type="${escapeHtml(e.eventType)}"`,
+    `data-payload-hash="${escapeHtml(e.payloadHash)}"`,
+    `data-prev-hash="${escapeHtml(e.prevHash)}"`,
+    `data-entry-hash="${escapeHtml(e.entryHash)}"`,
+    `data-withheld="${escapeHtml(pub.withheld.join(","))}"`,
+    ...(payloadText === null ? [] : [`data-payload="${escapeHtml(payloadText)}"`]),
+  ].join(" ");
+}
+
 /**
  * `ownerControl` is for the demo's own view of a visitor's trace (/demo/r/<step>) only:
  * it renders what that visitor, and nobody else, may do with this trace, which is ask
@@ -160,7 +200,11 @@ export async function renderTracePage(traceId: string, ownerControl: ((trace: Tr
   // A demo visitor's revocation has no merchant, and its trace id says whose it is.
   const fromDemo = (trace.merchantId !== null && DEMO_MERCHANTS.includes(trace.merchantId)) || traceId.startsWith("trc_demo_");
   // A demo visitor's console shows only their own session; the whole-ledger console is local only.
-  const consoleHref = `${fromDemo ? "/demo/console" : "/console"}#trace=${encodeURIComponent(traceId)}`;
+  // A trace of the server's public sample opens in the sample's console, which anyone can read.
+  // The owner's own page keeps the owner's console.
+  const sampleIds = sampleMandateIds();
+  const inSample = ownerControl === null && sampleIds.length > 0 && trace.entries.some((e) => typeof e.payload === "object" && e.payload !== null && "mandate_id" in e.payload && typeof e.payload.mandate_id === "string" && sampleIds.includes(e.payload.mandate_id));
+  const consoleHref = `${inSample ? "/sample" : fromDemo ? "/demo/console" : "/console"}#trace=${encodeURIComponent(traceId)}`;
 
   // Suppressed for a plain OK: the hero already says "Allowed", and OK adds
   // no information beyond that — showing it anyway would be the page
@@ -204,7 +248,7 @@ export async function renderTracePage(traceId: string, ownerControl: ((trace: Tr
 
   const entriesHtml = trace.entries
     .map(
-      (e, i) => `<li class="entry" data-seq="${e.seq.toString()}">
+      (e, i) => `<li class="entry" ${entryDataAttributes(e)}>
         ${i > 0 ? hashRow("prev_hash", e.prevHash) : ""}
         <div class="entry-header">
           <span class="entry-type">${escapeHtml(entryLabel(e.eventType, trace.approvedBy))}</span>
@@ -263,6 +307,8 @@ ${
     : ""
 }
 
+${toolCallsHtml(toolCallsOf(trace.entries))}
+
 ${
   merchantReadsHtml
     ? `<section><h2>Merchant content the agent read</h2>${merchantReadsHtml}</section>`
@@ -271,6 +317,15 @@ ${
 
 <section>
   <h2>Ledger entries</h2>
+  <div class="browser-verify" id="browser-verify" hidden>
+    <p class="bv-lede">The button at the top asks this server to walk the whole ledger. This one asks nobody. Your browser rehashes the rows below itself, with WebCrypto, from the values already in this page.</p>
+    <div class="bv-actions">
+      <button type="button" id="bv-run">Verify in my browser</button>
+      <label class="bv-toggle" for="bv-tamper"><input type="checkbox" id="bv-tamper" autocomplete="off"> Change one digit in my copy first</label>
+    </div>
+    <p class="bv-result" id="bv-result" role="status" aria-live="polite"></p>
+    <p class="bv-note" id="bv-note"></p>
+  </div>
   <ul class="spine">${entriesHtml}</ul>
 </section>
 
@@ -291,9 +346,10 @@ ${(() => {
   <p class="nav"><a href="${escapeHtml(consoleHref)}">See this trace in the ledger console</a></p>
 </section>
 
+<script src="/assets/chain-verify.js" defer></script>
 <script src="/assets/trace.js" defer></script>
 `;
 
 
-  return { status: 200, html: layout(`Trace ${traceId}`, body, fromDemo ? "demo" : "index") };
+  return { status: 200, html: layout(`Trace ${traceId}`, body, inSample ? "sample" : fromDemo ? "demo" : "index") };
 }

@@ -47,6 +47,7 @@ export const ASSETS: ReadonlyMap<string, Asset> = new Map([
   ["/assets/print.js", { contentType: "text/javascript; charset=utf-8", body: read("./layout.print.js") }],
   ["/assets/index.js", { contentType: "text/javascript; charset=utf-8", body: read("./pages/index.client.js") }],
   ["/assets/trace.js", { contentType: "text/javascript; charset=utf-8", body: read("./pages/trace.client.js") }],
+  ["/assets/chain-verify.js", { contentType: "text/javascript; charset=utf-8", body: read("./pages/chain-verify.client.js") }],
   ["/assets/console.js", { contentType: "text/javascript; charset=utf-8", body: read("./console/console.client.js") }],
   ["/assets/console.css", { contentType: "text/css; charset=utf-8", body: read("./console/console.css") }],
   [vendorPath(VENDOR.grid), { contentType: "text/javascript; charset=utf-8", body: vendorFile(VENDOR.grid) }],

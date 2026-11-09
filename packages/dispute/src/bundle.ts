@@ -182,7 +182,11 @@ function isStepUpCode(v: unknown): boolean {
   return typeof v === "string" && v.startsWith("STEP_UP_");
 }
 
-function publicPayload(payload: unknown): { payload: unknown; withheld: string[] } {
+/**
+ * A row's payload as any public copy may carry it, and the names of the fields left
+ * out. The one place that decides what a public page or bundle shows of a payload.
+ */
+export function publicPayload(payload: unknown): { payload: unknown; withheld: string[] } {
   if (!isRecord(payload)) return { payload, withheld: [] };
   const kept: Record<string, unknown> = {};
   const withheld: string[] = [];

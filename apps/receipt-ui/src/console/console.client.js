@@ -14,6 +14,8 @@
   // one apply only if it carries this response's nonce, which they are given here.
   var nonce = (script && script.nonce) || "";
   var source = root.getAttribute("data-src") || "";
+  // "visitor", "operator" or "sample". The sample is public, so its data has no budgets.
+  var mode = root.getAttribute("data-mode") || "";
 
   var INK = { ink: "#172420", muted: "#4b5b55", hairline: "#c7d0c9", seal: "#24496b", allow: "#2e6b4c", stepUp: "#8a5f22", deny: "#9e3b2e", paper: "#f6f8f6", neutral: "#7a8a84", returned: "#6b8796" };
   var RAIL_NAMES = { paypal: "PayPal", razorpay: "Razorpay", simulated: "Simulated" };
@@ -238,7 +240,7 @@
       animateRows: false,
       // The grid's own empty message is "No Rows To Show". Say what to do instead.
       localeText: {
-        noRowsToShow: root.getAttribute("data-mode") === "visitor" ? "No rows yet. Run a step of the demo and its rows appear here." : "No ledger rows yet.",
+        noRowsToShow: mode === "visitor" ? "No rows yet. Run a step of the demo and its rows appear here." : mode === "sample" ? "The sample's mandates have no rows on this server's ledger." : "No ledger rows yet.",
       },
       onSelectionChanged: function (e) {
         var picked = e.api.getSelectedRows();
@@ -296,7 +298,7 @@
     var budget = series.budgetMinor === null ? null : Number(series.budgetMinor);
     note.textContent = series.budgetLabel
       ? "Spent or held under " + series.mandateId + ", row by row, against its signed budget of " + series.budgetLabel + ". Now " + series.spentNowLabel + ", the number Praman's policy reads." + (series.revoked ? " This mandate is revoked." : "")
-      : "Spent or held under " + series.mandateId + ", row by row. Now " + series.spentNowLabel + ". This server doesn't hold the signed mandate, so no budget line is drawn." + (series.revoked ? " This mandate is revoked." : "");
+      : "Spent or held under " + series.mandateId + ", row by row. Now " + series.spentNowLabel + ". " + (mode === "sample" ? "The signed budget is withheld from this public page, so no budget line is drawn." : "This server doesn't hold the signed mandate, so no budget line is drawn.") + (series.revoked ? " This mandate is revoked." : "");
     var maxHeld = data.reduce(function (m, d) { return d.held > m ? d.held : m; }, 0);
     var options = chartBase("chart-spend");
     options.data = data;
@@ -418,11 +420,49 @@
     drawSpend(first);
   }
 
+  // ── The reader's own check ───────────────────────────────────────
+
+  // Recomputes every row's entry hash in this browser, with WebCrypto, from the rows
+  // already loaded (chain-verify.client.js). It makes no request. The rows here carry
+  // no payloads, so a payload hash is taken as recorded, and the text says so. A link
+  // is checked only between rows whose seqs are neighbours.
+  function setupBrowserCheck(rows) {
+    var lib = window.PramanChainVerify;
+    var box = document.getElementById("chain-browser");
+    var button = document.getElementById("chain-browser-run");
+    var text = document.getElementById("chain-browser-text");
+    if (!lib || !lib.available() || !box || !button || !text || rows.length === 0) return;
+    var ordered = rows
+      .map(function (r) {
+        return { seq: r.seq, ts: r.ts, actor: r.actor, eventType: r.eventType, payloadHash: r.payloadHash, prevHash: r.prevHash, entryHash: r.entryHash, payloadText: null, withheld: [] };
+      })
+      .sort(function (a, b) { return compareMinor(a.seq, b.seq); });
+    button.addEventListener("click", function () {
+      button.disabled = true;
+      lib
+        .verifyRows(ordered)
+        .then(function (outcome) {
+          var c = outcome.counts;
+          box.setAttribute("data-state", outcome.ok ? "ok" : "broken");
+          text.textContent = outcome.ok
+            ? "Rechecked in this browser with WebCrypto. " + c.entries + " entry " + (c.entries === 1 ? "hash" : "hashes") + " recomputed from the rows below, " + (c.entries === 1 ? "" : "all ") + "matching. " + c.links + " " + (c.links === 1 ? "link" : "links") + " between neighbouring rows " + (c.links === 1 ? "holds" : "hold") + (c.linksNotChecked > 0 ? ", and " + c.linksNotChecked + " could not be checked because the row before is not among these rows" : "") + ". Payloads are not sent to this page, so each payload hash is taken as recorded."
+            : "This browser's check fails at seq " + outcome.brokenAt + ". " + outcome.reasonPlain + " (" + outcome.reason + ")";
+        })
+        .catch(function () {
+          box.setAttribute("data-state", "broken");
+          text.textContent = "The check could not run in this browser.";
+        })
+        .then(function () { button.disabled = false; });
+    });
+    box.hidden = false;
+  }
+
   // ── Wiring ───────────────────────────────────────────────────────
 
   function render(data) {
     renderChain(data.chain, data.rows);
     renderTiles(data);
+    setupBrowserCheck(data.rows);
     makeGrid(data.rows);
     setupSpend(data.spend);
     drawReasons(data.decisions);
@@ -468,6 +508,7 @@
   fetch(source, { credentials: "same-origin", headers: { Accept: "application/json" } })
     .then(function (res) {
       if (res.status === 401) throw new Error("Your demo session has ended or hasn't started. Start one at /demo, then come back.");
+      if (res.status === 404 && mode === "sample") throw new Error("This server has no sample run set.");
       if (res.status === 429) throw new Error("Too many console loads in the last minute. Wait a minute and reload.");
       if (!res.ok) throw new Error("The server couldn't load the ledger just now. Reload in a moment.");
       return res.json();
