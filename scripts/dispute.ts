@@ -13,7 +13,7 @@ if (!traceId) {
 }
 
 const { prisma } = await import("@praman/db");
-const { buildOwnerBundle } = await import("@praman/dispute");
+const { ap2Lines, buildOwnerBundle } = await import("@praman/dispute");
 
 const bundle = await prisma.$transaction((tx) => buildOwnerBundle(tx, traceId));
 
@@ -32,5 +32,7 @@ console.log(`✓ dispute bundle written: disputes/${traceId}.json`);
 console.log("  this is the operator's copy: it holds the signed mandate and its limits, so keep it away from the agent");
 console.log(`  decision: ${bundle.authorisation.decision ?? "unknown"} (${bundle.authorisation.reason_code ?? "n/a"})`);
 console.log(`  chain: ${bundle.chain.global_chain_ok ? "intact" : "BROKEN"}, trace fully verified: ${bundle.chain.trace_fully_verified.toString()}`);
+console.log("");
+for (const line of ap2Lines(bundle.in_ap2_terms)) console.log(line);
 
 await prisma.$disconnect();

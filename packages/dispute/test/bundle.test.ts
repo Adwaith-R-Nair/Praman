@@ -259,6 +259,40 @@ describe("buildBundle", () => {
       expect(bundle?.mandate).toMatchObject({ issuer: "usr_other", key_id: "k1", signature_verified: false, signature_check: "recomputed" });
     });
 
+    describe("in AP2 terms", () => {
+      const full = {
+        ...document,
+        subject_id: "agt_1",
+        scope: { merchant_ids: ["M_1"], categories: ["food"], currency: "USD" },
+        limits: { max_per_txn_minor: "5000", max_total_minor: "20000", max_txns_per_window: 5, window_seconds: 3600, max_denials_per_window: 3 },
+        step_up: { threshold_minor: "3000" },
+        validity: { not_before: "2026-11-01T00:00:00.000Z", not_after: "2026-11-30T00:00:00.000Z" },
+        nonce: "a1b2c3d4e5f60718",
+      };
+      const fullSignature = { alg: "Ed25519", key_id: "k1", value: sign(null, Buffer.from(canonical(full), "utf8"), privateKey).toString("base64url") };
+
+      it("is on the owner's bundle for a mandate whose signature holds", async () => {
+        const bundle = await bundleWith({ document: full, signature: fullSignature });
+        expect(bundle?.in_ap2_terms?.label).toBe("In AP2 terms (a mapping, not an AP2 mandate)");
+        expect(bundle?.in_ap2_terms?.fields.find((f) => f.praman_field === "limits.max_total_minor")?.praman_value).toBe("20000");
+      });
+
+      it("is never on the public bundle, which withholds the limits it shows", async () => {
+        await bundleWith({ document: full, signature: fullSignature });
+        const json = JSON.stringify(await prisma.$transaction((tx) => buildBundle(tx, "trc_signed")));
+        expect(json).not.toContain("in_ap2_terms");
+        expect(json).not.toContain("In AP2 terms");
+        expect(json).not.toContain("payment.budget");
+        expect(json).not.toContain("20000");
+      });
+
+      it("is null when the signature doesn't hold or there is no signed mandate", async () => {
+        expect((await bundleWith({ document: { ...full, nonce: "changed" }, signature: fullSignature }))?.in_ap2_terms).toBeNull();
+        await prisma.$transaction((tx) => append(tx, { traceId: "trc_unsigned", ts: new Date(), actor: "agent", eventType: "intent", payload: { mandate_id: "mnd_old" } }));
+        expect((await prisma.$transaction((tx) => buildOwnerBundle(tx, "trc_unsigned")))?.in_ap2_terms).toBeNull();
+      });
+    });
+
     it("says an older trace with no mandate on it was only inferred", async () => {
       await prisma.$transaction((tx) => append(tx, { traceId: "trc_old", ts: new Date(), actor: "agent", eventType: "intent", payload: { mandate_id: "mnd_old" } }));
       expect((await prisma.$transaction((tx) => buildBundle(tx, "trc_old")))?.mandate).toEqual({ id: "mnd_old", key_id: null, signature_verified: true, signature_check: "inferred", signed_sha256: null });

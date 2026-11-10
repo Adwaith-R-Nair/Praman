@@ -356,6 +356,28 @@ describe("the public sample", () => {
     expect(bundle.text).not.toContain("max_total_minor");
   });
 
+  it("serves the In AP2 terms view on no public page or bundle, only on the owner's", async () => {
+    const v = await runSession();
+    pin(v);
+    const first = sessionOf(v).beats.get("first")?.traceId ?? "";
+    expect(first).not.toBe("");
+    const own = await v.get("/demo/dispute/first");
+    expect(own.text).toContain("In AP2 terms (a mapping, not an AP2 mandate)");
+
+    // Two traces, as above: every page load walks the chain, so reads are rate limited.
+    const traces = [first, `trc_demo_${sessionOf(v).ref}_revoke`];
+    const paths = ["/", "/traces", "/sample", "/sample/data", ...traces.flatMap((t) => [`/dispute/${t}`, `/r/${t}`])];
+    for (const path of paths) {
+      for (const who of [anyone(), v]) {
+        const res = await who.get(path);
+        expect(res.status, path).toBe(200);
+        expect(res.text, path).not.toContain("in_ap2_terms");
+        expect(res.text, path).not.toContain("In AP2 terms");
+        expect(res.text, path).not.toContain("payment.budget");
+      }
+    }
+  });
+
   it("is read-only: nothing can be posted to it, and loading it writes no ledger row", async () => {
     const v = await runSession();
     pin(v);

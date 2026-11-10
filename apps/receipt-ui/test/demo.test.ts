@@ -532,6 +532,23 @@ describe("the demo story", () => {
     expect(await v.page()).toContain('href="/demo/dispute/first"');
   });
 
+  it("puts the In AP2 terms view on the owner's bundle and on no public page or bundle", async () => {
+    const v = await startConnected();
+    await v.post("/demo/step/first");
+    const traceId = sessionOf(v).beats.get("first")?.traceId ?? "";
+
+    const own = JSON.parse((await v.get("/demo/dispute/first")).text) as { in_ap2_terms: { label: string; praman_version: number } | null };
+    expect(own.in_ap2_terms?.label).toBe("In AP2 terms (a mapping, not an AP2 mandate)");
+    expect(own.in_ap2_terms?.praman_version).toBe(2);
+
+    // What anyone with the trace id gets: the public bundle and trace page. The HTTP routes are checked in sample.test.ts.
+    for (const text of [JSON.stringify(await buildBundleStandalone(traceId)), (await renderTracePage(traceId)).html, await v.page()]) {
+      expect(text).not.toContain("in_ap2_terms");
+      expect(text).not.toContain("In AP2 terms");
+      expect(text).not.toContain("payment.budget");
+    }
+  });
+
   it("hides a pending step-up's reason on the public trace page and keeps it on the owner's", async () => {
     const v = await startConnected();
     await v.post("/demo/step/first");
