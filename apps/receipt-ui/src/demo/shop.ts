@@ -1,3 +1,4 @@
+import type { ConversationItem, ModelProvider, ProviderTurn, ToolSpec } from "@praman/agent-core";
 import { recordAgentTranscript, runAgent } from "@praman/buyer-agent";
 import { runIntent, type RunResult } from "@praman/control-plane";
 import { prisma } from "@praman/db";
@@ -139,8 +140,42 @@ export async function runErrand(session: DemoSession, id: ErrandId, deps: DemoDe
   session.errands.set(id, await errand(session, id, deps, deps.provider));
 }
 
+/** At most this many model calls for one errand, out of the session's shared budget. */
+export const ERRAND_MAX_CALLS = 6;
+/** No new model call starts once an errand has run this long. */
+export const ERRAND_DEADLINE_MS = 60_000;
+
+class ErrandTooLong extends Error {}
+
+/**
+ * Bounds one errand: a model that keeps searching without proposing would otherwise spend
+ * up to the agent's twelve turns of the session's model calls, and a slow one could hold
+ * the request for minutes. It stops before a model call, never during Praman's decision,
+ * so a stopped errand has proposed nothing and written nothing.
+ */
+class ErrandBudget implements ModelProvider {
+  private calls = 0;
+  private readonly started: number;
+  constructor(
+    private readonly inner: ModelProvider,
+    private readonly deps: DemoDeps,
+  ) {
+    this.started = deps.now().getTime();
+  }
+  get id(): string {
+    return this.inner.id;
+  }
+  send(system: string, history: readonly ConversationItem[], tools: readonly ToolSpec[]): Promise<ProviderTurn> {
+    if (this.calls >= ERRAND_MAX_CALLS || this.deps.now().getTime() - this.started >= ERRAND_DEADLINE_MS) {
+      return Promise.reject(new ErrandTooLong("errand budget used"));
+    }
+    this.calls += 1;
+    return this.inner.send(system, history, tools);
+  }
+}
+
 async function errand(session: DemoSession, id: ErrandId, deps: DemoDeps, model: NonNullable<DemoDeps["provider"]>): Promise<ErrandRecord> {
-  const provider = new CountedProvider(model, session, deps);
+  const provider = new ErrandBudget(new CountedProvider(model, session, deps), deps);
   let agent: Awaited<ReturnType<typeof runAgent>>;
   try {
     agent = await runAgent(provider, ERRANDS[id].goal, SHOP);
@@ -151,6 +186,8 @@ async function errand(session: DemoSession, id: ErrandId, deps: DemoDeps, model:
         ? "Today's model calls for this demo are used up, so the agent can't shop until tomorrow (UTC). Nothing was proposed and nothing went on the ledger."
         : err instanceof ModelCapReached
           ? "This session has used its share of model calls. Nothing was proposed and nothing went on the ledger."
+          : err instanceof ErrandTooLong
+            ? "The agent took too long to choose, so this errand stopped before proposing anything. Nothing went on the ledger. Try it again."
           : "The model didn't answer. Nothing was proposed and nothing went on the ledger. Try the errand again in a moment.";
     return { ...empty, state: "no_proposal", message };
   }

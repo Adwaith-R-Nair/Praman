@@ -245,6 +245,45 @@ describe("an errand", () => {
     expect(sessionOf(v).errands.get("notebook")).toMatchObject({ state: "decided" });
   });
 
+  it("a model that never proposes is stopped after a few calls, and nothing goes on the ledger", async () => {
+    class Wandering implements ModelProvider {
+      readonly id = "test/wandering";
+      calls = 0;
+      send(): Promise<ProviderTurn> {
+        this.calls += 1;
+        return Promise.resolve({ kind: "TOOL_CALLS", calls: [{ id: `c${String(this.calls)}`, name: "list_catalog", input: {} }], raw: null });
+      }
+    }
+    const wandering = new Wandering();
+    useDeps(makeDeps(wandering));
+    const v = await started();
+    await v.post("/demo/shop/notebook");
+    expect(wandering.calls).toBeLessThanOrEqual(6);
+    expect(sessionOf(v).errands.get("notebook")).toMatchObject({ state: "no_proposal" });
+    expect(sessionOf(v).errands.get("notebook")?.message).toContain("took too long");
+    expect(await shopRows(v)).toHaveLength(0);
+  });
+
+  it("an errand whose model calls run past its overall deadline stops before proposing", async () => {
+    let now = clock;
+    class Slow implements ModelProvider {
+      readonly id = "test/slow";
+      calls = 0;
+      send(): Promise<ProviderTurn> {
+        this.calls += 1;
+        now += 40_000;
+        return Promise.resolve({ kind: "TOOL_CALLS", calls: [{ id: `c${String(this.calls)}`, name: "list_catalog", input: {} }], raw: null });
+      }
+    }
+    const slow = new Slow();
+    useDeps({ ...makeDeps(slow), now: () => new Date(now) });
+    const v = await started();
+    await v.post("/demo/shop/notebook");
+    expect(slow.calls).toBeLessThanOrEqual(2);
+    expect(sessionOf(v).errands.get("notebook")?.message).toContain("took too long");
+    expect(await shopRows(v)).toHaveLength(0);
+  });
+
   it("with today's model calls used up, says so and writes nothing", async () => {
     usage = new MemoryDailyUsage({ session: 1000, model_call: 0 });
     useDeps(makeDeps());
