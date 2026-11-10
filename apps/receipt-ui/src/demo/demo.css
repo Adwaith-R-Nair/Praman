@@ -809,3 +809,102 @@ summary {
     padding: 0.8rem 0.5rem 0.8rem 0;
   }
 }
+
+/* ── Shop errands (D-93) ─────────────────────────────────────── */
+
+.shop-errand h2 {
+  font-size: 1.2rem;
+}
+
+.shop-pinned {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.shop-cart li {
+  margin-bottom: var(--s1);
+  overflow-wrap: anywhere;
+}
+
+.shop-title {
+  font-weight: 700;
+}
+
+.shop-muted {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+/* The model's tool calls, as on the trace page. Every reply sits in a marked box. */
+.demo .tool-calls {
+  margin-top: var(--s2);
+}
+
+.demo .tool-calls h2 {
+  font-size: 1.05rem;
+}
+
+.demo .tool-lede,
+.demo .tool-none,
+.demo .tool-result summary {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.demo .tool-list {
+  margin: 0;
+  padding: 0 0 0 1.6rem;
+}
+
+.demo .tool-call {
+  margin: 0 0 var(--s1);
+  overflow-wrap: anywhere;
+}
+
+.demo .tool-input {
+  font-size: 0.85rem;
+}
+
+.demo .tool-label {
+  font-family: var(--mono);
+  color: var(--ink-muted);
+}
+
+.demo .tool-result summary {
+  cursor: pointer;
+}
+
+.demo .untrusted {
+  border: 1px solid var(--step-up);
+  background: var(--paper-raised);
+  padding: var(--s1) var(--s2);
+  margin: var(--s1) 0;
+  position: relative;
+}
+
+.demo .untrusted .stamp {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--step-up);
+  border-width: 1px;
+  margin: 0;
+}
+
+.demo .untrusted-note {
+  font-size: 0.8rem;
+  color: var(--step-up);
+  margin: 0.3em 0;
+}
+
+.demo .tool-text {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  max-height: 24rem;
+  overflow-y: auto;
+}

@@ -94,6 +94,8 @@ If Claude Desktop can't find `pnpm`, use the full path that `which pnpm` prints.
 
 Why it works this way is in [D-73](DECISIONS.md).
 
+The hosted demo has a page over the same snapshot, `/demo/shop`, where a visitor sends the live model on fixed errands with nothing to install. It uses a mandate with the terms above, signed per session, and stops at Praman's decision: nothing is bought and nothing goes to PayPal ([D-93](DECISIONS.md), `docs/DEPLOY.md` step 11).
+
 `DEMO_SHOP` is a sandbox merchant. The products and prices are real, but paying `DEMO_SHOP` pays this repo's PayPal sandbox account, not the retailer, and no retailer order is placed.
 
 **After paying, the PayPal page stays where it is.** The gateway gives PayPal no page to send the buyer back to, so in the sandbox the buyer can be left on the payment-method screen with no confirmation. The payment has still gone through. Go back to the agent and have it call `complete_checkout`. Calling it too early is safe: until the buyer has approved, Praman doesn't capture.

@@ -178,7 +178,7 @@ In the injection cases this is where a reviewer can *see* the attack sitting ins
 - **The charts** show spend against budget over time for each mandate (the line ends at the number `deriveState()` gives the policy engine), decisions by reason code, orders by rail at their latest outcome, and who did what: the agent's proposals, Praman's decisions, the person's approvals and revocations, and the test harness's rows counted apart. Selecting a bar filters the grid.
 - **The reader's own check.** "Recheck these rows in my browser" recomputes each row's entry hash in the browser, with the same script the trace page uses.
 - **The sample.** `/sample` shows one past session the operator pins with `SAMPLE_MANDATE_IDS`, in this same console, to anyone. It is a public copy: no budgets and no reason on a row that asked a person ([D-88](docs/DECISIONS.md)). Unset, the page says there is no sample and nothing links to it.
-- **What reaches the browser.** Ids, codes, amounts, hashes and fixed text. No ledger payload, transcript or merchant text, no token and no key. Every value goes into the page as text; the only cell renderer builds a link element. The page keeps the strict content security policy and adds only a style nonce that is new on every response, because both libraries build their styles in the browser ([D-63](docs/DECISIONS.md)). A visitor's console reads only the traces that name their session's own two mandates ([D-64](docs/DECISIONS.md)).
+- **What reaches the browser.** Ids, codes, amounts, hashes and fixed text. No ledger payload, transcript or merchant text, no token and no key. Every value goes into the page as text; the only cell renderer builds a link element. The page keeps the strict content security policy and adds only a style nonce that is new on every response, because both libraries build their styles in the browser ([D-63](docs/DECISIONS.md)). A visitor's console reads only the traces that name their session's own three mandates: the story's, the twenty-at-once test's and the shop's ([D-64](docs/DECISIONS.md)).
 
 ## Observability vs evidence
 
@@ -200,6 +200,8 @@ claude mcp add praman -- pnpm --silent --dir /absolute/path/to/praman mcp
 ```
 
 The gateway is the agent's only route to money only if it has no other: an agent that also holds PayPal keys, or a shell in this repo, has more. Claude Desktop with only this server has none.
+
+**On the hosted demo, with nothing to install.** Inside a demo session, `/demo/shop` sends the live model on one of three fixed errands over the same `DEMO_SHOP` snapshot, under a mandate with the gateway's terms that the demo signs for the session. The page shows the model's tool calls with the merchant text as untrusted data, the cart at catalog prices, Praman's decision in words, and when the prices were pinned. It stops at the decision: nothing is bought, nothing goes to PayPal, and there is no text box for the visitor. It appears only once the hosted database has a snapshot ([D-93](docs/DECISIONS.md)).
 
 ## PayPal auditor: one trace checked against PayPal's record
 
@@ -351,7 +353,7 @@ Three that changed the architecture:
 
 ## Decision records
 
-93 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
+94 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
 
 ## Documentation
 

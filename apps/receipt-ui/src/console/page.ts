@@ -38,7 +38,7 @@ const COPY: Readonly<Record<ConsoleMode, { readonly back: string; readonly backL
     backLabel: "← back to the demo",
     kicker: "Ledger console",
     title: "Your session on the ledger",
-    lede: "Every ledger row this session's two mandates produced: the story's mandate and the separate one the twenty-at-once test spends. Each row's hashes are recomputed on the server, and the whole chain is walked from its first row. Nobody else's rows are here, and yours are not in anyone else's console.",
+    lede: "Every ledger row this session's three mandates produced: the story's mandate, the separate one the twenty-at-once test spends, and the one for the shop's errands. Each row's hashes are recomputed on the server, and the whole chain is walked from its first row. Nobody else's rows are here, and yours are not in anyone else's console.",
     data: "/demo/console/data",
   },
   operator: {

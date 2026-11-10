@@ -182,12 +182,30 @@ A server with `DEMO_HOUSE_BUYER_TOKEN` set never deletes this token at PayPal, w
 `/sample` shows one past demo session to anyone, read-only: its ledger rows in the console, with a link to each trace's public page and public dispute bundle. It carries no budgets and no step-up reasons (D-88). Until you name a session, `/sample` is a 404 and nothing links to it.
 
 1. On the hosted site, run one whole session, all eight steps, paying the checkout in step 6. This is the run strangers will read, so let each step finish.
-2. Before ending that session, open **Open your ledger console**. The tiles at the top name its two mandates: `mnd_demo_<ref>` for the story and `mnd_demo_<ref>_h` for the twenty-at-once step. Copy both ids. They are also in the grid's Mandate column.
+2. Before ending that session, open **Open your ledger console**. The tiles at the top name its three mandates: `mnd_demo_<ref>` for the story, `mnd_demo_<ref>_h` for the twenty-at-once step and `mnd_demo_<ref>_s` for the shop's errands. Copy the first two ids. The shop's can be added as a third if that session ran errands. They are also in the grid's Mandate column.
 3. In Render, open the service, **Environment**, and set `SAMPLE_MANDATE_IDS` to the two ids with a comma between them and nothing else, for example `mnd_demo_ab12cd34ef56,mnd_demo_ab12cd34ef56_h`. Press **Save, rebuild, and deploy**. The ledger rows are in Neon, so the restart doesn't lose them.
 4. Open `https://<your address>/sample` in a private window. It should say **Chain verified** and list that session's rows. The front page now has a **See a sample run** line under the demo button, and `/traces` links to it too.
 5. From your machine, run `pnpm e2e:hosted`. `e2e/hosted/sample.spec.ts` makes GET requests only and should print a line starting `sample: populated`. If it prints `sample: none is set on this server`, the variable didn't take.
 
 The sample shows that session's sandbox order and capture ids, which its public trace pages already show. To take the sample down, empty the variable and deploy.
+
+## 11. Optional: the shop's products on Neon, for /demo/shop
+
+`/demo/shop` lets a visitor send the live model on fixed errands over real Channel3 products, and stops at Praman's decision (D-93). It reads the `DEMO_SHOP` snapshot from the database. Neon has none until you import one, and until then the page says the shop is not set up and nothing links to it. The snapshot is not in the repo, because Channel3's terms bar redistributing its catalog data.
+
+Run the importer once from your machine, pointed at Neon. It uses `CHANNEL3_API_KEY` from your local `.env`, runs six searches (six of Channel3's monthly free credits), pins every price at that moment, and writes the rows in one transaction. It touches only `DEMO_SHOP`'s catalog and merchant rows.
+
+1. Copy the **pooled** Neon string (`DATABASE_URL`, the one with `-pooler`) from Render's Environment.
+2. In the repo, run this, and paste the string at the silent prompt so it stays out of your shell history:
+
+   ```sh
+   read -rs NEON_URL && DATABASE_URL="$NEON_URL" pnpm catalog:channel3; unset NEON_URL
+   ```
+
+   A variable already set in the shell wins over `.env`, so this writes to Neon and not your local database. It prints each product with its category and price, and the pinned time.
+3. Within a minute, the demo page of a new session shows **Send the agent on errands at a shop with real products**. No redeploy is needed. Run one errand, such as the headphones, and check it says **Refused**, `CATEGORY_OUT_OF_SCOPE`, and **Decided, not bought**.
+
+Running it again replaces the products and the pinned time. To switch the shop off, delete the rows: `DELETE FROM catalog_item WHERE merchant_id = 'DEMO_SHOP';` in Neon's SQL editor.
 
 ## When something goes wrong
 

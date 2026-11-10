@@ -13,12 +13,12 @@ const MODEL_ID_FIXTURE = "fixture/simulated-fooled-model";
 /** The "harness/" prefix is how the trace page and dispute bundle tell a harness approval from a person's. */
 const MODEL_ID_HARNESS = "harness/no-model";
 
-class ModelCapReached extends Error {
+export class ModelCapReached extends Error {
   override readonly name = "ModelCapReached";
 }
 
 /** Every visitor together has used today's model calls. The step goes on with a recorded answer. */
-class DailyModelCapReached extends Error {
+export class DailyModelCapReached extends Error {
   override readonly name = "DailyModelCapReached";
 }
 
@@ -30,7 +30,7 @@ const MODEL_DEADLINE_MS = 45_000;
  * Counts model calls, for this session and for the whole demo today, and stops at
  * either cap, so no visitor and no crowd of them can run up the bill.
  */
-class CountedProvider implements ModelProvider {
+export class CountedProvider implements ModelProvider {
   constructor(
     private readonly inner: ModelProvider,
     private readonly session: DemoSession,

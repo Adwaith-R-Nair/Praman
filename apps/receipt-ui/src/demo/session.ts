@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { signMandate, type MandateDocumentV2, type SignedMandate } from "@praman/mandate";
 import type { AgentVisibleDecision } from "@praman/policy";
-import { CAFE, DEMO_CURRENCY, HARNESS, HARNESS_LIMITS, MAIN_LIMITS, MARKET, SESSION_TTL_MS, type BeatId } from "./config.js";
+import { CAFE, DEMO_CURRENCY, HARNESS, HARNESS_LIMITS, MAIN_LIMITS, MARKET, SESSION_TTL_MS, SHOP, SHOP_CATEGORIES, SHOP_LIMITS, type BeatId, type ErrandId } from "./config.js";
+import type { ToolCallView } from "../pages/tool-calls.js";
 
 /** The demo's own signing key. Never the local MANDATE_PRIVATE_KEY (design, "Agent's calls"). */
 export interface DemoSigner {
@@ -73,6 +74,8 @@ export interface DemoSession {
   readonly expiresAt: Date;
   readonly mandate: SignedMandate;
   readonly harnessMandate: SignedMandate;
+  /** The shop's mandate (D-93): DEMO_SHOP only, the MCP gateway's terms. Nothing under it is ever paid. */
+  readonly shopMandate: SignedMandate;
   /** The PayPal setup token this visitor was sent to approve, if any. Not a secret: it charges nothing. */
   setupTokenId: string | null;
   /**
@@ -105,15 +108,41 @@ export interface DemoSession {
   /** One message for the next page view. */
   notice: string | null;
   readonly beats: Map<BeatId, BeatRecord>;
+  /** What each shop errand came to (D-93). */
+  readonly errands: Map<ErrandId, ErrandRecord>;
 }
 
-function mandateDoc(mandateId: string, merchants: string[], limits: typeof MAIN_LIMITS | typeof HARNESS_LIMITS, now: Date, expiresAt: Date): MandateDocumentV2 {
+/**
+ * One shop errand, as the page shows it. The shop stops at Praman's decision: nothing
+ * here was bought or sent to PayPal (D-93).
+ */
+export interface ErrandRecord {
+  readonly state: "decided" | "not_sent" | "no_proposal" | "pending";
+  readonly traceId: string | null;
+  readonly reasonCode: string | null;
+  readonly agentView: AgentVisibleDecision | null;
+  /** The cart the model proposed: SKUs and quantities only. Model output, shown escaped. */
+  readonly lineItems: readonly { readonly sku: string; readonly qty: number }[];
+  /** The model's tool calls, with exactly what each tool returned. Untrusted, shown escaped. */
+  readonly toolCalls: readonly ToolCallView[];
+  /** Fixed text chosen by the server. */
+  readonly message: string;
+}
+
+function mandateDoc(
+  mandateId: string,
+  merchants: string[],
+  limits: typeof MAIN_LIMITS | typeof HARNESS_LIMITS | typeof SHOP_LIMITS,
+  now: Date,
+  expiresAt: Date,
+  categories: readonly string[] = ["food", "beverage"],
+): MandateDocumentV2 {
   return {
     mandate_id: mandateId,
     version: 2,
     issuer_id: "usr_demo_visitor",
     subject_id: "agt_demo_buyer",
-    scope: { merchant_ids: merchants, categories: ["food", "beverage"], currency: DEMO_CURRENCY },
+    scope: { merchant_ids: merchants, categories: [...categories], currency: DEMO_CURRENCY },
     limits: {
       max_per_txn_minor: limits.max_per_txn_minor,
       max_total_minor: limits.max_total_minor,
@@ -129,8 +158,9 @@ function mandateDoc(mandateId: string, merchants: string[], limits: typeof MAIN_
 }
 
 /**
- * A new visitor: a session, a USD mandate for the story signed with the demo key, and
- * a second one for the concurrency harness, so that step can't spend the story's budget.
+ * A new visitor: a session, a USD mandate for the story signed with the demo key, a
+ * second one for the concurrency harness, so that step can't spend the story's budget,
+ * and a third for the shop's errands (D-93).
  */
 export function createDemoSession(now: Date, signer: DemoSigner): DemoSession {
   const ref = randomBytes(6).toString("hex");
@@ -142,6 +172,7 @@ export function createDemoSession(now: Date, signer: DemoSigner): DemoSession {
     expiresAt,
     mandate: signMandate(mandateDoc(`mnd_demo_${ref}`, [CAFE, MARKET], MAIN_LIMITS, now, expiresAt), signer.privateKeyPem, signer.keyId),
     harnessMandate: signMandate(mandateDoc(`mnd_demo_${ref}_h`, [HARNESS], HARNESS_LIMITS, now, expiresAt), signer.privateKeyPem, signer.keyId),
+    shopMandate: signMandate(mandateDoc(`mnd_demo_${ref}_s`, [SHOP], SHOP_LIMITS, now, expiresAt, SHOP_CATEGORIES), signer.privateKeyPem, signer.keyId),
     setupTokenId: null,
     connected: false,
     houseBuyer: false,
@@ -151,6 +182,7 @@ export function createDemoSession(now: Date, signer: DemoSigner): DemoSession {
     busy: false,
     notice: null,
     beats: new Map(),
+    errands: new Map(),
   };
 }
 
