@@ -278,6 +278,10 @@ describe("an errand", () => {
     const data = await v.get("/demo/console/data");
     expect(data.status).toBe(200);
     expect(data.text).toContain(trace ?? "missing");
+    // The console's own words count the shop's mandate too.
+    const page = await v.get("/demo/console");
+    expect(page.text).not.toContain("two mandates");
+    expect(page.text).toContain("the shop&#39;s errands");
   });
 });
 
