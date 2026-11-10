@@ -71,6 +71,21 @@ test("one session start shows a signed mandate and an empty console", async ({ p
   await expect(mandate).toContainText("$40.00");
   await expectNoSidewaysScroll(page);
 
+  // The shop (D-93) is on only when the hosted database has the Channel3 snapshot. Either way is fine; read only.
+  const linked = (await page.locator('a[href="/demo/shop"]').count()) > 0;
+  await page.goto("/demo/shop");
+  if (linked) {
+    console.log("shop: on");
+    await expect(page.locator("h1").first()).toHaveText("Errands at a shop with real products");
+    await expect(page.locator(".shop-pinned")).toContainText("Prices were pinned");
+    await expect(page.locator("section.shop-errand")).toHaveCount(3);
+    await expect(page.locator("img")).toHaveCount(0);
+    await expectNoSidewaysScroll(page);
+  } else {
+    console.log("shop: not set up on this server, as the demo page said");
+    await expect(page.locator("h1").first()).toHaveText("The shop is not set up here");
+  }
+
   await page.goto("/demo/console");
   await expect(page.locator("#chain-stamp")).toHaveText("Chain verified", { timeout: 60_000 });
   await expect(page.locator("#count")).toHaveText("0 rows");

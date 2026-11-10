@@ -46,11 +46,14 @@ const { seedDemoCatalog } = await import("../apps/receipt-ui/src/demo/seed.js");
 const { SavedMethods, SessionStore } = await import("../apps/receipt-ui/src/demo/session.js");
 const { payPalWebhookDepsFromEnv } = await import("../apps/receipt-ui/src/webhooks.js");
 const { FakePayPal, ScriptedModel } = await import("../apps/receipt-ui/test/stand-ins.js");
+const { seedShopFixture } = await import("../apps/receipt-ui/test/shop-fixture.js");
 
 const PORT = Number(process.env["E2E_PORT"] ?? 4190);
 const baseUrl = `http://localhost:${PORT.toString()}`;
 
 await seedDemoCatalog();
+// The shop (D-93): three products from the committed Channel3 test fixture, standing in for the snapshot.
+await seedShopFixture();
 
 const paypal = new FakePayPal(`${baseUrl}/__e2e/paypal/connect`);
 const { privateKeyPem, publicKeyPem } = generateKeypair();
