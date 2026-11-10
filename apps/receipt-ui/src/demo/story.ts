@@ -1,4 +1,5 @@
 import type { ConversationItem, ModelProvider, ProviderTurn, ToolSpec } from "@praman/agent-core";
+import { modelErrorLabel } from "@praman/agent-core";
 import { recordAgentTranscript, runAgent } from "@praman/buyer-agent";
 import { captureOrder, refundOrder, resolveApproval, revokeMandate, runIntent, type CaptureResult, type RefundResult, type ResolveResult, type RunResult } from "@praman/control-plane";
 import { routeByRail, SimulatedExecutor } from "@praman/exec-core";
@@ -189,7 +190,7 @@ async function agentPurchase(session: DemoSession, deps: DemoDeps, step: AgentSt
       agent = await runAgent(new RecordedProvider(MODEL_ANSWERS.model, recorded), plan.goal, plan.merchant);
     }
   } catch (err) {
-    deps.log(`demo: the model failed on step ${step}: ${err instanceof Error ? err.name : "unknown error"}`);
+    deps.log(`demo: the model failed on step ${step}: ${modelErrorLabel(err)}`);
     const capped = err instanceof ModelCapReached;
     return {
       ...empty,

@@ -14,8 +14,20 @@ const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
 /** One model call's deadline, the same as a payment provider's. */
 const CALL_TIMEOUT_MS = 30_000;
 
-function isRetryable(err: unknown): boolean {
-  return err instanceof ApiError && (err.status === 429 || err.status === 503);
+/** Statuses Gemini gives for a burst on the free tier or a short-lived fault on its side. */
+const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([429, 500, 502, 503, 504]);
+
+export function isRetryable(err: unknown): boolean {
+  return err instanceof ApiError && RETRYABLE_STATUSES.has(err.status);
+}
+
+/**
+ * For an operator's log line: the error's name, and an API error's status. Never the
+ * message, which can quote the request.
+ */
+export function modelErrorLabel(err: unknown): string {
+  if (err instanceof ApiError) return `ApiError ${String(err.status)}`;
+  return err instanceof Error ? err.name : "unknown error";
 }
 
 async function sleep(ms: number): Promise<void> {

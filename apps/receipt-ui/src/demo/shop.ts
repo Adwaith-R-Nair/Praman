@@ -1,4 +1,5 @@
 import type { ConversationItem, ModelProvider, ProviderTurn, ToolSpec } from "@praman/agent-core";
+import { modelErrorLabel } from "@praman/agent-core";
 import { recordAgentTranscript, runAgent } from "@praman/buyer-agent";
 import { runIntent, type RunResult } from "@praman/control-plane";
 import { prisma } from "@praman/db";
@@ -180,7 +181,7 @@ async function errand(session: DemoSession, id: ErrandId, deps: DemoDeps, model:
   try {
     agent = await runAgent(provider, ERRANDS[id].goal, SHOP);
   } catch (err) {
-    deps.log(`demo: the model failed on shop errand ${id}: ${err instanceof Error ? err.name : "unknown error"}`);
+    deps.log(`demo: the model failed on shop errand ${id}: ${modelErrorLabel(err)}`);
     const message =
       err instanceof DailyModelCapReached
         ? "Today's model calls for this demo are used up, so the agent can't shop until tomorrow (UTC). Nothing was proposed and nothing went on the ledger."
