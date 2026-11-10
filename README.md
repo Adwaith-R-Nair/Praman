@@ -190,6 +190,8 @@ With Langfuse keys set, the demo and the eval send each agent run to Langfuse, s
 
 On 9 Nov 2026 a sandbox buyer paid a $20.50 checkout through the local gateway, and Praman captured it after a person approved the purchase in a terminal ([build log](docs/BUILD_LOG.md), last checks of 9 Nov). The client was a script speaking MCP, not a model. The session recorded in `docs/MCP.md` is an earlier one in which no buyer paid.
 
+**On the hosted demo, with nothing to install.** Inside a demo session, `/demo/shop` sends the live model on one of three fixed errands over the same `DEMO_SHOP` snapshot, under a mandate with the gateway's terms that the demo signs for the session. The page shows the model's tool calls with the merchant text as untrusted data, the cart at catalog prices, Praman's decision in words, and when the prices were pinned. It stops at the decision: nothing is bought, nothing goes to PayPal, and there is no text box for the visitor. It appears only once the hosted database has a snapshot ([D-93](docs/DECISIONS.md)).
+
 - **The agent names a merchant, a SKU and a quantity.** No tool has a field for a price, a currency, a rail or a mandate, and every input schema refuses extra fields. The gateway loads its one mandate from a file when it starts, and each proposal goes through `runIntent` and `evaluate()` like any other ([D-69](docs/DECISIONS.md)).
 - **The catalog is real.** `pnpm catalog:channel3` (it needs `CHANNEL3_API_KEY` in `.env`) takes 18 products from [Channel3](https://trychannel3.com)'s product search and pins each price in integer cents, read from the JSON's own text so no float touches it, with where and when it was fetched. Decisions use the stored price and nothing is fetched at decision time ([D-73](docs/DECISIONS.md)). The products and prices are real; paying `DEMO_SHOP` pays this repo's PayPal sandbox account, not the retailer.
 - **A person stays in the loop.** A step-up gives a `pnpm mcp:approve` command that refuses to run without a terminal, and the agent is told not to run it. A PayPal checkout moves nothing until the buyer approves it at PayPal, and `complete_checkout` re-checks the mandate before it captures ([D-70](docs/DECISIONS.md), [D-72](docs/DECISIONS.md)).
@@ -351,7 +353,7 @@ Three that changed the architecture:
 
 ## Decision records
 
-92 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
+93 records in [`docs/DECISIONS.md`](docs/DECISIONS.md), each stating what was decided, what it rules out, and what was rejected. Load-bearing ones: [D-01](docs/DECISIONS.md) no price in the intent · [D-02](docs/DECISIONS.md) no LLM in the authorisation path · [D-03](docs/DECISIONS.md) spend derived, not stored · [D-08](docs/DECISIONS.md) the agent never learns its limits · [D-18](docs/DECISIONS.md) TypeScript over Rust, costed · [D-22](docs/DECISIONS.md) two-phase execution · [D-23](docs/DECISIONS.md) two-layer evaluation · [D-24](docs/DECISIONS.md) approvals re-evaluate.
 
 ## Documentation
 

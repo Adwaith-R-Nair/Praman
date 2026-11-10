@@ -189,6 +189,24 @@ A server with `DEMO_HOUSE_BUYER_TOKEN` set never deletes this token at PayPal, w
 
 The sample shows that session's sandbox order and capture ids, which its public trace pages already show. To take the sample down, empty the variable and deploy.
 
+## 11. Optional: the shop's products on Neon, for /demo/shop
+
+`/demo/shop` lets a visitor send the live model on fixed errands over real Channel3 products, and stops at Praman's decision (D-93). It reads the `DEMO_SHOP` snapshot from the database. Neon has none until you import one, and until then the page says the shop is not set up and nothing links to it. The snapshot is not in the repo, because Channel3's terms bar redistributing its catalog data.
+
+Run the importer once from your machine, pointed at Neon. It uses `CHANNEL3_API_KEY` from your local `.env`, runs six searches (six of Channel3's monthly free credits), pins every price at that moment, and writes the rows in one transaction. It touches only `DEMO_SHOP`'s catalog and merchant rows.
+
+1. Copy the **pooled** Neon string (`DATABASE_URL`, the one with `-pooler`) from Render's Environment.
+2. In the repo, run this, and paste the string at the silent prompt so it stays out of your shell history:
+
+   ```sh
+   read -rs NEON_URL && DATABASE_URL="$NEON_URL" pnpm catalog:channel3; unset NEON_URL
+   ```
+
+   A variable already set in the shell wins over `.env`, so this writes to Neon and not your local database. It prints each product with its category and price, and the pinned time.
+3. Within a minute, the demo page of a new session shows **Send the agent on errands at a shop with real products**. No redeploy is needed. Run one errand, such as the headphones, and check it says **Refused**, `CATEGORY_OUT_OF_SCOPE`, and **Decided, not bought**.
+
+Running it again replaces the products and the pinned time. To switch the shop off, delete the rows: `DELETE FROM catalog_item WHERE merchant_id = 'DEMO_SHOP';` in Neon's SQL editor.
+
 ## When something goes wrong
 
 - **`/sample` says "No sample run on this server" after step 10.** The value is empty or malformed, and a malformed value is treated as none. It takes at most four ids, comma-separated, each made only of letters, digits, `_` and `-`. No quotes and no spaces inside an id.
