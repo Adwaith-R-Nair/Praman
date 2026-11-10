@@ -2,6 +2,7 @@ import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto
 import { prisma, type PrismaTx } from "@praman/db";
 import { amountIfPresent, read, readCurrency, verifyChain, type LedgerEntryRecord } from "@praman/ledger";
 import { canonical, type Currency } from "@praman/shared";
+import { inAp2Terms, type Ap2View } from "./ap2.js";
 
 /**
  * The bundle anyone holding a trace id can fetch at /dispute/:id. It says whether the
@@ -133,6 +134,11 @@ export interface OwnerDisputeBundle extends Omit<DisputeBundle, "mandate"> {
     readonly issuer: string | null;
     readonly signed: { readonly document: unknown; readonly signature: SignatureBlock; readonly public_key_pem: string } | null;
   };
+  /**
+   * The signed mandate placed beside AP2's field names, for reading (D-94). Null unless
+   * the signature on this bundle holds. It shows the limits, so the public copy drops it.
+   */
+  readonly in_ap2_terms: Ap2View | null;
 }
 
 interface SignatureBlock {
@@ -199,8 +205,9 @@ export function publicPayload(payload: unknown): { payload: unknown; withheld: s
 
 function toPublicBundle(owner: OwnerDisputeBundle): DisputeBundle {
   const { issuer: _issuer, signed: _signed, ...mandate } = owner.mandate;
+  const { in_ap2_terms: _ap2, ...rest } = owner;
   return {
-    ...owner,
+    ...rest,
     mandate,
     authorisation: { ...owner.authorisation, reason_code: isStepUpCode(owner.authorisation.reason_code) ? null : owner.authorisation.reason_code },
     chain: {
@@ -395,6 +402,7 @@ export async function buildOwnerBundle(tx: PrismaTx, traceId: string): Promise<O
 
   const signed = signedMandateOf(intent);
   const issuer = signed !== null && isRecord(signed.document) ? asString(signed.document["issuer_id"]) : null;
+  const signatureOk = signed !== null && signatureHolds(signed);
 
   return {
     trace_id: traceId,
@@ -403,7 +411,7 @@ export async function buildOwnerBundle(tx: PrismaTx, traceId: string): Promise<O
       id: asString(intent?.["mandate_id"]) ?? "unknown",
       key_id: signed === null ? null : signed.signature.key_id,
       issuer,
-      signature_verified: signed === null ? reasonCode !== "MANDATE_SIGNATURE_INVALID" : signatureHolds(signed),
+      signature_verified: signed === null ? reasonCode !== "MANDATE_SIGNATURE_INVALID" : signatureOk,
       signature_check: signed === null ? "inferred" : "recomputed",
       signed_sha256: signed === null ? null : signedHash(signed),
       signed,
@@ -458,6 +466,7 @@ export async function buildOwnerBundle(tx: PrismaTx, traceId: string): Promise<O
       head: chainResult.ok ? chainResult.head : null,
       trace_fully_verified: traceFullyVerified,
     },
+    in_ap2_terms: signed !== null && signatureOk ? inAp2Terms(signed.document) : null,
   };
 }
 
