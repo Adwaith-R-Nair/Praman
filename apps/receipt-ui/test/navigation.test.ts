@@ -69,6 +69,18 @@ describe("the index of recent traces", () => {
     expect(html).toContain("trc_real");
   });
 
+  // The hosted shop's errands are a demo visitor's too (D-93), at DEMO_SHOP, which the
+  // local MCP gateway also buys from. Seen on the hosted /traces on 10 Nov 2026: one
+  // visitor's errands were listed for everyone. A gateway purchase is not a visitor's.
+  it("leaves out a demo visitor's shop errands, and still lists a gateway purchase at the same shop", async () => {
+    await writeTrace("trc_demo_abc123_shop_notebook_1", "DEMO_SHOP");
+    await writeTrace("trc_mcp_gateway_1", "DEMO_SHOP");
+
+    expect(await listRecentTraceIds(25)).toEqual(["trc_mcp_gateway_1"]);
+    expect(await countTraces()).toBe(1);
+    expect(await renderIndexPage()).not.toContain("trc_demo_abc123_shop_notebook_1");
+  });
+
   it("links to the demo", async () => {
     await writeTrace("trc_real", "MERCHANT_FOOD_01");
     expect(await renderIndexPage()).toContain('href="/demo"');
