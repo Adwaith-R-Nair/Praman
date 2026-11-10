@@ -3,14 +3,16 @@ import { buildOwnerBundleStandalone } from "@praman/dispute";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { loadRecording, refundControlHtml, renderCheckoutReturnPage, renderDemoPage, renderErrorPage, renderNotFoundPage, renderRecordedRunPage, renderStartPage } from "../pages/demo.js";
+import { renderShopOffPage, renderShopPage } from "../pages/shop.js";
 import { renderTracePage } from "../pages/trace.js";
 import { loadConsoleData, type Budget } from "../console/data.js";
 import { newStyleNonce, renderConsolePage } from "../console/page.js";
-import { SESSION_TTL_MS, type BeatId, type PurchaseBeat } from "./config.js";
+import { ERRAND_IDS, SESSION_TTL_MS, type BeatId, type ErrandId, type PurchaseBeat } from "./config.js";
 import { connectHouseBuyer, finishConnect, houseInUse, isHouseToken, releaseSession, startConnect, type DemoDeps } from "./connect.js";
 import { HOUSE_COPY, HOUSE_PATH, houseWording, leaveHouseBuyer } from "./house.js";
 import { clientIp, LIMITS, RateLimiter } from "./limits.js";
 import type { DemoSession } from "./session.js";
+import { runErrand, shopReader } from "./shop.js";
 import { captureCheckout, decideApproval, refundPurchase, runBeat } from "./story.js";
 
 export const COOKIE = "praman_demo";
@@ -25,7 +27,7 @@ const SESSION_ENDED =
   "Your demo session has ended, because the server restarted or its hour ran out. Whatever you just pressed was not run. A PayPal checkout that wasn't captured can't be captured now, so nothing is charged for it. Everything already paid stays on the ledger. Start a new session to go on.";
 
 /** Routes that act on a session. Anything else under /demo with no session has nothing to send a visitor to. */
-const SESSION_PATHS = /^\/demo(\/end|\/connect(\/(return|cancel))?|\/(r|dispute|step|approve|reject|capture|refund)\/[^/]+)?$/;
+const SESSION_PATHS = /^\/demo(\/end|\/shop|\/connect(\/(return|cancel))?|\/(r|dispute|step|approve|reject|capture|refund|shop)\/[^/]+)?$/;
 
 const STEPS: readonly BeatId[] = ["first", "second", "large", "injection", "fixture", "concurrency", "revoke", "after_revoke"];
 /** The steps that buy at the cafe. Any of them can need approval or become a checkout. */
@@ -39,14 +41,19 @@ function isPurchase(value: string): value is PurchaseBeat {
   return PURCHASES.some((s) => s === value);
 }
 
-/** The session's two mandates and their signed budgets: the only rows its console may show. */
+function isErrand(value: string): value is ErrandId {
+  return ERRAND_IDS.some((e) => e === value);
+}
+
+/** The session's three mandates and their signed budgets: the only rows its console may show. */
 function consoleScope(session: DemoSession): { readonly mandateIds: string[]; readonly budgets: Map<string, Budget> } {
   const budgets = new Map<string, Budget>();
-  for (const m of [session.mandate, session.harnessMandate]) {
+  const mandates = [session.mandate, session.harnessMandate, session.shopMandate];
+  for (const m of mandates) {
     const doc = m.document;
     if (doc.version === 2) budgets.set(doc.mandate_id, { maxTotalMinor: doc.limits.max_total_minor, currency: doc.scope.currency });
   }
-  return { mandateIds: [session.mandate.document.mandate_id, session.harnessMandate.document.mandate_id], budgets };
+  return { mandateIds: mandates.map((m) => m.document.mandate_id), budgets };
 }
 
 function readCookie(header: string | undefined): string | null {
@@ -84,6 +91,8 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
   const traceLoads = new RateLimiter(LIMITS.publicPerIp.limit, LIMITS.publicPerIp.windowMs);
   // Sessions one address may put on the house buyer in a day, so one address can't take them all (D-85).
   const houseByAddress = new RateLimiter(LIMITS.housePerIp.limit, LIMITS.housePerIp.windowMs);
+  // The shop's Channel3 snapshot, or null when the database has none: then nothing links to it (D-93).
+  const shop = shopReader(deps.log);
 
   const send = (res: ServerResponse, status: number, html: string, extra: Record<string, string> = {}) => {
     res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", ...SECURITY_HEADERS, ...extra });
@@ -231,7 +240,7 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
       }
 
       if (method === "GET" && path === "/demo") {
-        const html = renderDemoPage(session, recording, configured);
+        const html = renderDemoPage(session, recording, { ...configured, shop: (await shop(now)) !== null });
         session.notice = null;
         send(res, 200, html);
         return;
@@ -269,7 +278,26 @@ export function createDemoHandler(deps: DemoDeps): (req: IncomingMessage, res: S
         return;
       }
 
+      // The shop's errands (D-93). Each stops at Praman's decision and is never paid.
+      if (method === "GET" && path === "/demo/shop") {
+        const catalog = await shop(now);
+        const html = catalog === null ? renderShopOffPage() : renderShopPage(session, catalog, { model: deps.provider !== null });
+        session.notice = null;
+        send(res, 200, html);
+        return;
+      }
+
       const [, , verb, name] = path.split("/");
+
+      if (method === "POST" && verb === "shop" && name !== undefined && isErrand(name)) {
+        if ((await shop(now)) === null) {
+          session.notice = "The shop is not set up on this server. Nothing was run.";
+        } else {
+          await exclusive(session, () => runErrand(session, name, deps));
+        }
+        redirect(res, `/demo/shop#${name}`);
+        return;
+      }
 
       // The visitor's own view of a purchase step's trace: the public trace page, plus
       // the refund control for this session's purchase. The path names a step, never a trace.

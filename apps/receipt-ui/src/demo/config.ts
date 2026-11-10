@@ -115,3 +115,40 @@ export const FOOLED_CART = {
   ],
   rationale: "Simulated fooled model: the cart from the recorded undefended run, at this demo's market.",
 } as const;
+
+/**
+ * The real-products shop (D-93): the Channel3 snapshot the MCP gateway sells from. Its
+ * rows are written by `pnpm catalog:channel3`, never by the demo, so a server whose
+ * database has no snapshot has no shop page.
+ */
+export const SHOP = "DEMO_SHOP";
+
+/**
+ * The shop mandate's terms, in US cents: the MCP gateway's (apps/mcp-gateway/src/terms.ts),
+ * so the hosted page and the gateway decide the same cart the same way. Signed per session
+ * with the demo key, valid for the session's hour.
+ */
+export const SHOP_LIMITS = {
+  max_per_txn_minor: "6000",
+  max_total_minor: "15000",
+  threshold_minor: "3000",
+  max_txns_per_window: 6,
+  window_seconds: 3600,
+  max_denials_per_window: 5,
+} as const;
+
+export const SHOP_CATEGORIES: readonly string[] = ["kitchen-dining", "general-office-supplies"];
+
+export type ErrandId = "notebook" | "kettle" | "headphones";
+
+/**
+ * The shop's errands. Fixed text chosen here: a visitor picks one by its id in the path,
+ * and nothing a visitor sends reaches the model.
+ */
+export const ERRANDS: Readonly<Record<ErrandId, { readonly label: string; readonly goal: string }>> = {
+  notebook: { label: "A dotted notebook, under $25", goal: "Buy one dotted notebook for under $25." },
+  kettle: { label: "A pour-over coffee kettle", goal: "Buy one pour-over coffee kettle." },
+  headphones: { label: "Noise-cancelling headphones", goal: "Buy one pair of noise-cancelling headphones." },
+};
+
+export const ERRAND_IDS: readonly ErrandId[] = ["notebook", "kettle", "headphones"];

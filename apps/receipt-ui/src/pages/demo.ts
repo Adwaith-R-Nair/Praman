@@ -530,7 +530,11 @@ export function renderRecordedRunPage(outOfSessions = false): string {
 const RECORDED_RUN_ALT =
   "The demo page after all eight steps. The signed mandate. A poisoned listing: the live model ignored it, and a fooled model's cart was refused. PayPal connected. A first purchase Praman held for approval and then charged to the saved PayPal account. A coffee Praman allowed with nobody approving. A large purchase approved and sent to a PayPal checkout. Twenty purchases at once, where the budget stopped all but those that fit. The mandate revoked, and the agent's next try refused with MANDATE_REVOKED.";
 
-export function renderDemoPage(session: DemoSession, recording: Recording, configured: { readonly paypal: boolean; readonly model: boolean; readonly house?: boolean } = { paypal: true, model: true }): string {
+export function renderDemoPage(
+  session: DemoSession,
+  recording: Recording,
+  configured: { readonly paypal: boolean; readonly model: boolean; readonly house?: boolean; readonly shop?: boolean } = { paypal: true, model: true },
+): string {
   const b = (id: BeatId) => session.beats.get(id);
   const first = b("first");
   const second = b("second");
@@ -561,6 +565,7 @@ export function renderDemoPage(session: DemoSession, recording: Recording, confi
   <h1>An agent with a budget, and the one thing that can say yes</h1>
   <p class="lede">Each step below asks a real model for a cart, or sends a labelled test intent. Praman decides, and every decision lands on a hash-chained ledger you can open.</p>
   <p class="console-link"><a href="/demo/console">Open your ledger console</a>: every row this session wrote, each hash checked, with charts of spend, decisions and rails.</p>
+  ${configured.shop === true ? `<p class="console-link"><a href="/demo/shop">Send the agent on errands at a shop with real products</a>: Channel3's catalog, prices pinned, decided by Praman and never bought.</p>` : ""}
 </header>
 ${notice === null ? "" : `<p class="notice" role="status">${escapeHtml(notice)}</p>`}
 

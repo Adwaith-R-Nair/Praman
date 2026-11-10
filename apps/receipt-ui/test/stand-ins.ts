@@ -10,6 +10,17 @@ import type { VaultApi } from "../src/demo/connect.js";
 export const PAYMENT_TOKEN = "PAYTOKEN-9f8e7d-NEVER-SHOWN";
 export const SETUP_TOKEN = "SETUPTOKEN1";
 
+/** The cart the scripted model proposes for a goal containing these words. The market's is the default. */
+const CARTS: readonly (readonly [string, { merchant_id: string; line_items: { sku: string; qty: number }[] }])[] = [
+  ["Burrito", { merchant_id: "DEMO_CAFE", line_items: [{ sku: "SKU_CAFE_BOWL", qty: 1 }] }],
+  ["Iced Coffee", { merchant_id: "DEMO_CAFE", line_items: [{ sku: "SKU_CAFE_COFFEE", qty: 1 }] }],
+  ["Team Lunch", { merchant_id: "DEMO_CAFE", line_items: [{ sku: "SKU_CAFE_TRAY", qty: 1 }] }],
+  // The shop's errands (D-93): a notebook and headphones from the snapshot, and a kettle the snapshot doesn't have.
+  ["notebook", { merchant_id: "DEMO_SHOP", line_items: [{ sku: "C3_Yy3DRlE", qty: 1 }] }],
+  ["kettle", { merchant_id: "DEMO_SHOP", line_items: [{ sku: "C3_KETTLE_NOT_IN_SNAPSHOT", qty: 1 }] }],
+  ["headphones", { merchant_id: "DEMO_SHOP", line_items: [{ sku: "C3_4RyHr6R", qty: 1 }] }],
+];
+
 /** Proposes the cart each step's goal asks for, after reading the catalog once. */
 export class ScriptedModel implements ModelProvider {
   readonly id = "test/scripted-demo-model";
@@ -23,13 +34,7 @@ export class ScriptedModel implements ModelProvider {
     const first = history[0];
     const goal = first?.role === "user" ? first.text : "";
     if (history.length === 1) return { kind: "TOOL_CALLS", calls: [{ id: "c1", name: "list_catalog", input: {} }], raw: null };
-    const cart = goal.includes("Burrito")
-      ? { merchant_id: "DEMO_CAFE", line_items: [{ sku: "SKU_CAFE_BOWL", qty: 1 }] }
-      : goal.includes("Iced Coffee")
-        ? { merchant_id: "DEMO_CAFE", line_items: [{ sku: "SKU_CAFE_COFFEE", qty: 1 }] }
-        : goal.includes("Team Lunch")
-          ? { merchant_id: "DEMO_CAFE", line_items: [{ sku: "SKU_CAFE_TRAY", qty: 1 }] }
-          : { merchant_id: "DEMO_MARKET", line_items: [{ sku: "SKU_INJ2_DOSA", qty: 1 }, { sku: "SKU_INJ2_COFFEE", qty: 1 }] };
+    const cart = CARTS.find(([words]) => goal.includes(words))?.[1] ?? { merchant_id: "DEMO_MARKET", line_items: [{ sku: "SKU_INJ2_DOSA", qty: 1 }, { sku: "SKU_INJ2_COFFEE", qty: 1 }] };
     const input = this.override ?? { ...cart, rationale: "what the goal asked for" };
     return { kind: "TOOL_CALLS", calls: [{ id: "c2", name: "propose_intent", input }], raw: null };
   }
