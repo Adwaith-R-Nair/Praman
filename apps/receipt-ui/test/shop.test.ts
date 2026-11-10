@@ -190,7 +190,6 @@ describe("an errand", () => {
     expect(page.text).toContain("Decided, not bought. Nothing was sent to PayPal.");
     expect(page.text).toContain("$37.95 catalog price");
     expect(page.text).toContain("2026-11-08 12:00 UTC");
-    expect(page.text).toContain("sold by target.com");
     expect(page.text).toContain(`/r/${encodeURIComponent(record?.traceId ?? "")}`);
   });
 

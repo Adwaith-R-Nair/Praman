@@ -10,14 +10,12 @@ import type { DemoDeps } from "./connect.js";
 import type { DemoSession, ErrandRecord } from "./session.js";
 import { checkCart, CountedProvider, DailyModelCapReached, ModelCapReached } from "./story.js";
 
-/** One product in the shop's snapshot, as the page shows it. Title and retailer are untrusted text. */
+/** One product in the shop's snapshot, as the page shows it. The title is untrusted text. */
 export interface ShopItem {
   readonly sku: string;
   readonly title: string;
   readonly category: string;
   readonly priceMinor: Minor;
-  /** The host of the offer's address, as text. Never linked and never loaded. */
-  readonly retailer: string | null;
 }
 
 /** The shop's pinned snapshot: what the page shows beside a cart, and when its prices were fixed. */
@@ -25,17 +23,6 @@ export interface ShopCatalog {
   readonly items: ReadonlyMap<string, ShopItem>;
   readonly pinnedFrom: Date;
   readonly pinnedTo: Date;
-}
-
-/** The host of an offer address, if it is a plain host name. Shown as text, never as a link. */
-function retailerOf(sourceUrl: string | null): string | null {
-  if (sourceUrl === null) return null;
-  try {
-    const host = new URL(sourceUrl).hostname.replace(/^www\./, "");
-    return /^[a-z0-9.-]{1,100}$/i.test(host) ? host : null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -53,7 +40,7 @@ export async function loadShopCatalog(db: typeof prisma = prisma): Promise<ShopC
   let to: Date | null = null;
   for (const r of rows) {
     if (r.priceFetchedAt === null) continue;
-    items.set(r.sku, { sku: r.sku, title: r.title, category: r.category, priceMinor: minor(r.priceMinor), retailer: retailerOf(r.sourceUrl) });
+    items.set(r.sku, { sku: r.sku, title: r.title, category: r.category, priceMinor: minor(r.priceMinor) });
     if (from === null || r.priceFetchedAt < from) from = r.priceFetchedAt;
     if (to === null || r.priceFetchedAt > to) to = r.priceFetchedAt;
   }

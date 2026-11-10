@@ -31,15 +31,14 @@ function button(id: ErrandId, label: string, disabledWhy: string | null): string
   return `<form method="post" action="/demo/shop/${id}" class="act"><button type="submit" class="btn btn-primary" disabled aria-describedby="why-shop-${id}">${escapeHtml(label)}</button></form><p class="why" id="why-shop-${id}">${escapeHtml(disabledWhy)}</p>`;
 }
 
-/** The cart, each line priced from the snapshot. Titles and retailers are the retailer's own text, escaped. */
+/** The cart, each line priced from the snapshot. Titles are the merchant's own text, escaped. */
 function cartHtml(record: ErrandRecord, catalog: ShopCatalog): string {
   if (record.lineItems.length === 0) return `<p class="cell-body">No cart.</p>`;
   const lines = record.lineItems
     .map((line) => {
       const item = catalog.items.get(line.sku);
       if (item === undefined) return `<li><code>${escapeHtml(`${line.qty.toString()} × ${line.sku}`)}</code> <span class="shop-muted">not in this shop's catalog</span></li>`;
-      const from = item.retailer === null ? "" : `, sold by ${item.retailer}`;
-      return `<li><span class="shop-title">${escapeHtml(item.title)}</span> <span class="shop-muted">${escapeHtml(`${item.category}${from}`)}</span> <code>${escapeHtml(`${line.qty.toString()} × ${formatMoney(item.priceMinor, "USD")} catalog price`)}</code></li>`;
+      return `<li><span class="shop-title">${escapeHtml(item.title)}</span> <span class="shop-muted">${escapeHtml(item.category)}</span> <code>${escapeHtml(`${line.qty.toString()} × ${formatMoney(item.priceMinor, "USD")} catalog price`)}</code></li>`;
     })
     .join("");
   return `<ul class="cart shop-cart">${lines}</ul>`;
