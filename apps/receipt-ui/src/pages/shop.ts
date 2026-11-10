@@ -73,7 +73,7 @@ function resultHtml(record: ErrandRecord | undefined, catalog: ShopCatalog): str
     <div class="gate">
       <div class="cell cell-agent"><h4>Agent proposed</h4>${cartHtml(record, catalog)}</div>
       <div class="cell cell-praman"><h4>Praman decided</h4>${decisionHtml(record)}</div>
-      <div class="cell cell-money"><h4>Money</h4><p class="cell-body money-none">Decided, not bought. Nothing was sent to PayPal.</p></div>
+      <div class="cell cell-money"><h4>Money</h4><p class="cell-body money-none">${record.state === "decided" ? "Decided, not bought." : "Not bought."} Nothing was sent to PayPal.</p></div>
     </div>
     <p class="message">${escapeHtml(record.message)}</p>
     ${links}
