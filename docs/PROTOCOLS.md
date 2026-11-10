@@ -35,6 +35,8 @@ A Praman mandate is the first row: limits signed ahead of time, used by an agent
 
 The field names are from [`MANDATE_SPEC.md`](MANDATE_SPEC.md), section 1. "Direct" means the same rule with a different name. "Loose" means the nearest concept, with a real difference. "None" means the protocol pages read have no place for it.
 
+This table is also built from each signed mandate, as `in_ap2_terms` with the label "In AP2 terms (a mapping, not an AP2 mandate)", on the owner's dispute bundle only: `/demo/dispute/<step>` and `pnpm dispute <trace_id>`. It adds the AP2 v0.1 `IntentMandate` names (`merchants`, `intent_expiry`, `user_cart_confirmation_required`, and the unfilled `natural_language_description`, `skus`, `requires_refundability`), read from AP2's repository at tag v0.1.0 on 10 Nov 2026. It shows the limits, so the public `/dispute/<trace>` bundle and every public page leave it out ([D-94](DECISIONS.md)).
+
 | Praman field | What it does in Praman | AP2 v0.2 | ACP allowance | Fit |
 |---|---|---|---|---|
 | `mandate_id` | Names the mandate. Every ledger row and intent carries it | No id field in the pages read. A receipt points at a mandate by a hash of it (`reference`). PayPal's post speaks of "mandate IDs and signatures" | `checkout_session_id` ties an allowance to one checkout | Loose |

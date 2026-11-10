@@ -3131,3 +3131,19 @@ D-38 kept PayPal's Agent Toolkit out of the payment path, and D-90 recorded that
 - It reads ledger rows only. It does not verify the hash chain (`pnpm verify-ledger` does) and does not read the outbox records.
 - It audits one trace per run, from a terminal, against whichever database `.env` names. The hosted ledger is audited only by someone who holds its database address.
 - The dependency is heavy for what is used: a clean `pnpm install --frozen-lockfile` goes from 395 to 531 packages and from 537 MB to 629 MB of `node_modules`, and the hosted build installs the whole workspace although the server loads none of it.
+
+### D-94 · The owner's dispute bundle shows the mandate in AP2 terms, and the public one never does · Accepted (implementer's decision, for the builder to check)
+
+D-90 wrote the AP2 mapping as a table in `docs/PROTOCOLS.md` and rejected building it from each mandate, for lack of time. With the time there now, a reader holding one real bundle can see that mandate's own values beside AP2's names, without reading the table against a JSON file by hand.
+
+**Decided.** `inAp2Terms()` in `packages/dispute/src/ap2.ts` is a pure function from a signed mandate document to a list of rows: the Praman field as that version spells it (`_paise` on v1, `_minor` on v2), its signed value, the AP2 v0.1 and v0.2 counterparts, a fit of direct, loose, none or gap, and a note. It also lists the AP2 fields Praman has no value for, and the nine gaps from `docs/PROTOCOLS.md` section 4. The owner's bundle carries it as `in_ap2_terms`, labelled "In AP2 terms (a mapping, not an AP2 mandate)", and `pnpm dispute` prints it. It is built only when the signature on the bundle holds, and is null for anything it can't read in full, an unknown version or a v1 mandate not in INR.
+
+- **Names are copied, never made up.** v0.2 names are the ones in `docs/PROTOCOLS.md`. v0.1 names are from the `IntentMandate` class in AP2's repository at tag v0.1.0 (`src/ap2/types/mandate.py`), read on 10 Nov 2026: `merchants`, `intent_expiry` and `user_cart_confirmation_required` are mapped, and `natural_language_description`, `skus` and `requires_refundability` are listed as having no Praman value. They are left empty, not filled from the agent's goal or the catalog.
+- **Owner only.** The view shows every limit, which D-84 keeps off the public bundle. `toPublicBundle()` drops the field by name, and tests check that `/dispute/<trace>`, `/r/<trace>`, `/`, `/traces`, `/sample`, `/sample/data` and `/demo` never carry it, for a stranger or the owner.
+- **Display only.** It decides nothing, signs nothing, calls nothing and adds no dependency. No model reads or writes it.
+
+**What this rules out.** Calling the view an AP2 mandate, or Praman AP2 compliant, compatible or interoperable (D-90). Filling an AP2 field Praman doesn't sign. Showing the view on any public route.
+
+**Rejected.** *A converter that emits an AP2 SD-JWT:* that would need a new key and a format no verifier here has checked, and would look like a claim of interop. *Rendering it on the public trace page without the values:* the field names alone add little that `docs/PROTOCOLS.md` does not already say. *Only the v0.2 names:* PayPal's posts use v0.1's Intent Mandate words.
+
+**Limits.** Nothing was run against an AP2 verifier or sample. The AP2 names are from the versions read on 9 and 10 Nov 2026 and will drift. The fit for each row is this project's reading, the same as the table in `docs/PROTOCOLS.md`. The view appears only in the downloaded JSON and the terminal, not as a rendered page.
