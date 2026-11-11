@@ -1,4 +1,4 @@
-# Praman — Mandate, Decision & Ledger Specification
+# Praman: Mandate, Decision & Ledger Specification
 
 This is the trust core. Everything else in the repo is plumbing around these three data structures.
 
@@ -56,7 +56,7 @@ A mandate is a signed grant of bounded spend authority from a human issuer to an
 
 ## 2. PurchaseIntent
 
-Emitted by the agent as a tool call. Structured only — never prose.
+Emitted by the agent as a tool call. Structured only, never prose.
 
 ```jsonc
 {
@@ -64,14 +64,14 @@ Emitted by the agent as a tool call. Structured only — never prose.
   "mandate_id": "mnd_01J8XK2P9Q",
   "merchant_id": "MERCH_001",
   "line_items": [
-    { "sku": "SKU_MEALS_042", "qty": 2 }   // NOTE: no price field — by design
+    { "sku": "SKU_MEALS_042", "qty": 2 }   // NOTE: no price field - by design
   ],
   "requested_at": "2026-08-28T12:04:11Z",
   "agent_rationale": "User asked for lunch under ₹400; this is the cheapest veg thali in stock."
 }
 ```
 
-**Critical:** the intent carries no amount. Prices are resolved server-side from the catalog at evaluation time. This single design choice kills an entire class of injection attack — a merchant page that says "this item costs ₹1" cannot influence the charged amount, because the model never touches the number.
+**Critical:** the intent carries no amount. Prices are resolved server-side from the catalog at evaluation time. This single design choice kills an entire class of injection attack: a merchant page that says "this item costs ₹1" cannot influence the charged amount, because the model never touches the number.
 
 `agent_rationale` is stored for audit and **never parsed**. It is display-only.
 
@@ -86,7 +86,7 @@ export function evaluate(input: EvaluateInput): Decision;
 
 export interface EvaluateInput {
   intent: PurchaseIntent;
-  mandate: VerifiedMandate;      // signature already verified — see below
+  mandate: VerifiedMandate;      // signature already verified - see below
   state: LedgerDerivedState;     // { spent_minor, txn_timestamps, revoked, merchants_transacted, seen_idempotency_keys, released_keys, denied_attempts }
   catalog: CatalogSnapshot;      // trusted, server-side
   now: Date;
@@ -99,24 +99,24 @@ export type Decision =
   | { kind: "DENY";    reason_code: DenyCode; detail: string };
 ```
 
-`approval_id` is not part of `Decision` — `evaluate()` is pure and knows nothing about approvals. It's assigned by `run-intent.ts` after a `STEP_UP`, and lives on `RunResult`, one level up from the agent-visible decision (D-24).
+`approval_id` is not part of `Decision`; `evaluate()` is pure and knows nothing about approvals. It's assigned by `run-intent.ts` after a `STEP_UP`, and lives on `RunResult`, one level up from the agent-visible decision (D-24).
 
-**`MANDATE_SIGNATURE_INVALID` is not one of `evaluate()`'s checks.** It's decided by `run-intent.ts` before `evaluate()` is ever called — an unverified mandate has no `VerifiedMandate` to pass in at all, so there is nothing yet for `evaluate()` to evaluate. The idempotency short-circuit is similar but split in two: `run-intent.ts` checks its own `idempotency_record` table first (a settled or in-flight call for this exact key, independent of any mandate), and only once that's clear does `evaluate()` run its own check below against `state.seen_idempotency_keys` (keys the *ledger* has seen for this mandate specifically).
+**`MANDATE_SIGNATURE_INVALID` is not one of `evaluate()`'s checks.** It's decided by `run-intent.ts` before `evaluate()` is ever called: an unverified mandate has no `VerifiedMandate` to pass in at all, so there is nothing yet for `evaluate()` to evaluate. The idempotency short-circuit is similar but split in two: `run-intent.ts` checks its own `idempotency_record` table first (a settled or in-flight call for this exact key, independent of any mandate), and only once that's clear does `evaluate()` run its own check below against `state.seen_idempotency_keys` (keys the *ledger* has seen for this mandate specifically).
 
-**Evaluation order matters and must be documented.** Cheapest and most fatal checks first — this list is `evaluate()` itself, read top to bottom:
+**Evaluation order matters and must be documented.** Cheapest and most fatal checks first. This list is `evaluate()` itself, read top to bottom:
 
 1. idempotency key not already seen on this mandate's ledger → else `DUPLICATE_INTENT`
 2. mandate not revoked → else `MANDATE_REVOKED`
-2b. denials in `window_seconds` < `max_denials_per_window` → else `DENIAL_RATE_EXCEEDED` *(closes D-20's probe oracle — a locked mandate must cost nothing to reject, so this runs early, but after revocation so revocation still wins)*
+2b. denials in `window_seconds` < `max_denials_per_window` → else `DENIAL_RATE_EXCEEDED` *(closes D-20's probe oracle: a locked mandate must cost nothing to reject, so this runs early, but after revocation so revocation still wins)*
 3. `now` ≥ validity.not_before → else `MANDATE_NOT_YET_VALID`
 4. `now` ≤ validity.not_after → else `MANDATE_EXPIRED`
 5. `intent.mandate_id === mandate.mandate_id` → else `MANDATE_SUBJECT_MISMATCH`
-5b. `mandate.scope.currency` is in `CURRENCIES` (`INR`, `USD`) → else `AMOUNT_INVALID` *(defensive — the type guarantees this for callers that went through it, but a mandate hydrated from an untyped boundary might not have)*
+5b. `mandate.scope.currency` is in `CURRENCIES` (`INR`, `USD`) → else `AMOUNT_INVALID` *(defensive: the type guarantees this for callers that went through it, but a mandate hydrated from an untyped boundary might not have)*
 6. merchant in scope → else `MERCHANT_OUT_OF_SCOPE`
-7. catalog's own `merchant_id` matches the intent's → else `MERCHANT_OUT_OF_SCOPE` *(a second, distinct check from #6 — the caller could pass a catalog snapshot for the wrong merchant even when the intent itself is in scope)*
+7. catalog's own `merchant_id` matches the intent's → else `MERCHANT_OUT_OF_SCOPE` *(a second, distinct check from #6: the caller could pass a catalog snapshot for the wrong merchant even when the intent itself is in scope)*
 8. cart is non-empty and every line item has a positive integer qty → else `AMOUNT_INVALID`
 9. quantities aggregated per SKU (a SKU split across two line items is one demand on stock, not two independent checks)
-10–12. for each distinct SKU, sorted (so reason codes never depend on line-item order): exists in catalog → else `SKU_UNKNOWN`; item currency equals `mandate.scope.currency` → else `CURRENCY_MISMATCH`; category in scope → else `CATEGORY_OUT_OF_SCOPE`; qty ≤ stock → else `INSUFFICIENT_STOCK`; then **resolve amount** — `amount_minor = Σ(catalog[sku].price_minor × qty)`
+10–12. for each distinct SKU, sorted (so reason codes never depend on line-item order): exists in catalog → else `SKU_UNKNOWN`; item currency equals `mandate.scope.currency` → else `CURRENCY_MISMATCH`; category in scope → else `CATEGORY_OUT_OF_SCOPE`; qty ≤ stock → else `INSUFFICIENT_STOCK`; then **resolve amount**: `amount_minor = Σ(catalog[sku].price_minor × qty)`
 13. `amount_minor > 0` → else `AMOUNT_INVALID`
 14. `amount_minor ≤ max_per_txn_minor` → else `MANDATE_AMOUNT_EXCEEDED`
 15. `state.spent_minor + amount_minor ≤ max_total_minor` → else `MANDATE_BUDGET_EXHAUSTED`
@@ -145,7 +145,7 @@ Write this function first, on paper, before any other code in the repo.
 | `STEP_UP_FIRST_MERCHANT` | STEP_UP | first ever transaction at this merchant under this mandate |
 | `MANDATE_SIGNATURE_INVALID` | DENY | signature failed verification |
 | `MANDATE_REVOKED` | DENY | revocation present in ledger |
-| `DENIAL_RATE_EXCEEDED` | DENY | too many denials in window — mandate locked pending human review (D-20) |
+| `DENIAL_RATE_EXCEEDED` | DENY | too many denials in window; mandate locked pending human review (D-20) |
 | `MANDATE_EXPIRED` | DENY | past `not_after` |
 | `MANDATE_NOT_YET_VALID` | DENY | before `not_before` |
 | `MANDATE_SUBJECT_MISMATCH` | DENY | intent references a different mandate/agent |
@@ -162,17 +162,17 @@ Write this function first, on paper, before any other code in the repo.
 | `CURRENCY_MISMATCH` | DENY | a catalog item, or an order at capture, is in a currency other than the mandate's. Nothing is converted (D-29, D-31). The control plane also uses it after `evaluate()`, for a merchant configured in another currency (D-35), and at approval, when the mandate is no longer in the currency the human approved (D-36) |
 | `ORDER_RELEASED` | DENY | capture refused: this order's hold was released after 10 minutes unapproved. Returned only by `evaluateCapture()` (D-30, D-31) |
 
-Every code must appear in at least one eval fixture. A code with no fixture is untested surface. `AMOUNT_CHANGED_SINCE_APPROVAL` is a known gap here — the Layer 1 eval corpus tests `evaluate()` directly and has no seeding path for an approval/resolution cycle yet.
+Every code must appear in at least one eval fixture. A code with no fixture is untested surface. `AMOUNT_CHANGED_SINCE_APPROVAL` is a known gap here: the Layer 1 eval corpus tests `evaluate()` directly and has no seeding path for an approval/resolution cycle yet.
 
 ### 4b. Resolving a step-up (D-24)
 
-A `STEP_UP` persists a pending `Approval` row (`run-intent.ts`) rather than executing anything. `resolveApproval()` (`packages/control-plane/src/resolve-approval.ts`) is the only way to move it forward, and approval satisfies **only** the step-up gate — nothing else:
+A `STEP_UP` persists a pending `Approval` row (`run-intent.ts`) rather than executing anything. `resolveApproval()` (`packages/control-plane/src/resolve-approval.ts`) is the only way to move it forward, and approval satisfies **only** the step-up gate, nothing else:
 
 - **Reject or expire** (15 minutes, `APPROVAL_TTL_MS`) → the approval is marked `rejected`/`expired`, a `step_up_resolved` ledger event records it, nothing executes.
-- **Approve** → `evaluate()` runs again, fresh, against the mandate and ledger state *as they are now*, not as they were at step-up time. Revocation, expiry, budget and velocity are all re-checked. A `DENY` here refuses the approval outright (`REFUSED`), even though a human already said yes — approval cannot revive a mandate that died in the meantime.
-- **Amount binding** — the human approved a specific figure. If the catalog moved between step-up and approval, the re-evaluated amount won't match what was approved, and the approval is refused with `AMOUNT_CHANGED_SINCE_APPROVAL` rather than silently executing a different amount than what was shown. The currency is bound the same way: a mandate no longer in the approval's currency is refused with `CURRENCY_MISMATCH`, checked first, even at the same digits (D-36). Either refusal is recorded on the `step_up_resolved` event.
-- **Unproven callers change nothing** — a bad signature, or a good one on a different mandate, leaves the approval's status as it was and is recorded as a claim under `claimed_mandate_id` (D-25, D-36). The status is read under the mandate lock.
-- **Idempotent** — approving twice returns the same cached order the second time; exactly one Razorpay call ever happens per approval.
+- **Approve** → `evaluate()` runs again, fresh, against the mandate and ledger state *as they are now*, not as they were at step-up time. Revocation, expiry, budget and velocity are all re-checked. A `DENY` here refuses the approval outright (`REFUSED`), even though a human already said yes; approval cannot revive a mandate that died in the meantime.
+- **Amount binding**: the human approved a specific figure. If the catalog moved between step-up and approval, the re-evaluated amount won't match what was approved, and the approval is refused with `AMOUNT_CHANGED_SINCE_APPROVAL` rather than silently executing a different amount than what was shown. The currency is bound the same way: a mandate no longer in the approval's currency is refused with `CURRENCY_MISMATCH`, checked first, even at the same digits (D-36). Either refusal is recorded on the `step_up_resolved` event.
+- **Unproven callers change nothing**: a bad signature, or a good one on a different mandate, leaves the approval's status as it was and is recorded as a claim under `claimed_mandate_id` (D-25, D-36). The status is read under the mandate lock.
+- **Idempotent**: approving twice returns the same cached order the second time; exactly one Razorpay call ever happens per approval.
 
 The rejected alternative was executing the stored intent directly on approval, without re-evaluating. That's a bypass: park a `STEP_UP`, wait for the mandate to expire or be revoked, then approve, and money moves under dead authority.
 
@@ -207,7 +207,7 @@ The rejected alternative was executing the stored intent directly on approval, w
 - A `decision`, `capture_decision` or `step_up_resolved` row whose withheld field can name a limit or a step-up reason carries `redaction_salt`, a random value covered by the row's hash, so the hash can't be used to confirm a guess at a withheld field (D-84). Refusing rows that hold only fixed text, a closed verify-failure value or a state string have none, and neither do rows from before this.
 - `/dispute/:id` serves the public bundle: `mandate` is `{ id, key_id, signature_verified, signature_check, signed_sha256 }`, and each chain entry has `withheld_fields`, the payload fields left out. `signed_sha256` is sha256 of the canonical JSON of `{ document, signature }`, and `/demo/dispute/<step>` and `pnpm dispute <trace_id>` add `issuer` and `signed` (`document`, `signature`, `public_key_pem`).
 - `entry_hash` chains to `prev_hash`. Genesis entry uses 64 zeros.
-- Every 100 entries (or hourly), compute a Merkle root over `entry_hash` values and append a `checkpoint` entry containing it. The checkpoint is what you'd anchor externally in production — say this in the pitch, and be clear you didn't anchor it in the demo.
+- Every 100 entries (or hourly), compute a Merkle root over `entry_hash` values and append a `checkpoint` entry containing it. The checkpoint is what you'd anchor externally in production; say this in the pitch, and be clear you didn't anchor it in the demo.
 - Immutability enforced in migration:
 
 ```sql
@@ -219,4 +219,4 @@ CREATE RULE ledger_no_delete AS ON DELETE TO ledger_entry DO INSTEAD NOTHING;
 
 ### The trace
 
-A `trace_id` groups the full lifecycle of one intent: `intent → decision → [step_up_resolved] → api_call → outcome`, followed on a checkout rail by `capture_decision → api_call → outcome` for each capture attempt, or by a `released` outcome, and by a `settlement` whenever the provider's webhook reports on the capture. The receipt page at `/r/:trace_id` renders these in order, including the agent's verbatim tool call and the reason code. That page is the artefact a dispute officer would read — it's the thing that makes agent spending *disputable*, and it's what nobody else in the applicant pool will have built.
+A `trace_id` groups the full lifecycle of one intent: `intent → decision → [step_up_resolved] → api_call → outcome`, followed on a checkout rail by `capture_decision → api_call → outcome` for each capture attempt, or by a `released` outcome, and by a `settlement` whenever the provider's webhook reports on the capture. The receipt page at `/r/:trace_id` renders these in order, including the agent's verbatim tool call and the reason code. That page is the artefact a dispute officer would read: it's the thing that makes agent spending *disputable*, and it's what nobody else in the applicant pool will have built.

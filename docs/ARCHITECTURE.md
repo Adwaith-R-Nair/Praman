@@ -1,4 +1,4 @@
-# Praman — Architecture
+# Praman: Architecture
 
 *This is the reviewer-facing document. Five minutes end to end. `HLD.md` and `LLD.md` go deeper; `DECISIONS.md` records why.*
 
@@ -24,7 +24,7 @@ Today's agentic checkout reads attacker-controllable text (a merchant's product 
 
 Most approaches try to make the model safe. Praman makes the model **irrelevant to authorisation**.
 
-The `PurchaseIntent` the agent emits contains a SKU and a quantity — and nothing else. No price. No merchant override. No scope.
+The `PurchaseIntent` the agent emits contains a SKU and a quantity, and nothing else. No price. No merchant override. No scope.
 
 ```jsonc
 { "mandate_id": "mnd_…", "merchant_id": "MERCH_001",
@@ -61,7 +61,7 @@ Injection can make the model *want* the wrong thing. It cannot make the system *
         ╚══════════════════════════════════════════════════╝
 ```
 
-Evaluation and execution run in **two phases**, not one transaction: a database transaction and an external payment call cannot be made atomic (there is no protocol between them). What's guaranteed instead is that no call to a payment provider is ever made without a durable, committed record naming what was about to happen — so a crash or ambiguous failure between the call and recording its outcome leaves a resolvable trail, not a silent gap. A per-mandate advisory lock, held in both phases, still stops concurrent duplicate intents from racing the budget. See D-22.
+Evaluation and execution run in **two phases**, not one transaction: a database transaction and an external payment call cannot be made atomic (there is no protocol between them). What's guaranteed instead is that no call to a payment provider is ever made without a durable, committed record naming what was about to happen, so a crash or ambiguous failure between the call and recording its outcome leaves a resolvable trail, not a silent gap. A per-mandate advisory lock, held in both phases, still stops concurrent duplicate intents from racing the budget. See D-22.
 
 ## Stack
 
@@ -69,15 +69,15 @@ TypeScript (strict) · Postgres + Prisma · Ed25519 via `node:crypto` · a provi
 
 No HTTP framework. The control plane is a `runIntent()` orchestrator, called by the CLI, by the demo's routes and by the MCP gateway.
 
-Deliberately boring where boring is correct. The novelty budget is spent on the decision layer, not the framework. **No vector database** — the catalog is small and structured, there is nothing to retrieve semantically, and adding one would have been decoration.
+Deliberately boring where boring is correct. The novelty budget is spent on the decision layer, not the framework. **No vector database**: the catalog is small and structured, there is nothing to retrieve semantically, and adding one would have been decoration.
 
 ## How it's measured
 
 | Metric | What it means |
 |---|---|
 | Containment rate | adversarial cases where no money moved (dev *and* held-out, reported separately) |
-| Incidental containment | contained, but for an unrelated reason — a lucky pass, reported not hidden |
-| False-refusal rate | benign purchases wrongly blocked — the cost side of the ledger |
+| Incidental containment | contained, but for an unrelated reason: a lucky pass, reported not hidden |
+| False-refusal rate | benign purchases wrongly blocked: the cost side of the ledger |
 | Money-at-risk prevented | value of contained attacks, per currency |
 | Unresolved exceptions | explicit list of failing case IDs, each with a reason |
 
@@ -88,11 +88,11 @@ Run in GitHub Actions on every push. The README badge is generated from `report.
 ## Scope and honesty
 
 - PayPal sandbox and Razorpay test mode only. No live keys, no real money.
-- Not a UAP implementation — UAP is unpublished.
+- Not a UAP implementation. UAP is unpublished.
 - Not an AP2 or ACP implementation. [`PROTOCOLS.md`](PROTOCOLS.md) maps the mandate onto both, field by field, and lists the gaps.
 - Single-merchant demo scope; multi-merchant is config, untested at scale.
 - Merkle roots are computed but not externally anchored.
-- `TRUNCATE ledger_entry` bypasses the append-only triggers entirely — they
+- `TRUNCATE ledger_entry` bypasses the append-only triggers entirely; they
   are row-level (`BEFORE UPDATE`/`BEFORE DELETE`) and Postgres never fires
   row-level triggers for a `TRUNCATE`. The ledger's integration tests rely on
   this to reset state between runs. Closing it needs a statement-level event

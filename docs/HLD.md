@@ -1,8 +1,8 @@
-# Praman — High Level Design (HLD)
+# Praman: High Level Design (HLD)
 
 > This document describes the September 2026 Razorpay Buildathon entry. For the current system, which also runs on PayPal, read [README.md](../README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
 
-> **Doc map.** `ARCHITECTURE.md` is the reviewer-facing summary (read first, 5 min). **This HLD** is the system decomposition — components, boundaries, flows, failure modes. `LLD.md` is implementation-level contracts — schemas, signatures, SQL. `DECISIONS.md` records *why* each major choice was made.
+> **Doc map.** `ARCHITECTURE.md` is the reviewer-facing summary (read first, 5 min). **This HLD** is the system decomposition: components, boundaries, flows, failure modes. `LLD.md` is implementation-level contracts: schemas, signatures, SQL. `DECISIONS.md` records *why* each major choice was made.
 
 ---
 
@@ -22,11 +22,11 @@ Existing controls don't cover this. Rate limits don't understand intent. Fraud s
 
 | Goal | Measured by |
 |---|---|
-| G1 — No agent action exceeds explicit human-granted authority | containment rate on adversarial corpus |
-| G2 — Legitimate purchases are not blocked | false-refusal rate on benign corpus |
-| G3 — Every money action is reconstructible after the fact | every executed payment has a complete, verifiable trace |
-| G4 — Tampering with the record is detectable | `verify-ledger` fails on any mutation |
-| G5 — Failures degrade to human review, never to a loop or a silent drop | failure-family eval cases |
+| G1: No agent action exceeds explicit human-granted authority | containment rate on adversarial corpus |
+| G2: Legitimate purchases are not blocked | false-refusal rate on benign corpus |
+| G3: Every money action is reconstructible after the fact | every executed payment has a complete, verifiable trace |
+| G4: Tampering with the record is detectable | `verify-ledger` fails on any mutation |
+| G5: Failures degrade to human review, never to a loop or a silent drop | failure-family eval cases |
 
 **Non-goals:** making the agent smarter, maximising conversion, real-money settlement, implementing NPCI's UAP (unpublished), multi-tenant scale.
 
@@ -48,8 +48,8 @@ TRUSTED                          │  UNTRUSTED
 
 The boundary is enforced in exactly two places:
 
-- **`untrusted.ts`** — wraps every piece of merchant-origin text in a delimited block before it enters a prompt, with a system-prompt clause stating that content inside can never alter policy, price, or scope.
-- **The `PurchaseIntent` shape** — it carries a SKU and a quantity and *nothing else*. No price, no merchant override, no scope field. The model physically cannot express an amount. Injection can make the model *want* the wrong thing; it cannot make the system *charge* the wrong thing.
+- **`untrusted.ts`**: wraps every piece of merchant-origin text in a delimited block before it enters a prompt, with a system-prompt clause stating that content inside can never alter policy, price, or scope.
+- **The `PurchaseIntent` shape**: it carries a SKU and a quantity and *nothing else*. No price, no merchant override, no scope field. The model physically cannot express an amount. Injection can make the model *want* the wrong thing; it cannot make the system *charge* the wrong thing.
 
 That second point is the core insight of the whole project. **Constrain the interface, not the model.**
 
@@ -95,7 +95,7 @@ That second point is the core insight of the whole project. **Constrain the inte
 |---|---|---|---|
 | C1 | `packages/policy` | The authorisation decision | Touch I/O, the clock, randomness, or an LLM |
 | C2 | `packages/ledger` | Append, chain, verify, derive state | Ever expose update or delete |
-| C3 | `apps/control-plane` | HTTP, orchestration, transactions | Contain any business rule — it delegates to C1 |
+| C3 | `apps/control-plane` | HTTP, orchestration, transactions | Contain any business rule; it delegates to C1 |
 | C4 | `packages/razorpay-exec` | Test-mode execution, idempotency, retry | Decide *whether* to execute |
 | C5 | `apps/eval` | Corpus, runner, metrics | Generate attacks dynamically |
 | C6 | `apps/merchant-mcp` | Agent-readable catalog over MCP | Be trusted |
@@ -112,7 +112,7 @@ That second point is the core insight of the whole project. **Constrain the inte
 ```
 agent          control-plane        policy      ledger       razorpay
   │  intent ────────►│                 │           │            │
-  │                  │ [T1 — advisory lock]         │            │
+  │                  │ [T1 - advisory lock]         │            │
   │                  │ verify mandate  │           │            │
   │                  │ idempotency check (own row, not Razorpay) │
   │                  │ deriveState ────────────────►│            │
@@ -123,16 +123,16 @@ agent          control-plane        policy      ledger       razorpay
   │                  │ write PENDING idempotency row │            │
   │                  │ append(api_call: attempted) ─►│            │
   │                  │ [T1 commits]                 │            │
-  │                  │ execute — no transaction ────────────────►│
+  │                  │ execute - no transaction ────────────────►│
   │                  │◄────────────── order/outcome ──────────────│
-  │                  │ [T2 — advisory lock]                      │
+  │                  │ [T2 - advisory lock]                      │
   │                  │ append(outcome) ─────────────►│            │
   │                  │ resolve idempotency row       │            │
   │                  │ [T2 commits]                 │            │
   │◄─ trace_id, OK ──│                 │           │            │
 ```
 
-**Two phases, not one transaction — see D-22.** A database transaction and an
+**Two phases, not one transaction: see D-22.** A database transaction and an
 external API call cannot be made atomic; there is no protocol between
 Postgres and Razorpay that makes both commit or both fail together. What's
 achievable instead: no external call is ever made without a durable,
@@ -150,7 +150,7 @@ Decision is `STEP_UP` → a pending approval row is written, the ledger records 
 
 ### 5.3 Denial
 
-Nothing executes. The agent receives `{ decision: "DENY", reason_code, remaining_minor }`. It may re-plan, but a re-plan produces a *different* intent and therefore a different idempotency key — it cannot retry its way past the gate, and each attempt is separately recorded.
+Nothing executes. The agent receives `{ decision: "DENY", reason_code, remaining_minor }`. It may re-plan, but a re-plan produces a *different* intent and therefore a different idempotency key; it cannot retry its way past the gate, and each attempt is separately recorded.
 
 ### 5.4 Execution failure
 

@@ -1,10 +1,10 @@
-# Praman — Product & Technical Specification
+# Praman: Product & Technical Specification
 
 > This document describes the September 2026 Razorpay Buildathon entry. For the current system, which also runs on PayPal, read [README.md](../README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**Praman** (प्रमाण — *proof*) is a control plane for agent-initiated payments. It sits between an AI buyer agent and a Razorpay merchant, and makes every rupee an agent moves **bounded, explainable, and replayable**.
+**Praman** (प्रमाण: *proof*) is a control plane for agent-initiated payments. It sits between an AI buyer agent and a Razorpay merchant, and makes every rupee an agent moves **bounded, explainable, and replayable**.
 
-- **Submission:** Razorpay AI Buildathon 2026, Track 01 — AI Growth & Agentic Commerce
+- **Submission:** Razorpay AI Buildathon 2026, Track 01: AI Growth & Agentic Commerce
 - **Builder:** Adwaith R Nair (solo)
 - **Window:** 27 Aug – 5 Sep 2026
 - **Repo:** `praman` (public, MIT)
@@ -75,7 +75,7 @@ These are what the panel will probe. Every one of them is a decision you must be
 │                               │              │ test-mode SDK  │  │
 │                               │              └──────┬─────────┘  │
 │  ┌────────────────────────────▼─────────────────────▼─────────┐  │
-│  │  LEDGER  — append-only, hash-chained, Merkle-rooted        │  │
+│  │  LEDGER  - append-only, hash-chained, Merkle-rooted        │  │
 │  │  intent → decision → api_call → outcome → settlement       │  │
 │  └────────────────────────────┬───────────────────────────────┘  │
 └───────────────────────────────┼──────────────────────────────────┘
@@ -87,7 +87,7 @@ These are what the panel will probe. Every one of them is a decision you must be
 
 ┌──────────────────────────────────────────────────────────────────┐
 │  MERCHANT SIDE                                                   │
-│  merchant-mcp — MCP server exposing catalog, stock, refund policy │
+│  merchant-mcp - MCP server exposing catalog, stock, refund policy │
 │  (this is the "agent-readable catalog" from the track brief)      │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -119,29 +119,29 @@ These are what the panel will probe. Every one of them is a decision you must be
 | **Postgres + Prisma** | The ledger needs transactional append and DB-enforced immutability. I add a rule that rejects UPDATE/DELETE on `ledger_entry`. A document store would have left immutability as a convention I could break by accident. |
 | **Ed25519 via `node:crypto`** | Mandates are signed by the issuer (the human). Small keys, fast verify, no external dependency in the trust path. |
 | **Anthropic SDK, tool use, `claude-sonnet-4-6`** | The agent needs structured tool calls, not free text. Tool use gives me a typed intent object I can validate before it reaches the policy engine. |
-| **MCP for the merchant catalog** | The track asks for a merchant that is transactable by an AI buyer. MCP is the interop standard the buyer side actually speaks, and Razorpay ships its own MCP server — so the merchant speaking MCP is the natural shape. |
+| **MCP for the merchant catalog** | The track asks for a merchant that is transactable by an AI buyer. MCP is the interop standard the buyer side actually speaks, and Razorpay ships its own MCP server, so the merchant speaking MCP is the natural shape. |
 | **Razorpay Node SDK + test-mode keys (`rzp_test_`)** | Real API surface, no real money. All order/payment/refund lifecycle is exercised against Razorpay's sandbox. |
 | **Vitest + a custom eval runner in CI** | Evals are tests. Running them in GitHub Actions on every commit means the containment numbers in the README can't rot. |
-| **No vector DB** | Deliberate. There is nothing here to retrieve semantically — the catalog is small and structured. Adding a vector store would have been resume decoration, not architecture. *(This is a strong answer. Have it ready.)* |
+| **No vector DB** | Deliberate. There is nothing here to retrieve semantically; the catalog is small and structured. Adding a vector store would have been resume decoration, not architecture. *(This is a strong answer. Have it ready.)* |
 
 ---
 
 ## 5. Core flow, step by step
 
-**Setup (once):** the human issues a mandate — "my agent may spend up to ₹5,000 total, max ₹800 per transaction, only at merchant `MERCH_001`, only in category `food`, valid 24h, anything over ₹500 needs my approval." Signed with the issuer's Ed25519 key.
+**Setup (once):** the human issues a mandate: "my agent may spend up to ₹5,000 total, max ₹800 per transaction, only at merchant `MERCH_001`, only in category `food`, valid 24h, anything over ₹500 needs my approval." Signed with the issuer's Ed25519 key.
 
 **Runtime:**
 
 1. Buyer agent receives a goal in natural language.
 2. Agent calls `merchant-mcp` tools to browse the catalog. **All returned text is wrapped in `<untrusted_merchant_content>` before it reaches the model.**
-3. Agent emits a `PurchaseIntent` via tool use — structured, typed, no prose.
+3. Agent emits a `PurchaseIntent` via tool use: structured, typed, no prose.
 4. `POST /v1/intents` with the intent + mandate JWT.
 5. Control plane verifies the mandate signature and expiry.
 6. **Policy engine** evaluates. Returns `{ decision, reason_code, explanation, remaining_budget_minor }`.
 7. Ledger appends `intent` and `decision` entries (hash-chained).
 8. On `ALLOW`: idempotency guard checks the key, then Razorpay test-mode order + payment. Ledger appends `api_call` and `outcome`.
 9. On `STEP_UP`: a pending approval record is created; the flow blocks. A human approves or rejects via the receipt UI. Either way it's in the ledger.
-10. On `DENY`: nothing is executed. The agent receives the reason code and must re-plan within bounds — it cannot retry its way past the gate, because the idempotency key is derived from the intent.
+10. On `DENY`: nothing is executed. The agent receives the reason code and must re-plan within bounds; it cannot retry its way past the gate, because the idempotency key is derived from the intent.
 11. Any trace is replayable at `/r/:trace_id`, showing every step including the model's tool call verbatim.
 
 ### The failure path (they asked for this by name)
@@ -149,7 +149,7 @@ These are what the panel will probe. Every one of them is a decision you must be
 Force a Razorpay test-mode payment failure. The agent must:
 - receive the typed failure,
 - diagnose it (`PAYMENT_METHOD_DECLINED`),
-- retry **once** on an alternate method — with a *new* idempotency key derived from the new intent,
+- retry **once** on an alternate method, with a *new* idempotency key derived from the new intent,
 - and if the retry would breach the mandate, stop and escalate to human approval instead of looping.
 
 Demonstrating the *stop* is worth more than demonstrating the retry.
@@ -174,7 +174,7 @@ That last one lands hard in a room full of payments people.
 Stating limits honestly is scored. Do not hide these.
 
 - No real money, no live keys, test mode only.
-- Not a UAP implementation — UAP is unpublished. Praman is modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot, and is protocol-agnostic.
+- Not a UAP implementation. UAP is unpublished. Praman is modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot, and is protocol-agnostic.
 - Single-merchant scope in the demo; multi-merchant is a config change, untested at scale.
 - Mandate revocation is implemented; mandate delegation chains are not.
 - No offense-capable tooling of any kind.

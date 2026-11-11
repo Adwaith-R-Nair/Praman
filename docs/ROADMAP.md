@@ -1,4 +1,4 @@
-# Praman — Roadmap
+# Praman: Roadmap
 
 > This document describes the September 2026 Razorpay Buildathon entry. For the current system, which also runs on PayPal, read [README.md](../README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -8,63 +8,63 @@ The rule: *if you cannot explain the phase you just finished without looking at 
 
 ---
 
-## Phase 0 — Foundation · Day 0 (Wed 27 Aug)
+## Phase 0: Foundation · Day 0 (Wed 27 Aug)
 
 Repo, spec, keys, rails.
 
 **Exit:** public repo with docs committed; Razorpay test keys work; one manual test-mode payment completed via dashboard.
 **Gate:** you can explain what a Razorpay order is, what a payment is, and why capture is a separate step.
 
-## Phase 1 — The decision core · Day 1 (Thu 28 Aug)
+## Phase 1: The decision core · Day 1 (Thu 28 Aug)
 
 Workspace scaffold, shared types, `evaluate()` hand-written, full unit + property tests.
 
 **Exit:** `pnpm test` green; every one of the 17 reason codes has a test.
 **Gate:** whiteboard the 15-step evaluation order from memory, and explain why step 9 (amount resolution) comes after step 7 (category check).
 
-## Phase 2 — The ledger · Day 2 (Fri 29 Aug)
+## Phase 2: The ledger · Day 2 (Fri 29 Aug)
 
 Postgres, Prisma, hash chain, immutability rules, `deriveState`, `verify-ledger` CLI, Merkle checkpoints.
 
 **Exit:** tamper a row via raw SQL, `pnpm verify-ledger` exits non-zero and names the broken sequence number.
 **Gate:** explain why field separators are in the hash preimage, and why the mandate has no `spent_paise` column.
 
-## Phase 3 — Control plane + execution · Day 3 (Sat 30 Aug)
+## Phase 3: Control plane + execution · Day 3 (Sat 30 Aug)
 
 Express API, Ed25519 mandate issuance and verification, `razorpay-exec`, idempotency, advisory lock, one transaction end to end.
 
 **Exit:** signed mandate → intent → ALLOW → real test-mode payment → complete ledger trace. Screen-record it as insurance.
 **Gate:** explain what happens if two identical intents arrive in the same millisecond, and why you chose an advisory lock over SERIALIZABLE.
 
-## Phase 4 — Agent + merchant · Day 4 (Sun 31 Aug)
+## Phase 4: Agent + merchant · Day 4 (Sun 31 Aug)
 
 MCP catalog server, seeded catalog, Claude buyer agent with tool use, `wrapUntrusted` at the agent boundary, turn cap.
 
 **Exit:** `pnpm demo "order lunch for two under ₹700"` completes end to end from one command.
 **Gate:** explain why sanitisation lives in the agent and not the MCP server, and why the agent isn't told its budget.
 
-## Phase 5 — Gates and failure paths · Day 5 (Mon 1 Sep)
+## Phase 5: Gates and failure paths · Day 5 (Mon 1 Sep)
 
 Step-up approval flow, forced payment failure, single retry, escalation, first three injection fixtures.
 
-**Exit:** all three demo beats work — allow, block, escalate.
+**Exit:** all three demo beats work: allow, block, escalate.
 **Gate:** walk the full step-up lifecycle including what's in the ledger at each stage.
 
-## Phase 6 — Measurement · Day 6 (Tue 2 Sep)
+## Phase 6: Measurement · Day 6 (Tue 2 Sep)
 
 Benign corpus (40) → runner → adversarial corpus (60) → **commit the held-out split** → metrics → CI → README badge.
 
 **Exit:** `pnpm eval` produces `report.md` and `report.json`; GitHub Actions green; badge live.
 **Gate:** state your dev containment rate, your held-out containment rate, your false-refusal rate, and what's in the gap. Out loud, from memory.
 
-## Phase 7 — Surface and story · Day 7 (Wed 3 Sep)
+## Phase 7: Surface and story · Day 7 (Wed 3 Sep)
 
 Receipt UI, dispute bundle (P2, first to cut), README, rendered diagrams, limitations section.
 
 **Exit:** clean clone + follow your own README = working demo.
 **Gate:** give the 5-minute pitch to a wall, timed, without notes.
 
-## Phase 8 — Held-out run and submission · Days 8–9 (Thu 4 – Fri 5 Sep)
+## Phase 8: Held-out run and submission · Days 8–9 (Thu 4 – Fri 5 Sep)
 
 Final held-out run, honest exception list, record the video, clean-clone verification, submit Friday morning.
 
@@ -103,7 +103,7 @@ Every cut goes in the README's limitations section. A documented cut is engineer
 
 ---
 
-## Post-submission roadmap (put this in the README — it shows you know where this goes)
+## Post-submission roadmap (put this in the README; it shows you know where this goes)
 
 - **Near term:** external anchoring of Merkle checkpoints; mandate delegation chains; multi-merchant scope with per-merchant sub-budgets.
 - **Medium:** adapter layer so the same policy core sits behind UAP, AP2, or ACP once specifications are public; webhook-driven settlement reconciliation.
