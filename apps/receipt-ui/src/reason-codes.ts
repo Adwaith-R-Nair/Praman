@@ -3,7 +3,7 @@ import type { BreakReason, EventType } from "@praman/ledger";
 
 /** What each verifyChain() BreakReason means for someone who isn't the person who wrote it. */
 export const BREAK_REASON_PLAIN: Record<BreakReason, string> = {
-  SEQ_GAP: "An entry is missing from the chain — deleted, or never actually recorded.",
+  SEQ_GAP: "An entry is missing from the chain: deleted, or never actually recorded.",
   PREV_MISMATCH: "This entry doesn't link to the one that comes before it.",
   PAYLOAD_HASH_MISMATCH: "This entry's contents changed after it was written.",
   ENTRY_HASH_MISMATCH: "This entry's own fields changed after it was written.",
