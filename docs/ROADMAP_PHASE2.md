@@ -1,6 +1,6 @@
 # Praman · Roadmap, Phase 2 (Phases 9 to 21)
 
-**Status (2026-11-04):** current work follows the [PayPal hackathon design](superpowers/specs/2026-11-04-paypal-hackathon-design.md). It finishes Phase 10, pulls Phase 13 forward, takes a subset of Phase 15 and the statistics item from Phase 11, and defers Phases 11 (the rest), 12, 14 and 16 to 20 until after the hackathon. Where the two differ, the design wins.
+**Status (2026-11-04):** current work follows the [PayPal hackathon design](superpowers/specs/2026-11-04-paypal-hackathon-design.md). It finishes Phase 10, pulls Phase 13 forward, takes a subset of Phase 15 and the statistics item from Phase 11, and defers Phases 11 (the rest), 12, 14 and 16 to 20 until after the hackathon. Where the two differ, the design wins. Since 2026-11-07 (D-80) agents write their plan in the build log and make their own commits, and an independent agent reviews the money path; the rules below about waiting for approval before a change and proposing commit messages for the builder to run describe the earlier process.
 
 The submission is done: Phases 0 to 8 in [`ROADMAP.md`](ROADMAP.md) shipped, the repo was shortlisted, and it was defended in interview. This roadmap covers what comes next. There is no deadline, so phases are ordered by dependency and by what each one makes possible for the next, not by calendar.
 

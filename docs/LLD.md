@@ -1,5 +1,7 @@
 # Praman: Low Level Design (LLD)
 
+> This document describes the September 2026 Razorpay Buildathon entry. For the current system, which also runs on PayPal, read [README.md](../README.md) and [ARCHITECTURE.md](ARCHITECTURE.md). In particular, the repository layout in section 1 and the buyer agent's model in section 9 are as planned then, not as built now.
+
 Implementation-level contracts. If HLD answers "what are the parts", this answers "what exactly do I type".
 
 ---

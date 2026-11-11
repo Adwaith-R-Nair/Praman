@@ -108,7 +108,7 @@ The hosted demo has a page over the same snapshot, `/demo/shop`, where a visitor
 
 ## A recorded session
 
-> **Recorded on 2026-11-08 against the PayPal sandbox and the live Channel3 snapshot.** The client is a short script speaking MCP over stdio to `pnpm --silent mcp`, not a model: it makes the calls an agent would make, so this is exactly what the gateway returns. Long merchant descriptions are trimmed for this page and marked; nothing else is edited. The approval was typed at the `pnpm mcp:approve` prompt through `script(1)`, by the operator.
+> **Recorded on 2026-11-08 against the PayPal sandbox and the live Channel3 snapshot.** The client is a short script speaking MCP over stdio to `pnpm --silent mcp`, not a model: it makes the calls an agent would make, so this is exactly what the gateway returns. Long merchant descriptions are trimmed for this page and marked; nothing else is edited. The approval was typed at the `pnpm mcp:approve` prompt through `script(1)`, by the operator. A later run on 2026-11-10 used a real model as the client, Claude Code with the gateway as its only tools, and went through to a paid capture (trace `trc_mcp_3b4eeda2-2189-4f69-8ba8-6f39be499f8b`; `docs/BUILD_LOG.md`, 10 Nov).
 >
 > No buyer logged in at PayPal during this session, so no money moved: both orders were left waiting for a buyer, and step 4 shows PayPal's real refusal to capture an order nobody has approved.
 

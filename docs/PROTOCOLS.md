@@ -99,7 +99,7 @@ All quotations are from PayPal's or its partner's own pages. Nothing here is a s
 - Among the work PayPal lists next: "Extending Seller Protection workflows with Cart and Intent Mandates, mandate IDs and signatures".
 - "Accountability tied to real-world entities such as the user, merchant or the issuer, and not the agent."
 
-A Praman dispute bundle is built for that use: the hash-chained rows for one purchase in one JSON file, and in the owner's copy the signed mandate and the key that verified it. The public copy withholds the limits. No bundle has been submitted to PayPal as dispute evidence, and Praman calls no Disputes API.
+A Praman dispute bundle is built for that use: the hash-chained rows for one purchase in one JSON file, and in the owner's copy the signed mandate and the key that verified it. The public copy withholds the limits. No bundle has been submitted to PayPal as dispute evidence, and Praman writes nothing to PayPal's Disputes API: the read-only auditor, `pnpm audit:paypal`, only lists and reads disputes (D-92).
 
 **On the buyer staying in charge.** From "WebMCP is here", PayPal developer blog, 16 Sep 2026 ([link](https://developer.paypal.com/community/blog/WebMCP_PayPal_Agent_Ready)): "The buyer remains in charge of approving the transaction." and, of the agent, "It does not replace the shopper or take control of payment credentials."
 

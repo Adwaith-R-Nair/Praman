@@ -172,7 +172,7 @@ A `STEP_UP` persists a pending `Approval` row (`run-intent.ts`) rather than exec
 - **Approve** → `evaluate()` runs again, fresh, against the mandate and ledger state *as they are now*, not as they were at step-up time. Revocation, expiry, budget and velocity are all re-checked. A `DENY` here refuses the approval outright (`REFUSED`), even though a human already said yes; approval cannot revive a mandate that died in the meantime.
 - **Amount binding**: the human approved a specific figure. If the catalog moved between step-up and approval, the re-evaluated amount won't match what was approved, and the approval is refused with `AMOUNT_CHANGED_SINCE_APPROVAL` rather than silently executing a different amount than what was shown. The currency is bound the same way: a mandate no longer in the approval's currency is refused with `CURRENCY_MISMATCH`, checked first, even at the same digits (D-36). Either refusal is recorded on the `step_up_resolved` event.
 - **Unproven callers change nothing**: a bad signature, or a good one on a different mandate, leaves the approval's status as it was and is recorded as a claim under `claimed_mandate_id` (D-25, D-36). The status is read under the mandate lock.
-- **Idempotent**: approving twice returns the same cached order the second time; exactly one Razorpay call ever happens per approval.
+- **Idempotent**: approving twice returns the same cached order the second time; exactly one rail call ever happens per approval.
 
 The rejected alternative was executing the stored intent directly on approval, without re-evaluating. That's a bypass: park a `STEP_UP`, wait for the mandate to expire or be revoked, then approve, and money moves under dead authority.
 
@@ -186,7 +186,7 @@ The rejected alternative was executing the stored intent directly on approval, w
   "trace_id": "trc_01J8XK4M2A",
   "ts": "2026-08-28T12:04:11.882Z",
   "actor": "agt_lunchbuyer",
-  "event_type": "decision",   // intent | decision | api_call | outcome | step_up_resolved | mandate_revoked | capture_decision | settlement | refund_requested | refund_outcome
+  "event_type": "decision",   // intent | decision | api_call | outcome | step_up_resolved | mandate_revoked | checkpoint | agent_transcript | capture_decision | settlement | refund_requested | refund_outcome
   "payload": { /* event-specific, canonicalised */ },
   "payload_hash": "sha256:...",
   "prev_hash": "sha256:...",
@@ -194,7 +194,7 @@ The rejected alternative was executing the stored intent directly on approval, w
 }
 ```
 
-- `seq` is a Postgres identity column; a gap means tampering.
+- `seq` is a `BIGSERIAL` primary key, but `append()` writes it explicitly as the head's `seq` plus one, under a global advisory lock; a gap means tampering.
 - New events carry amounts as `amount_minor`. Rows written before the rename carry `amount_paise`, and always will, because `payload_hash` covers those bytes. Readers accept both through `readAmount` and `amountIfPresent` in `packages/ledger/src/derive.ts` (D-28).
 - New `decision`, `api_call` and `outcome` events with an amount also carry `currency`. Older rows have none and are INR, because nothing else was accepted when they were written. `readCurrency` in the same file reads both (D-29).
 - `outcome` status is `created`, `captured`, `failed`, `released` or `mismatch`. Spend is counted per order, not per row: rows with one `idempotency_key` fold together, and a `released` order with no capture frees its budget but keeps its velocity timestamp. Old rows with no key each count on their own (D-30).
@@ -208,12 +208,16 @@ The rejected alternative was executing the stored intent directly on approval, w
 - `/dispute/:id` serves the public bundle: `mandate` is `{ id, key_id, signature_verified, signature_check, signed_sha256 }`, and each chain entry has `withheld_fields`, the payload fields left out. `signed_sha256` is sha256 of the canonical JSON of `{ document, signature }`, and `/demo/dispute/<step>` and `pnpm dispute <trace_id>` add `issuer` and `signed` (`document`, `signature`, `public_key_pem`).
 - `entry_hash` chains to `prev_hash`. Genesis entry uses 64 zeros.
 - Every 100 entries (or hourly), compute a Merkle root over `entry_hash` values and append a `checkpoint` entry containing it. The checkpoint is what you'd anchor externally in production; say this in the pitch, and be clear you didn't anchor it in the demo.
-- Immutability enforced in migration:
+- Immutability enforced in migration `20260901171804_enforce_ledger_immutability`, by triggers that raise rather than rules that silently do nothing, so an attempted write fails loudly:
 
 ```sql
-CREATE RULE ledger_no_update AS ON UPDATE TO ledger_entry DO INSTEAD NOTHING;
-CREATE RULE ledger_no_delete AS ON DELETE TO ledger_entry DO INSTEAD NOTHING;
+CREATE TRIGGER ledger_no_update BEFORE UPDATE ON ledger_entry
+  FOR EACH ROW EXECUTE FUNCTION ledger_immutable();
+CREATE TRIGGER ledger_no_delete BEFORE DELETE ON ledger_entry
+  FOR EACH ROW EXECUTE FUNCTION ledger_immutable();
 ```
+
+  `ledger_immutable()` raises an error starting `ledger_entry is append-only`. `TRUNCATE` does not fire row-level triggers, so it is not covered (README, known gaps).
 
 - `pnpm verify-ledger` walks the chain, recomputes every hash, and exits non-zero on the first mismatch. Demo this, then tamper a row via a superuser connection and demo it failing.
 

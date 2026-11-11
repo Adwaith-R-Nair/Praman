@@ -37,7 +37,7 @@ Injection can make the model *want* the wrong thing. It cannot make the system *
 
 ## The three primitives
 
-**1. Mandate:** a human-signed (Ed25519) grant of bounded authority: merchant allowlist, category allowlist, per-transaction cap, cumulative cap, velocity limit, validity window, human-approval threshold. Modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot. Protocol-agnostic by design, since UAP is unpublished.
+**1. Mandate:** a human-signed (Ed25519) grant of bounded authority: merchant allowlist, category allowlist, per-transaction cap, cumulative cap, velocity limit, denial-rate cap, validity window, human-approval threshold. Modelled on the delegation-plus-limit pattern from UPI Circle and the Razorpay–NPCI pilot. Protocol-agnostic by design, since UAP is unpublished.
 
 **2. Policy engine:** a pure, total, deterministic function of one input object (`intent`, `mandate`, `ledger_state`, `catalog`, `now`, `idempotency_key`). No I/O, no clock, no randomness, **no LLM**. Returns `ALLOW` / `STEP_UP` / `DENY` with a machine-readable reason code from a closed enum of 21. One function, readable top to bottom in one pass. Hand-written up to the `v1.0-submission` tag, and changed since then only under the rules in D-27.
 
@@ -83,7 +83,7 @@ Deliberately boring where boring is correct. The novelty budget is spent on the 
 
 54 cases: 46 deterministic Layer 1 cases and 8 Layer 2 cases with a live model. Layer 1 covers prompt injection, mandate evasion, double-charge, numeric confusion, hallucinated SKU, scope drift, denial probes, order holds and 16 benign purchases. 42 Layer 1 cases also run mirrored on the other rail. The held-out split is a hash of each case id; the README says exactly what came before it, and why it is 20 of 46 rather than 30%.
 
-Run in GitHub Actions on every push. The README badge is generated from `report.json`, so the numbers can't drift from reality.
+Layer 1 runs in GitHub Actions on every push (`pnpm eval --layer1`) and fails the build on any failing case. Layer 2 needs a live model and is run by hand. The numbers in the README come from `eval/report.md`, which a full `pnpm eval` run writes.
 
 ## Scope and honesty
 
@@ -107,4 +107,4 @@ Run in GitHub Actions on every push. The README badge is generated from `report.
 
 ## Built with
 
-Praman was designed and built with Claude as a pair-programming partner. Every architectural decision in `DECISIONS.md` is mine, made deliberately and defended there. Up to the `v1.0-submission` tag, the policy engine's `evaluate()` was hand-written, and Claude generated much of the surrounding scaffolding (types, serialisation, test cases) from specifications I wrote, which I reviewed line by line. The commit history shows the sequence: specification, then core, then plumbing, then measurement. Since 2026-11-04 the project follows an agentic development life cycle, by my decision (D-27): agents may edit `evaluate.ts`, with a failing test first, its own commit, and, since 2026-11-07, an independent agent's review rather than mine (D-80).
+Praman was designed and built with Claude as a pair-programming partner. Every architectural decision in `DECISIONS.md` is mine, made deliberately and defended there, except those marked as an implementer's decision for me to check. Up to the `v1.0-submission` tag, the policy engine's `evaluate()` was hand-written, and Claude generated much of the surrounding scaffolding (types, serialisation, test cases) from specifications I wrote, which I reviewed line by line. The commit history shows the sequence: specification, then core, then plumbing, then measurement. Since 2026-11-04 the project follows an agentic development life cycle, by my decision (D-27): agents may edit `evaluate.ts`, with a failing test first, its own commit, and, since 2026-11-07, an independent agent's review rather than mine (D-80).

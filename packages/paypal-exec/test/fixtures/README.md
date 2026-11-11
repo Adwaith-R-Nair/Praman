@@ -1,9 +1,11 @@
 # Synthetic PayPal webhook fixtures
 
 **None of these files is a real PayPal delivery.** They were written by hand on
-2026-11-08 from PayPal's published shapes, because no real sandbox webhook has been
-delivered to this project yet: there is no public URL for PayPal to send to, and the
-spike in plan Task 0 never received one.
+2026-11-08 from PayPal's published shapes, because at the time no real sandbox webhook
+had been delivered to this project: there was no public URL for PayPal to send to, and
+the spike in plan Task 0 never received one. Later the same day the app was hosted, and
+a real `PAYMENT.CAPTURE.COMPLETED` delivery reached it and verified (`docs/BUILD_LOG.md`,
+P21). That delivery was not saved here, so these files are still synthetic.
 
 Sources, both fetched on 2026-11-08:
 
@@ -21,6 +23,6 @@ Tests replace the order id and invoice id with the ones their own order got.
 
 They carry no signature. PayPal documents that mock events can't be checked with the
 verify-webhook-signature postback, and these aren't even mock events, so tests stand in
-for PayPal's verification answer. A test against a real delivery is still owed, once the
-app is hosted and a sandbox webhook can reach it. Replace or add to these then, and say
-in the file name which ones are real.
+for PayPal's verification answer. A test against a recorded real delivery is still
+owed. When one is recorded, add it beside these and say in the file name which ones are
+real.
