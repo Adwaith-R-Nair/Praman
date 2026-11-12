@@ -10,6 +10,8 @@ PayPal doesn't trust the browser with the price, and Praman doesn't trust the mo
 
 Meera is an example, not a customer. The [hosted demo](https://praman-demo.onrender.com) runs her case with fixtures from this repo: a mandate capped at $60 in total, a listing that carries the injected line, and a $100 gift card the mandate does not cover.
 
+**Demo video (2:55):** <https://youtu.be/N1oc3TOjUgk>. **No login:** [one full hosted session](https://praman-demo.onrender.com/sample), with its ledger verified.
+
 ## How Praman uses PayPal
 
 Sandbox only. [`packages/paypal-exec`](packages/paypal-exec) calls PayPal's REST APIs directly and refuses any host outside `sandbox.paypal.com`. PayPal's Agent Toolkit is used in one place, a read-only auditor (last row).
